@@ -1,0 +1,261 @@
+"use client";
+
+import React, { useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { colors, radius, size, font, iconSize } from "@/lib/design";
+
+/* ---------------------------------- Button --------------------------------- */
+
+interface VButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: "primary" | "secondary" | "outline" | "danger" | "ghost";
+  size?: "sm" | "md" | "lg";
+}
+
+export function VButton({ variant = "primary", size: btnSize = "md", className = "", style, ...props }: VButtonProps) {
+  const base = `inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap ${radius.button} transition-all duration-200 cursor-pointer disabled:cursor-not-allowed`;
+  const heights = { sm: "h-8 px-3 text-xs", md: "h-10 px-4 text-sm", lg: "h-11 px-6 text-sm" };
+  const variants: Record<string, React.CSSProperties> = {
+    primary: { backgroundColor: colors.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" },
+    secondary: { backgroundColor: colors.borderLight, color: colors.textMuted },
+    outline: { backgroundColor: colors.card, color: colors.textMuted, border: `1px solid ${colors.border}` },
+    danger: { backgroundColor: "#fef2f2", color: colors.danger, border: `1px solid #fecaca` },
+    ghost: { backgroundColor: "transparent", color: colors.textMuted },
+  };
+  const hovers: Record<string, React.CSSProperties> = {
+    primary: { backgroundColor: colors.primaryDark, boxShadow: "0 3px 10px rgba(41,72,106,0.3)" },
+    secondary: { backgroundColor: "#cbd5e1" },
+    outline: { backgroundColor: colors.primarySoft, borderColor: colors.primary, color: colors.primary },
+    danger: { backgroundColor: "#fee2e2" },
+    ghost: { backgroundColor: colors.borderLight },
+  };
+  const disabled = props.disabled;
+  return (
+    <button
+      {...props}
+      className={`${base} ${heights[btnSize]} ${className}`}
+      style={{ ...variants[variant], ...(disabled ? { opacity: 0.5, cursor: "not-allowed", boxShadow: "none" } : {}), ...style }}
+      onMouseEnter={(e) => { if (!disabled) Object.assign(e.currentTarget.style, hovers[variant]); }}
+      onMouseLeave={(e) => { if (!disabled) Object.assign(e.currentTarget.style, variants[variant]); }}
+    />
+  );
+}
+
+/* ---------------------------------- Input ---------------------------------- */
+
+interface VInputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+
+export function VInput({ className = "", style, ...props }: VInputProps) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <input
+      {...props}
+      className={`w-full ${size.input} px-3.5 text-sm border bg-white ${radius.input} transition-all duration-200 ${className}`}
+      style={{
+        ...style,
+        borderColor: focused ? colors.primary : style?.borderColor ?? colors.border,
+        color: style?.color ?? colors.text,
+        boxShadow: focused ? "0 0 0 3px rgba(53,92,138,0.08)" : style?.boxShadow ?? "0 1px 3px rgba(0,0,0,0.02)",
+      }}
+      onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
+      onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
+    />
+  );
+}
+
+export function VTextarea({ className = "", style, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <textarea
+      {...props}
+      className={`w-full px-3.5 py-2.5 text-sm border bg-white ${radius.input} transition-all duration-200 resize-none ${className}`}
+      style={{
+        ...style,
+        borderColor: focused ? colors.primary : style?.borderColor ?? colors.border,
+        color: style?.color ?? colors.text,
+        boxShadow: focused ? "0 0 0 3px rgba(53,92,138,0.08)" : style?.boxShadow ?? "0 1px 3px rgba(0,0,0,0.02)",
+      }}
+      onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
+      onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
+    />
+  );
+}
+
+/* ---------------------------------- Card ----------------------------------- */
+
+export function VCard({ className = "", style, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...props}
+      className={`bg-white ${radius.card} border ${className}`}
+      style={{ borderColor: colors.border, boxShadow: "0 1px 3px rgba(0,0,0,0.02)", ...style }}
+    />
+  );
+}
+
+/* ---------------------------------- Badge ---------------------------------- */
+
+export function VBadge({ color, children, className = "", style }: { color: string; children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  return (
+    <span
+      className={`text-[11px] lg:text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${className}`}
+      style={{ backgroundColor: `${color}15`, color, ...style }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* ------------------------------- Filter button ------------------------------ */
+
+export function VFilterButton({ children, style, active, onClick, className = "" }: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  active?: boolean;
+  onClick?: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`flex items-center gap-1.5 ${size.filter} ${radius.button} text-sm font-medium border bg-white transition-shadow duration-200 cursor-pointer ${className}`}
+      style={{ borderColor: active ? colors.primary : colors.border, color: colors.text, ...style }}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ------------------------------- Search input ------------------------------ */
+
+export function VSearchInput({ value, onChange, placeholder = "Search items...", className = "" }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`relative ${className}`}>
+      <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: colors.textMuted }} />
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full h-11 pl-10 pr-4 text-sm border bg-white ${radius.input} transition-shadow duration-200`}
+        style={{ borderColor: colors.border, color: colors.text, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+        onFocus={(e) => { e.target.style.borderColor = colors.primary; e.target.style.boxShadow = "0 0 0 3px rgba(53,92,138,0.08)"; }}
+        onBlur={(e) => { e.target.style.borderColor = colors.border; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.02)"; }}
+      />
+    </div>
+  );
+}
+
+/* --------------------------------- Dropdown -------------------------------- */
+
+export function VDropdown({ trigger, children, open, onOpenChange, align = "left", width = "w-48" }: {
+  trigger: React.ReactNode;
+  children: (close: () => void) => React.ReactNode;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  align?: "left" | "right";
+  width?: string;
+}) {
+  return (
+    <div className="relative shrink-0">
+      {trigger}
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => onOpenChange(false)} />
+          <div
+            className={`absolute top-11 z-20 ${align === "right" ? "right-0" : "left-0"} ${width} bg-white ${radius.dropdown} border py-1.5 shadow-lg`}
+            style={{ borderColor: colors.border }}
+          >
+            {children(() => onOpenChange(false))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function VDropdownItem({ children, active, onSelect, style }: {
+  children: React.ReactNode;
+  active?: boolean;
+  onSelect?: () => void;
+  style?: React.CSSProperties;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors duration-150"
+      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: hover ? "#e2e8f0" : active ? `${colors.primary}08` : "transparent", ...style }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={onSelect}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* -------------------------------- Pagination ------------------------------- */
+
+export function VPagination({ current, total, onPage }: {
+  current: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        className="w-9 h-9 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
+        style={{ borderColor: colors.border, color: colors.textMuted }}
+        disabled={current === 1}
+        onClick={() => onPage(current - 1)}
+      >
+        <ChevronLeft size={16} />
+      </button>
+      {Array.from({ length: total }, (_, i) => i + 1).map((p) => (
+        <button
+          key={p}
+          type="button"
+          className="w-9 h-9 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer"
+          style={{
+            backgroundColor: current === p ? colors.primary : "#fff",
+            color: current === p ? "#fff" : colors.textMuted,
+            border: `1px solid ${current === p ? colors.primary : colors.border}`,
+            boxShadow: current === p ? "0 2px 8px rgba(53,92,138,0.3)" : "none",
+          }}
+          onClick={() => onPage(p)}
+        >
+          {p}
+        </button>
+      ))}
+      <button
+        type="button"
+        className="w-9 h-9 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
+        style={{ borderColor: colors.border, color: colors.textMuted }}
+        disabled={current === total}
+        onClick={() => onPage(current + 1)}
+      >
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+/* ------------------------------ Category chip ------------------------------ */
+
+export function CategoryIcon({ label, icon: Icon, color, size = 15 }: {
+  label: string;
+  icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
+  color: string;
+  size?: number;
+}) {
+  return <Icon size={size} style={{ color }} />;
+}
+
+export { font, font as vfont, colors, colors as vcolors, size as vsize, radius as vradius, iconSize, iconSize as viconSize };

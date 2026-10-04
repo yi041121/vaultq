@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role{
+  STUDENT
+  ADMIN
+}
+
+enum LostReportStatus{
+  PENDING
+  MATCHED
+  CLOSED
+}
+
+enum ItemStatus{
+  FOUND
+  CLAIMED
+  RETRIEVED
+  EXPIRED
+}
+
+enum ClaimStatus{
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LockerStatus{
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+}
+
+model User{
+  id            String    @id @default(cuid())
+  name          String 
+  studentId     String?   @unique @map("student_id")
+  adminId       String?   @unique @map("admin_id") 
+  email         String    @unique
+  password      String    
+  cardBarcode   String?   @unique 
+  role          Role      @default(STUDENT)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  lostReport LostReport[]
+  claims Claim[]
+  notifications Notification[]
+  items Item[]
+
+  @@map("users")
+}
+
+model LostReport{
+  id            String            @id @default(cuid())
+  userId        String            @map("user_id")
+  description   String     
+  locationLost  String?            @map("location_lost")
+  dateLost      DateTime?         @map("date_lost")
+  status        LostReportStatus  @default(PENDING)
+  itemId        String?           @map("item_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+  item Item? @relation(fields: [itemId], references: [id])
+
+  @@map("lost_reports")
+}
+
+model Item{
+  id              String            @id  @default(cuid())
+  itemName        String            @map("item_name")
+  description     String?
+  category        String?
+  imageUrl        String?           @map("image_url")
+  foundLocation   String?           @map("found_location")
+  foundDate       DateTime?         @map("found_date")
+  status          ItemStatus        @default(FOUND)
+  adminId         String            @map("admin_id")
+  lockerId        String?           @unique @map("locker_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  admin User @relation(fields: [adminId], references: [id])
+  lostReports LostReport[]
+  claims Claim[]
+  locker Locker? @relation(fields: [lockerId], references: [id])
+
+  @@map("items")
+}
+
+model Claim{
+  id                  String            @id  @default(cuid())
+  itemId              String            @map("item_id")
+  userId              String            @map("user_id")
+  claimReason         String?           @map("claim_reason")
+  evidenceImageUrl    String?           @map("evidence_image_url")
+  status              ClaimStatus       @default(PENDING)
+  approvedAt          DateTime?         @map("approved_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references:[id])
+  item Item @relation(fields: [itemId], references: [id])
+
+  qrCode QrCode?
+
+  @@map("claims")
+}
+
+model Locker{
+  id              String          @id  @default(cuid())
+  lockerNumber    String          @unique @map("locker_number")
+  status          LockerStatus    @default(AVAILABLE)
+
+  item Item?
+
+  @@map("lockers")
+}
+
+model QrCode{
+  id             String           @id   @default(cuid())
+  claimId        String           @unique @map("claim_id")
+  qrToken        String           @unique @default(uuid())  @map("qr_token")
+  expiresAt      DateTime         @map("expires_at")
+  isUsed         Boolean          @default(false) @map("is_used")
+
+  claim Claim @relation(fields: [claimId], references: [id])
+
+  @@map("qr_codes")
+}
+
+model Notification{
+  id             String           @id   @default(cuid())
+  userId         String           @map("user_id")
+  title          String           
+  message        String           
+  isRead         Boolean          @default(false) @map("is_read")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references:[id])
+
+  @@map("notifications")
+}
+
