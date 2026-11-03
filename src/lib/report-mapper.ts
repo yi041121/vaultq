@@ -23,6 +23,7 @@ export interface UserReport {
   location: string;
   date: string;
   imageUrl: string | null;
+  images: string[];
   status: ReportStatus;
   statusLabel: string;
   color: string;
@@ -65,6 +66,12 @@ export function shortReportReference(id: string): string {
 export function mapReport(raw: any): UserReport {
   const type = (raw?.type || "LOST") as ReportType;
   const status = (raw?.status || "PENDING") as ReportStatus;
+  const images: string[] =
+    Array.isArray(raw?.imageUrls) && raw.imageUrls.length
+      ? raw.imageUrls.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+      : raw?.imageUrl
+        ? [raw.imageUrl]
+        : [];
   const item = raw?.item
     ? {
         id: String(raw.item.id ?? ""),
@@ -85,7 +92,8 @@ export function mapReport(raw: any): UserReport {
     description: raw?.description || "",
     location: raw?.location || "",
     date: toDateOnly(raw?.date),
-    imageUrl: raw?.imageUrl || null,
+    imageUrl: images[0] || null,
+    images,
     status,
     statusLabel: reportStatusLabel(type, status),
     color: REPORT_STATUS_COLOR[status] || REPORT_STATUS_COLOR.PENDING,

@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     let description: string | null = null;
     let location: string | null = null;
     let date: string | null = null;
-    let imageUrl: string | null = null;
+    let imageUrls: string[] = [];
 
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
@@ -87,16 +87,21 @@ export async function POST(request: NextRequest) {
       location = form.get("location") as string | null;
       date = form.get("date") as string | null;
 
-      const file = form.get("photo") as File | null;
-      if (file && file.size > 0) {
+      const files = [...form.getAll("photos"), ...form.getAll("photo")].filter(
+        (entry): entry is File => entry instanceof File && entry.size > 0,
+      );
+      if (files.length > 3) {
+        return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
+      }
+      for (const file of files) {
         if (!file.type.startsWith("image/")) {
-          return NextResponse.json({ success: false, error: "Photo must be an image" }, { status: 400 });
+          return NextResponse.json({ success: false, error: "Photos must be images" }, { status: 400 });
         }
         if (file.size > 5 * 1024 * 1024) {
-          return NextResponse.json({ success: false, error: "Image must be under 5MB" }, { status: 400 });
+          return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
         }
         const buf = Buffer.from(await file.arrayBuffer());
-        imageUrl = `data:${file.type};base64,${buf.toString("base64")}`;
+        imageUrls.push(`data:${file.type};base64,${buf.toString("base64")}`);
       }
     } else {
       const body = await request.json();
@@ -106,7 +111,14 @@ export async function POST(request: NextRequest) {
       description = body.description ?? null;
       location = body.location ?? null;
       date = body.date ?? null;
-      imageUrl = body.imageUrl || null;
+      imageUrls = Array.isArray(body.imageUrls)
+        ? body.imageUrls.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+        : body.imageUrl
+          ? [body.imageUrl]
+          : [];
+      if (imageUrls.length > 3) {
+        return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
+      }
     }
 
     if (!type || !(VALID_TYPES as readonly string[]).includes(type)) {
@@ -156,7 +168,8 @@ export async function POST(request: NextRequest) {
         description: cleanDescription,
         location: cleanLocation,
         date: new Date(`${date}T00:00:00.000Z`),
-        imageUrl,
+        imageUrl: imageUrls[0] || null,
+        imageUrls,
       },
     });
 

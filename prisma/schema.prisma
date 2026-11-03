@@ -75,6 +75,7 @@ model Report{
   location      String?
   date          DateTime?
   imageUrl      String?       @map("image_url")
+  imageUrls     String[]      @default([]) @map("image_urls")
   status        ReportStatus  @default(PENDING)
   itemId        String?       @map("item_id")
   reviewedById  String?       @map("reviewed_by_id")

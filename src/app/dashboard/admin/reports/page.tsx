@@ -449,17 +449,21 @@ export default function AdminReports() {
 
             <div className="grid sm:grid-cols-2 gap-4 mb-4">
               <div>
-                <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Reported photo</p>
-                <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                  {selected.imageUrl ? (
-                    <img src={selected.imageUrl} alt={selected.itemName} className="w-full h-56 object-cover bg-[#f8fafc]" />
-                  ) : (
-                    <div className="w-full h-56 flex flex-col items-center justify-center gap-2" style={{ backgroundColor: c.fill, color: c.textLight }}>
-                      <Camera size={28} />
-                      <span className="text-xs">No photo uploaded</span>
-                    </div>
-                  )}
-                </div>
+                <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Reported photos</p>
+                {selected.images.length > 0 ? (
+                  <div className={`grid gap-2 ${selected.images.length === 1 ? "grid-cols-1" : selected.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+                    {selected.images.map((src, index) => (
+                      <img key={`${selected.id}-photo-${index}`} src={src} alt={`${selected.itemName} photo ${index + 1}`}
+                        className={`w-full object-cover rounded-xl border bg-[#f8fafc] ${selected.images.length === 1 ? "h-56" : "h-28"}`}
+                        style={{ borderColor: c.border }} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="w-full h-56 rounded-xl border flex flex-col items-center justify-center gap-2" style={{ borderColor: c.border, backgroundColor: c.fill, color: c.textLight }}>
+                    <Camera size={28} />
+                    <span className="text-xs">No photo uploaded</span>
+                  </div>
+                )}
               </div>
               <div className="space-y-2 text-xs" style={{ color: c.textMuted }}>
                 <p><span className="font-semibold" style={{ color: c.text }}>Category:</span> {selected.category}</p>
@@ -674,10 +678,16 @@ export default function AdminReports() {
                   <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Description</label>
                   <VTextarea rows={3} value={verifyForm.description} onChange={(e) => setVerifyForm({ ...verifyForm, description: e.target.value })} />
                 </div>
-                {verifyReport.imageUrl && (
+                {verifyReport.images.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Photo from report</p>
-                    <img src={verifyReport.imageUrl} alt="Report photo" className="w-full h-36 object-cover rounded-xl border" style={{ borderColor: c.border }} />
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Photos from report</p>
+                    <div className={`grid gap-2 ${verifyReport.images.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
+                      {verifyReport.images.map((src, index) => (
+                        <img key={`${verifyReport.id}-verify-photo-${index}`} src={src} alt={`Report photo ${index + 1}`}
+                          className={`w-full object-cover rounded-xl border ${verifyReport.images.length === 1 ? "h-36" : "h-24"}`}
+                          style={{ borderColor: c.border }} />
+                      ))}
+                    </div>
                   </div>
                 )}
                 <p className="text-[11px]" style={{ color: c.textLight }}>
