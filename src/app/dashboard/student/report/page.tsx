@@ -233,7 +233,7 @@ export default function StudentReport() {
   if (!user || !mounted) return null;
 
   return (
-    <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report an Item" logout={handleLogout}>
+    <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report" logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
         <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
           {/* Tabs */}
@@ -424,7 +424,7 @@ export default function StudentReport() {
               ) : (
                 <VCard className="p-8 lg:p-10 flex-1 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: c.textMuted }}>
+                    <p className="text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: typeColor[type] }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
                     <button type="button" className="text-xs font-semibold underline hover:opacity-70 cursor-pointer" style={{ color: c.primary }}
@@ -441,7 +441,6 @@ export default function StudentReport() {
                   )}
 
                   <div className="mb-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: c.textMuted }}>Item information</p>
                     <div className="space-y-3">
                       <div>
                         <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
@@ -492,7 +491,6 @@ export default function StudentReport() {
                   </div>
 
                   <div className="mb-5">
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: c.textMuted }}>Location &amp; details</p>
                     <div className="space-y-3">
                       <div>
                         <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
