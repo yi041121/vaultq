@@ -3,24 +3,41 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
-import { toast } from "sonner";
 import LockerIllustration from "@/components/locker-illustration";
 
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [succeeded, setSucceeded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loggedOut, setLoggedOut] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
   const [phase, setPhase] = useState<"intro" | "transitioning" | "complete">("intro");
   const showForm = phase !== "intro";
   const skipAnim = useRef(false);
 
   useEffect(() => {
+    // Clear stale role cookie so the route guard starts clean on a fresh login
+    document.cookie = "vq_role=; path=/; max-age=0";
     if (typeof window !== "undefined" && window.location.search.includes("skip=1")) {
       skipAnim.current = true;
       setPhase("complete");
+    }
+    // Centered "Logged out" popup (redirected back with ?loggedOut=1)
+    if (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("loggedOut") === "1" : false) {
+      setLoggedOut(true);
+      setTimeout(() => setLoggedOut(false), 1500);
+      window.history.replaceState(null, "", "/login?skip=1");
+    }
+    // Surface errors from the Google OAuth callback (redirected back with ?googleError=...)
+    const googleError = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("googleError") : null;
+    if (googleError) {
+      showError(googleError);
+      // Strip the error from the URL so refreshing doesn't re-trigger the popup
+      window.history.replaceState(null, "", "/login?skip=1");
     }
   }, []);
 
@@ -45,8 +62,15 @@ export default function LoginPage() {
     };
   }, [phase]);
 
+  function showError(msg: string) {
+    setError(msg);
+    // Brief flash then auto-close; clicking anywhere closes it immediately
+    setTimeout(() => setError(null), 1500);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
     setLoading(true);
     try {
       const res = await fetch("/api/auth/login", {
@@ -55,15 +79,17 @@ export default function LoginPage() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) { toast.error(data.error || "Login failed"); return; }
+      if (!res.ok) { showError(data.error || "Login failed"); setLoading(false); return; }
       localStorage.setItem("token", data.data.token);
       localStorage.setItem("user", JSON.stringify(data.data.user));
-      toast.success("Login successful");
       const role = data.data.user.role;
-      if (role === "ADMIN") router.push("/dashboard/admin");
-      else router.push("/dashboard/student");
-    } catch { toast.error("Something went wrong"); }
-    finally { setLoading(false); }
+      const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
+      // Show centered success popup on this page, then redirect quickly —
+      // rendered here so it never appears again on the dashboard.
+      // Keep loading=true so the button stays in "Signing in..." state.
+      setSucceeded(true);
+      setTimeout(() => router.push(target), 800);
+    } catch { showError("Something went wrong"); setLoading(false); }
   }
 
   return (
@@ -116,7 +142,8 @@ export default function LoginPage() {
             className="w-full h-11 rounded-xl text-sm font-medium flex items-center justify-center gap-2.5 transition-all duration-200 active:scale-[0.98] mb-4"
             style={{ border: "1px solid #cbd5e1", backgroundColor: "white", color: "#0f172a" }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}>
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}
+            onClick={() => { window.location.href = "/api/auth/google"; }}>
             <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
             Continue with Google
           </button>
@@ -205,6 +232,49 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+      )}
+      {/* Centered "Logged out" popup — same style as the success popup */}
+      {loggedOut && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
+          <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
+            style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: "#f0fdf4" }}>
+              <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
+            </div>
+            <p className="text-base font-semibold" style={{ color: "#0f172a" }}>Logged out</p>
+            <p className="text-xs mt-1" style={{ color: "#64748b" }}>See you again soon</p>
+          </div>
+        </div>
+      )}
+
+      {/* Centered error popup — same style as the success popup */}
+      {error && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+          style={{ backgroundColor: "rgba(15,23,42,0.35)" }}
+          onClick={() => setError(null)}>
+          <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
+            style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: "#fef2f2" }}>
+              <XCircle size={30} style={{ color: "#dc2626" }} />
+            </div>
+            <p className="text-base font-semibold" style={{ color: "#0f172a" }}>{error}</p>
+            <p className="text-xs mt-1" style={{ color: "#64748b" }}>Please try again</p>
+          </div>
+        </div>
+      )}
+
+      {/* Centered success popup — page-scoped, never shows on the dashboard */}
+      {succeeded && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
+          <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
+            style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: "#f0fdf4" }}>
+              <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
+            </div>
+            <p className="text-base font-semibold" style={{ color: "#0f172a" }}>Login successful</p>
+            <p className="text-xs mt-1" style={{ color: "#64748b" }}>Redirecting...</p>
+          </div>
+        </div>
       )}
     </div>
   );

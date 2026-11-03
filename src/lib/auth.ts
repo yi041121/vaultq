@@ -30,8 +30,9 @@ export async function authenticateRequest(request: NextRequest) {
     const payload = verifyToken(token);
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true, name: true, email: true, role: true, cardBarcode: true },
+      select: { id: true, name: true, email: true, role: true, cardBarcode: true, isActive: true },
     });
+    if (!user || !(user as any).isActive) return null;
     return user;
   } catch {
     return null;

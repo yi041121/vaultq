@@ -2,22 +2,35 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { User, Mail, Phone, GraduationCap, Save, LogOut, Shield, Barcode, Camera, Upload, X } from "lucide-react";
-import { toast } from "sonner";
+import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2 } from "lucide-react";
+import { showCenteredMessage } from "@/components/centered-message";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
+import { getPersonNameError, normalizePersonName, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
+import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import BarcodeScanner from "@/components/barcode-scanner";
 
-interface UserData { id: string; name: string; email: string; role: string; cardBarcode?: string | null; }
+interface UserData { id: string; name: string; email: string; role: string; studentId?: string | null; cardBarcode?: string | null; }
+
+function cleanStudentId(value?: string | null) {
+  const sid = (value || "").trim();
+  return sid && !/^(null|undefined)$/i.test(sid) ? sid : "";
+}
 
 export default function StudentProfile() {
   const router = useRouter();
   const [user, setUser] = useState<UserData | null>(null);
   const [mounted, setMounted] = useState(false);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("012-3456789");
+  const [studentId, setStudentId] = useState("");
   const [barcode, setBarcode] = useState("");
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
+  const [studentIdError, setStudentIdError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [readingImage, setReadingImage] = useState(false);
+  const [barcodeFromImage, setBarcodeFromImage] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
@@ -27,134 +40,154 @@ export default function StudentProfile() {
     const stored = localStorage.getItem("user");
     const token = localStorage.getItem("token");
     if (!stored || !token) {
-      const fallback = { id: "1", name: "Student User", email: "student@example.com", role: "STUDENT", cardBarcode: null };
+      const fallback = { id: "1", name: "Student User", email: "student@example.com", role: "STUDENT", studentId: null, cardBarcode: null };
       setUser(fallback);
       setName(fallback.name);
+      setStudentId(cleanStudentId(fallback.studentId));
       setBarcode(fallback.cardBarcode || "");
       return;
     }
     const parsed = JSON.parse(stored);
     setUser(parsed);
     setName(parsed.name);
+    setStudentId(cleanStudentId(parsed.studentId));
     setBarcode(parsed.cardBarcode || "");
+  }, []);
+
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // localStorage can be stale (e.g. the barcode was changed directly in the DB),
+  // so refresh the profile from the server once on mount.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/user/profile", { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.data || cancelled) return;
+        const fresh: UserData = data.data;
+        setUser(fresh);
+        setName(fresh.name);
+        setStudentId(cleanStudentId(fresh.studentId));
+        setBarcode(fresh.cardBarcode || "");
+        setBarcodeError(null);
+        setBarcodeFromImage(false);
+        localStorage.setItem("user", JSON.stringify(fresh));
+      } catch {
+        // API unreachable — keep the cached values
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast.success("Logged out");
-    router.push("/login?skip=1");
+    router.push("/login?skip=1&loggedOut=1");
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image of the barcode");
+      showCenteredMessage("error", "Please upload an image of the barcode");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5MB");
+      showCenteredMessage("error", "Image must be under 5MB");
       return;
     }
-    const extract = (raw: string) => {
-      const digits = raw.replace(/\D/g, "");
-      const m = digits.match(/[0-9]{10}/);
-      return m ? m[0] : null;
-    };
-    const img = new Image();
-    img.onload = async () => {
-      try {
-        // @ts-ignore
-        if ("BarcodeDetector" in window) {
-          // @ts-ignore
-          const detector = new window.BarcodeDetector({ formats: ["code_128", "ean_13", "code_39"] });
-          const barcodes = await detector.detect(img);
-          for (const b of barcodes) {
-            const code = extract(b.rawValue || "");
-            if (code) {
-              setBarcode(code);
-              setBarcodeError(null);
-              toast.success(`Scanned: ${code}`);
-              if (fileRef.current) fileRef.current.value = "";
-              URL.revokeObjectURL(img.src);
-              return;
-            }
-          }
-        }
-        URL.revokeObjectURL(img.src);
-      } catch {}
-      // Fallback html5-qrcode
-      try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-        const tempId = "vaultq-profile-file-reader-temp";
-        let tempEl = document.getElementById(tempId);
-        if (!tempEl) {
-          tempEl = document.createElement("div");
-          tempEl.id = tempId;
-          tempEl.style.display = "none";
-          document.body.appendChild(tempEl);
-        }
-        const html5QrCode = new Html5Qrcode(tempId);
-        const decoded = await html5QrCode.scanFile(file, true);
-        const code = extract(decoded);
-        if (code) {
-          setBarcode(code);
-          setBarcodeError(null);
-          toast.success(`Scanned: ${code}`);
-          if (fileRef.current) fileRef.current.value = "";
-          try { html5QrCode.clear(); } catch {}
-          return;
-        }
-        toast.error("Could not detect 10-digit barcode — please type manually");
-      } catch {
-        toast.error("Could not detect 10-digit barcode — please type manually");
+    decodeBarcodeFromImage(file).then((code) => {
+      setReadingImage(false);
+      if (code) {
+        setBarcode(code);
+        setBarcodeError(null);
+        setBarcodeFromImage(true);
+        if (fileRef.current) fileRef.current.value = "";
+      } else {
+        showCenteredMessage("error", "Could not detect barcode in the image — please try a clearer photo");
+        if (fileRef.current) fileRef.current.value = "";
       }
-      if (fileRef.current) fileRef.current.value = "";
-    };
-    img.onerror = () => {
-      toast.error("Could not read image");
-      if (fileRef.current) fileRef.current.value = "";
-    };
-    img.src = URL.createObjectURL(file);
+    });
+    setReadingImage(true);
+    setBarcodeError(null);
   }
 
-  function handleSave() {
-    if (!name.trim()) {
-      toast.error("Name cannot be empty");
+  async function handleSave() {
+    const nameError = getPersonNameError(name);
+    if (nameError) {
+      setNameError(nameError);
       return;
     }
-    if (barcode && !/^[0-9]{10}$/.test(barcode)) {
+    setNameError(null);
+    if (!barcode) {
+      setBarcodeError("Card barcode is required");
+      showCenteredMessage("error", "Please enter or scan your 10-digit card barcode");
+      return;
+    }
+    if (!/^[0-9]{10}$/.test(barcode)) {
       setBarcodeError("Exactly 10 digits required");
-      toast.error("Card barcode must be exactly 10 digits");
+      showCenteredMessage("error", "Card barcode must be exactly 10 digits");
       return;
     }
+    const sid = normalizeStudentId(studentId);
+    if (sid && !isValidStudentId(sid)) {
+      setStudentIdError(STUDENT_ID_ERROR_MESSAGE);
+      return;
+    }
+    setStudentIdError(null);
     setSaving(true);
-    setTimeout(async () => {
-      if (user) {
-        const updated = { ...user, name: name.trim(), cardBarcode: barcode || null };
-        localStorage.setItem("user", JSON.stringify(updated));
-        setUser(updated);
-        // Try API
-        try {
-          const token = localStorage.getItem("token");
-          if (token) {
-            await fetch("/api/user/barcode", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ cardBarcode: barcode || null }),
-            });
-          }
-        } catch {}
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("Session expired — please sign in again");
+      const res = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: name.trim().replace(/\s+/g, " "),
+          studentId: sid || null,
+          cardBarcode: barcode,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        const msg = data?.error || "Failed to update profile";
+        if (/student id/i.test(msg)) {
+          setStudentIdError(msg);
+        } else if (/name/i.test(msg)) {
+          setNameError(msg);
+        } else if (/barcode/i.test(msg)) {
+          setBarcodeError(msg);
+        } else {
+          showCenteredMessage("error", msg);
+        }
+        return;
       }
+      const updated: UserData = data.data;
+      setUser(updated);
+      setName(updated.name);
+      setStudentId(cleanStudentId(updated.studentId));
+      setBarcode(updated.cardBarcode || "");
+      localStorage.setItem("user", JSON.stringify(updated));
+      // Saved — replace the success message with the "change your barcode" hint.
+      setBarcodeFromImage(false);
+      showCenteredMessage("success", "Profile updated");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to update profile");
+    } finally {
       setSaving(false);
-      toast.success("Profile updated");
-    }, 600);
+    }
   }
 
   if (!user || !mounted) return null;
 
   const needsBarcode = !user.cardBarcode;
+  const isDirty =
+    normalizePersonName(name) !== normalizePersonName(user.name) ||
+    normalizeStudentId(studentId) !== normalizeStudentId(cleanStudentId(user.studentId)) ||
+    barcode !== (user.cardBarcode || "");
 
   return (
     <StudentShell active="Profile" userName={user.name} userRole={user.role} pageTitle="Profile" logout={handleLogout}>
@@ -178,7 +211,7 @@ export default function StudentProfile() {
               <button type="button"
                 className="hidden sm:flex items-center gap-1.5 h-9 px-4 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer shrink-0"
                 style={{ borderColor: c.border, color: c.textMuted }}
-                onClick={handleLogout}>
+                onClick={() => setConfirmLogout(true)}>
                 <LogOut size={14} /> Sign out
               </button>
             </VCard>
@@ -203,34 +236,24 @@ export default function StudentProfile() {
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium block" style={{ color: c.text }}>
-                  Barcode <span style={{ color: c.danger }}>*</span> <span className="text-xs font-normal" style={{ color: c.textMuted }}></span>
+                  Barcode {!barcode && <span style={{ color: c.danger }}>*</span>}
                 </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
-                      type="text" inputMode="numeric" placeholder="2000132602" maxLength={10}
-                      className="pl-10 pr-10"
-                      style={{ borderColor: barcodeError ? c.danger : c.border, backgroundColor: "#fff", color: c.text }}
+                      type="text" placeholder="Scan or upload your card" maxLength={10}
+                      className="pl-10 cursor-default"
+                      readOnly
+                      aria-readonly="true"
+                      style={{ borderColor: barcodeError ? c.danger : barcodeFromImage ? "#16a34a" : c.border, backgroundColor: barcodeFromImage ? "#f0fdf4" : c.fill, color: c.text }}
                       value={barcode}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/\D/g, "").slice(0, 10);
-                        setBarcode(v);
-                        if (v && !/^[0-9]{10}$/.test(v)) setBarcodeError("Exactly 10 digits required");
-                        else setBarcodeError(null);
-                      }}
                     />
-                    {barcode && (
-                      <button type="button" onClick={() => { setBarcode(""); setBarcodeError(null); }}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}>
-                        <X size={14} />
-                      </button>
-                    )}
                   </div>
-                  <label className="w-11 h-11 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9]"
-                    style={{ borderColor: c.border, backgroundColor: "#fff", color: c.textMuted }} title="Upload barcode image">
-                    <Upload size={16} />
-                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+                  <label className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
+                    style={{ borderColor: readingImage ? c.primary : c.border, backgroundColor: "#fff", color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
+                    {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={readingImage} />
                   </label>
                   <button type="button" onClick={() => setShowCamera(true)}
                     className="w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
@@ -238,14 +261,18 @@ export default function StudentProfile() {
                     <Camera size={16} />
                   </button>
                 </div>
-                <p className="text-[11px]" style={{ color: barcodeError ? c.danger : c.textLight }}>
-                  {barcodeError || "scan card or type 10-digit numbers below barcode"}
+                <p className="text-[11px] flex items-center gap-1.5" style={{ color: readingImage ? c.primary : barcodeError ? c.danger : barcodeFromImage ? "#16a34a" : c.textLight }}>
+                  {readingImage ? (
+                    <><Loader2 size={12} className="animate-spin" /> Reading barcode from image…</>
+                  ) : barcodeFromImage ? (
+                    <><CheckCircle2 size={12} /> Barcode successfully detected</>
+                  ) : (
+                    barcodeError ||
+                    (barcode
+                      ? "To change your barcode, upload a new card image or scan again."
+                      : "Upload a card image or scan your card to fill this in.")
+                  )}
                 </p>
-                {barcode && !barcodeError && (
-                  <p className="text-xs p-2.5 rounded-lg" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                    Preview: <span style={{ color: c.text, fontWeight: 600, letterSpacing: "0.05em" }}>{barcode}</span> {needsBarcode ? "— will be saved on Save Changes" : "— saved"}
-                  </p>
-                )}
               </div>
             </VCard>
 
@@ -260,8 +287,15 @@ export default function StudentProfile() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Full name</label>
-                  <VInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" />
+                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Name</label>
+                    <VInput
+                      value={name}
+                      onChange={(e) => { setName(sanitizePersonNameInput(e.target.value)); setNameError(null); }}
+                      placeholder="Your name"
+                      maxLength={NAME_MAX_LENGTH}
+                      style={nameError ? { borderColor: c.danger } : undefined}
+                    />
+                    {nameError && <p className="text-[11px] mt-1" style={{ color: c.danger }}>{nameError}</p>}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -273,34 +307,33 @@ export default function StudentProfile() {
                     <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Email cannot be changed</p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Phone</label>
-                    <div className="relative">
-                      <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: c.textLight }} />
-                      <VInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="012-3456789" className="pl-10" />
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID</label>
+                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                      Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional)</span>
+                    </label>
                     <div className="relative">
                       <GraduationCap size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: c.textLight }} />
-                      <VInput value={user.id} disabled className="pl-10 opacity-60" />
+                      <VInput
+                        value={studentId}
+                        onChange={(e) => {
+                          setStudentId(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, STUDENT_ID_MAX_LENGTH));
+                          setStudentIdError(null);
+                        }}
+                        placeholder="25SMR10180"
+                        maxLength={STUDENT_ID_MAX_LENGTH}
+                        className="pl-10"
+                        style={studentIdError ? { borderColor: c.danger } : undefined}
+                      />
                     </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Role</label>
-                    <div className="relative">
-                      <Shield size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: c.textLight }} />
-                      <VInput value={user.role} disabled className="pl-10 opacity-60" />
-                    </div>
+                    {studentIdError && (
+                      <p className="text-[11px] mt-1" style={{ color: c.danger }}>{studentIdError}</p>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t" style={{ borderColor: c.borderLight }}>
-                <VButton variant="secondary" size="lg" onClick={() => { setName(user.name); setBarcode(user.cardBarcode || ""); setBarcodeError(null); }}>Cancel</VButton>
-                <VButton size="lg" onClick={handleSave} disabled={saving || !name.trim() || !!barcodeError}>
+                <VButton variant="secondary" size="lg" onClick={() => { setName(user.name); setStudentId(cleanStudentId(user.studentId)); setStudentIdError(null); setNameError(null); setBarcode(user.cardBarcode || ""); setBarcodeError(null); setBarcodeFromImage(false); }}>Cancel</VButton>
+                <VButton size="lg" onClick={handleSave} disabled={saving || readingImage || !isDirty || !name.trim() || barcode.length !== 10 || !!barcodeError || !!studentIdError || !!nameError}>
                   <Save size={15} /> {saving ? "Saving..." : "Save Changes"}
                 </VButton>
               </div>
@@ -308,8 +341,15 @@ export default function StudentProfile() {
           </div>
         </div>
       </main>
-      <BarcodeScanner open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { setBarcode(code); setBarcodeError(null); toast.success(`Scanned: ${code}`); }} />
-      <div id="vaultq-profile-file-reader-temp" className="hidden" />
+      <BarcodeScanner open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { setBarcode(code); setBarcodeError(null); setBarcodeFromImage(true); }} />
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        subtitle="You will need to sign in again to access your account."
+        confirmLabel="Log out"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => { setConfirmLogout(false); handleLogout(); }}
+      />
     </StudentShell>
   );
 }

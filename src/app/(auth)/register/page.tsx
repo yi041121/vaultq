@@ -3,19 +3,36 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, Barcode, Camera, Upload, X } from "lucide-react";
+import { Eye, EyeOff, Barcode, Camera, Upload, X, CheckCircle2, Loader2 } from "lucide-react";
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
 import LockerIllustration from "@/components/locker-illustration";
 import BarcodeScanner from "@/components/barcode-scanner";
+import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
+import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [succeeded, setSucceeded] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
+  const [googlePrefill, setGooglePrefill] = useState(false);
   const [barcode, setBarcode] = useState("");
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
+  const [barcodeFromImage, setBarcodeFromImage] = useState(false);
+  const [readingImage, setReadingImage] = useState(false);
+  const [barcodeExists, setBarcodeExists] = useState(false);
+  const [barcodeAvailable, setBarcodeAvailable] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const availableTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkSeq = useRef(0);
   const [showCamera, setShowCamera] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<"intro" | "complete">("intro");
@@ -23,6 +40,30 @@ export default function RegisterPage() {
   const skipAnim = useRef(false);
 
   useEffect(() => {
+    // Prefill from Google signup (?name=&email= handed over by the OAuth callback)
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const gName = sp.get("name");
+      const gEmail = sp.get("email");
+      const gBarcode = sp.get("barcode");
+      if (gName || gEmail) {
+        setForm((f) => ({ ...f, name: gName || f.name, email: gEmail || f.email }));
+        setGooglePrefill(!!gEmail);
+      }
+      // Barcode detected before the Google round-trip: restore it from the
+      // callback URL first, then the localStorage fallback.
+      let restore = /^[0-9]{10}$/.test(gBarcode || "") ? gBarcode! : "";
+      if (!restore) {
+        const saved = localStorage.getItem("vq_register_barcode") || "";
+        if (/^[0-9]{10}$/.test(saved)) restore = saved;
+      }
+      localStorage.removeItem("vq_register_barcode");
+      if (restore) {
+        setBarcode(restore);
+        flashBarcodeSuccess();
+        scheduleBarcodeCheck(restore);
+      }
+    }
     if (typeof window !== "undefined" && window.location.search.includes("skip=1")) {
       skipAnim.current = true;
       setPhase("complete");
@@ -49,89 +90,133 @@ export default function RegisterPage() {
     };
   }, [phase]);
 
+  // Live existence check: once 10 digits are entered, swap the helper text
+  // to "already registered" inline instead of a popup on submit.
+  function scheduleBarcodeCheck(code: string) {
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+    const seq = ++checkSeq.current;
+    checkTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/check-barcode?code=${code}`);
+        const data = await res.json().catch(() => null);
+        if (seq !== checkSeq.current) return; // stale response
+        if (data && data.data) {
+          const exists = !!data.data.exists;
+          setBarcodeExists(exists);
+          setBarcodeAvailable(!exists);
+          // Success message shows once, then disappears
+          if (!exists) {
+            if (availableTimer.current) clearTimeout(availableTimer.current);
+            availableTimer.current = setTimeout(() => {
+              if (seq === checkSeq.current) setBarcodeAvailable(false);
+            }, 1200);
+          }
+        }
+      } catch {
+        // fail-open: leave helper text as-is on network error
+      }
+    }, 250);
+  }
+
+  function updateBarcode(raw: string) {
+    const v = raw.replace(/\D/g, "");
+    setBarcode(v);
+    setBarcodeExists(false);
+    setBarcodeAvailable(false);
+    if (availableTimer.current) clearTimeout(availableTimer.current);
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+    // Keep a detected barcode across the Google OAuth round-trip
+    if (typeof window !== "undefined") {
+      if (/^[0-9]{10}$/.test(v)) localStorage.setItem("vq_register_barcode", v);
+      else localStorage.removeItem("vq_register_barcode");
+    }
+    if (v && !/^[0-9]{10}$/.test(v)) {
+      setBarcodeError("Exactly 10 digits required");
+    } else {
+      setBarcodeError(null);
+      if (/^[0-9]{10}$/.test(v)) scheduleBarcodeCheck(v);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (checkTimer.current) clearTimeout(checkTimer.current);
+      if (availableTimer.current) clearTimeout(availableTimer.current);
+      if (successTimer.current) clearTimeout(successTimer.current);
+    };
+  }, []);
+
+  // Show the "Barcode successfully detected" confirmation briefly, then hide it.
+  function flashBarcodeSuccess() {
+    setBarcodeFromImage(true);
+    if (successTimer.current) clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setBarcodeFromImage(false), 1000);
+  }
+
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image of the barcode");
+      showCenteredMessage("error", "Please upload an image of the barcode");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5MB");
+      showCenteredMessage("error", "Image must be under 5MB");
       return;
     }
 
-    const extract = (raw: string) => {
-      const digits = raw.replace(/\D/g, "");
-      const m = digits.match(/[0-9]{10}/);
-      return m ? m[0] : null;
-    };
-
-    // Try native BarcodeDetector on image
-    try {
-      // @ts-ignore
-      if ("BarcodeDetector" in window) {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(); });
-        // @ts-ignore
-        const detector = new window.BarcodeDetector({ formats: ["code_128", "ean_13", "code_39"] });
-        const barcodes = await detector.detect(img);
-        for (const b of barcodes) {
-          const code = extract(b.rawValue || "");
-          if (code) {
-            setBarcode(code);
-            setBarcodeError(null);
-            toast.success(`Scanned: ${code}`);
-            if (fileRef.current) fileRef.current.value = "";
-            URL.revokeObjectURL(img.src);
-            return;
-          }
-        }
-        URL.revokeObjectURL(img.src);
-      }
-    } catch {}
-
-    // Fallback: html5-qrcode scanFile
-    try {
-      const { Html5Qrcode } = await import("html5-qrcode");
-      const html5QrCode = new Html5Qrcode("vaultq-file-reader-temp");
-      // Need a temporary element in DOM
-      let tempEl = document.getElementById("vaultq-file-reader-temp");
-      if (!tempEl) {
-        tempEl = document.createElement("div");
-        tempEl.id = "vaultq-file-reader-temp";
-        tempEl.style.display = "none";
-        document.body.appendChild(tempEl);
-      }
-      const decoded = await html5QrCode.scanFile(file, true);
-      const code = extract(decoded);
-      if (code) {
-        setBarcode(code);
-        setBarcodeError(null);
-        toast.success(`Scanned: ${code}`);
-        if (fileRef.current) fileRef.current.value = "";
-        try { html5QrCode.clear(); } catch {}
-        return;
-      }
-      toast.error("Could not detect 10-digit barcode — please type manually");
-    } catch {
-      toast.error("Could not detect 10-digit barcode — please type manually");
+    setReadingImage(true);
+    setBarcodeError(null);
+    const code = await decodeBarcodeFromImage(file);
+    setReadingImage(false);
+    if (code) {
+      updateBarcode(code);
+      flashBarcodeSuccess();
+    } else {
+      showCenteredMessage("error", "Could not detect barcode in the image — please type the 10 digits manually");
     }
     if (fileRef.current) fileRef.current.value = "";
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const nameError = getPersonNameError(form.name);
+    if (nameError) {
+      setNameError(nameError);
+      return;
+    }
     if (form.password !== form.confirmPassword) {
-      toast.error("Passwords do not match");
+      setPasswordError("Passwords do not match");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setEmailError("Invalid email address");
+      return;
+    }
+    if (!form.email.trim().toLowerCase().endsWith("@student.tarc.edu.my")) {
+      setEmailError("Must use your @student.tarc.edu.my email");
       return;
     }
     if (barcode && !/^[0-9]{10}$/.test(barcode)) {
       setBarcodeError("Exactly 10 digits required");
-      toast.error("Card barcode must be exactly 10 digits");
       return;
     }
+    if (barcodeExists) {
+      return; // message already shown inline under the field
+    }
+    // Duplicate email: show the inline error and stop — never open the confirm step
+    try {
+      const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(form.email.trim().toLowerCase())}`);
+      const d = await res.json().catch(() => null);
+      if (d?.data?.exists) {
+        setEmailError("Email already registered");
+        return;
+      }
+    } catch {}
+    setShowConfirm(true);
+  }
+
+  async function doRegister() {
     setLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -145,15 +230,39 @@ export default function RegisterPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) { toast.error(data.error || "Registration failed"); return; }
+      if (!res.ok) {
+        // Show field problems directly under their field (like barcode)
+        setShowConfirm(false);
+        if (data.error && /barcode/i.test(data.error)) {
+          setBarcodeError(data.error);
+          setLoading(false);
+          return;
+        }
+        if (data.error && /full name|letters only/i.test(data.error)) {
+          setNameError(data.error);
+          setLoading(false);
+          return;
+        }
+        if (data.error && /email/i.test(data.error)) {
+          setEmailError(data.error);
+          setLoading(false);
+          return;
+        }
+        showCenteredMessage("error", data.error || "Registration failed");
+        setLoading(false);
+        return;
+      }
       localStorage.setItem("token", data.data.token);
       localStorage.setItem("user", JSON.stringify(data.data.user));
-      toast.success("Account created successfully");
       const role = data.data.user.role;
-      if (role === "ADMIN") router.push("/dashboard/admin");
-      else router.push("/dashboard/student");
-    } catch { toast.error("Something went wrong"); }
-    finally { setLoading(false); }
+      const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
+      // Show centered success popup on this page, then redirect quickly —
+      // rendered here so it never appears again on the dashboard.
+      // Keep loading=true so the button stays in "Creating..." state.
+      setSucceeded(true);
+      localStorage.removeItem("vq_register_barcode");
+      setTimeout(() => router.push(target), 500);
+    } catch { showCenteredMessage("error", "Something went wrong"); setLoading(false); }
   }
 
   return (
@@ -204,7 +313,11 @@ export default function RegisterPage() {
             className="w-full h-11 rounded-xl text-sm font-medium flex items-center justify-center gap-2.5 transition-all duration-200 active:scale-[0.98] mb-4"
             style={{ border: "1px solid #cbd5e1", backgroundColor: "white", color: "#0f172a" }}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}>
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}
+            onClick={() => {
+              const bc = /^[0-9]{10}$/.test(barcode) ? `&bc=${barcode}` : "";
+              window.location.href = `/api/auth/google?intent=signup${bc}`;
+            }}>
             <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
             Continue with Google
           </button>
@@ -217,22 +330,47 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label htmlFor="name" className="text-sm font-medium block" style={{ color: c.text }}>Full name</label>
+              <label htmlFor="name" className="text-sm font-medium block" style={{ color: c.text }}>Name</label>
               <VInput
-                id="name" type="text" placeholder="John Doe" required autoFocus
-                style={{ borderColor: "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                id="name" type="text" placeholder="John Doe" required autoFocus maxLength={NAME_MAX_LENGTH}
+                style={{ borderColor: nameError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onChange={(e) => { setForm({ ...form, name: sanitizePersonNameInput(e.target.value) }); setNameError(null); }}
               />
+              {nameError && (
+                <p className="text-[11px]" style={{ color: c.danger }}>{nameError}</p>
+              )}
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="email" className="text-sm font-medium block" style={{ color: c.text }}>Email</label>
-              <VInput
-                id="email" type="email" placeholder="name@example.com" required
-                style={{ borderColor: "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
+              <label htmlFor="email" className="text-sm font-medium block" style={{ color: c.text }}>
+                Student email
+              </label>
+              <div className="relative">
+                <VInput
+                  id="email" type="email" placeholder="name@student.tarc.edu.my" required
+                  readOnly={googlePrefill}
+                  className={googlePrefill ? "pr-10" : ""}
+                  style={{ borderColor: emailError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none", opacity: googlePrefill ? 0.75 : 1 }}
+                  value={form.email}
+                  onChange={(e) => { setForm({ ...form, email: e.target.value }); setEmailError(null); }}
+                />
+                {googlePrefill && (
+                  <button type="button"
+                    onClick={() => {
+                      setGooglePrefill(false);
+                      setForm((f) => ({ ...f, email: "" }));
+                      setEmailError(null);
+                    }}
+                    title="Clear Google email — type your own or choose another Google account"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer"
+                    style={{ color: c.textMuted }}>
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              {emailError && (
+                <p className="text-[11px]" style={{ color: c.danger }}>{emailError}</p>
+              )}
             </div>
 
             {/* Card Barcode — 10-digit + file + camera */}
@@ -244,28 +382,24 @@ export default function RegisterPage() {
                 <div className="relative flex-1">
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                   <VInput
-                    id="cardBarcode" type="text" inputMode="numeric" placeholder="2000132600" maxLength={10}
+                    id="cardBarcode" type="text" placeholder="2000132602"
                     className="pl-10 pr-10"
-                    style={{ borderColor: barcodeError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                    readOnly
+                    style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none", cursor: "default" }}
                     value={barcode}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, "").slice(0, 10);
-                      setBarcode(v);
-                      if (v && !/^[0-9]{10}$/.test(v)) setBarcodeError("Exactly 10 digits required");
-                      else setBarcodeError(null);
-                    }}
+                    onChange={(e) => updateBarcode(e.target.value)}
                   />
                   {barcode && (
-                    <button type="button" onClick={() => { setBarcode(""); setBarcodeError(null); }}
+                    <button type="button" onClick={() => { setBarcode(""); setBarcodeError(null); setBarcodeFromImage(false); setBarcodeExists(false); setBarcodeAvailable(false); if (typeof window !== "undefined") localStorage.removeItem("vq_register_barcode"); if (checkTimer.current) clearTimeout(checkTimer.current); if (availableTimer.current) clearTimeout(availableTimer.current); }}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}>
                       <X size={14} />
                     </button>
                   )}
                 </div>
-                <label className="w-11 h-11 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9]"
-                  style={{ borderColor: "#94a3b8", backgroundColor: "white", color: c.textMuted }} title="Upload barcode image">
-                  <Upload size={16} />
-                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+                <label className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
+                  style={{ borderColor: readingImage ? c.primary : "#94a3b8", backgroundColor: "white", color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
+                  {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={readingImage} />
                 </label>
                 <button type="button" onClick={() => setShowCamera(true)}
                   className="w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
@@ -273,9 +407,27 @@ export default function RegisterPage() {
                   <Camera size={16} />
                 </button>
               </div>
-              <p className="text-[11px]" style={{ color: barcodeError ? c.danger : c.textLight }}>
-                {barcodeError || "10 digits below barcode"}
-              </p>
+              {readingImage ? (
+                <p className="text-[11px] flex items-center gap-1.5" style={{ color: c.primary }}>
+                  <Loader2 size={12} className="animate-spin" /> Reading barcode from image…
+                </p>
+              ) : (barcodeError || barcodeExists || barcodeFromImage) ? (
+                <p className="text-[11px] flex items-center gap-1.5" style={{
+                  color: barcodeExists || barcodeError ? c.danger : "#16a34a",
+                }}>
+                  {barcodeExists
+                    ? "This barcode is already registered"
+                    : barcodeError
+                    ? barcodeError
+                    : (
+                      <><CheckCircle2 size={12} /> Barcode successfully detected</>
+                    )}
+                </p>
+              ) : (
+                <p className="text-[11px]" style={{ color: c.textLight }}>
+                  Scan with the camera or upload a card image.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -286,7 +438,7 @@ export default function RegisterPage() {
                   className="pr-12"
                   style={{ borderColor: "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                   value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, password: e.target.value }); setPasswordError(null); }}
                 />
                 <button type="button"
                   className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors duration-200 cursor-pointer"
@@ -300,12 +452,26 @@ export default function RegisterPage() {
             </div>
             <div className="space-y-1.5">
               <label htmlFor="confirmPassword" className="text-sm font-medium block" style={{ color: c.text }}>Confirm password</label>
-              <VInput
-                id="confirmPassword" type={showPassword ? "text" : "password"} placeholder="Repeat your password" required
-                style={{ borderColor: "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
-                value={form.confirmPassword}
-                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-              />
+              <div className="relative">
+                <VInput
+                  id="confirmPassword" type={showConfirmPassword ? "text" : "password"} placeholder="Repeat your password" required
+                  className="pr-12"
+                  style={{ borderColor: passwordError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                  value={form.confirmPassword}
+                  onChange={(e) => { setForm({ ...form, confirmPassword: e.target.value }); setPasswordError(null); }}
+                />
+                <button type="button"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 transition-colors duration-200 cursor-pointer"
+                  style={{ color: c.textMuted }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = "#475569"}
+                  onMouseLeave={(e) => e.currentTarget.style.color = c.textMuted}
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {passwordError && (
+                <p className="text-[11px]" style={{ color: c.danger }}>{passwordError}</p>
+              )}
             </div>
 
             <VButton type="submit" size="lg"
@@ -346,8 +512,51 @@ export default function RegisterPage() {
       </div>
       )}
 
-      <BarcodeScanner open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { setBarcode(code); setBarcodeError(null); toast.success(`Scanned: ${code}`); }} />
+      <BarcodeScanner open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { updateBarcode(code); flashBarcodeSuccess(); }} />
       <div id="vaultq-file-reader-temp" className="hidden" />
+
+      {/* Confirm details before creating account */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/40" onClick={() => !loading && setShowConfirm(false)} />
+          <div className="relative w-full max-w-[380px] rounded-[20px] p-6 bg-white"
+            style={{ boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <h3 className="text-base font-semibold text-center mb-1" style={{ color: c.text }}>Confirm your details</h3>
+            <p className="text-xs text-center mb-4" style={{ color: c.textMuted }}>Please make sure everything is correct.</p>
+            <div className="rounded-xl p-4 mb-5 space-y-2.5" style={{ backgroundColor: c.borderLight }}>
+              <div>
+                <p className="text-[11px] font-medium" style={{ color: c.textMuted }}>Name</p>
+                <p className="text-sm font-semibold" style={{ color: c.text }}>{form.name.trim()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium" style={{ color: c.textMuted }}>Student email</p>
+                <p className="text-sm font-semibold break-all" style={{ color: c.text }}>{form.email.trim()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium" style={{ color: c.textMuted }}>Card barcode</p>
+                <p className="text-sm font-semibold" style={{ color: c.text }}>{barcode || "Not provided"}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <VButton variant="secondary" className="flex-1" size="lg" onClick={() => setShowConfirm(false)} disabled={loading}>Back</VButton>
+              <VButton className="flex-1" size="lg" onClick={doRegister} disabled={loading}>{loading ? "Creating..." : "Confirm"}</VButton>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Centered success popup — page-scoped, never shows on the dashboard */}
+      {succeeded && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
+          <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
+            style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: "#f0fdf4" }}>
+              <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
+            </div>
+            <p className="text-base font-semibold" style={{ color: "#0f172a" }}>Account created successfully</p>
+            <p className="text-xs mt-1" style={{ color: "#64748b" }}>Redirecting...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

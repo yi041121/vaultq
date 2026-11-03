@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   Package, Grid3X3, Lock, FileText, Users, Plus, Search, MapPin, Clock,
   Briefcase, CreditCard, Key, BookText, CupSoda, Monitor, ChevronDown,
-  ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload,
+  ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch,
 } from "lucide-react";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
@@ -18,6 +18,7 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
+  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -54,17 +55,6 @@ type Item = {
   locker?: string;
 };
 
-const initialItems: Item[] = [
-  { id: "ITM-001", name: "MacBook Pro 14\"", category: "Electronics", location: "Library 3rd Floor", date: "2026-07-24", status: "FOUND", locker: "A12" },
-  { id: "ITM-002", name: "Brown Leather Wallet", category: "Bags", location: "Student Lounge", date: "2026-07-23", status: "FOUND", locker: "A13" },
-  { id: "ITM-003", name: "AirPods Pro", category: "Electronics", location: "Sports Complex", date: "2026-07-22", status: "CLAIMED", locker: "B07" },
-  { id: "ITM-004", name: "Student ID Card", category: "Student Cards", location: "Cafeteria", date: "2026-07-21", status: "FOUND" },
-  { id: "ITM-005", name: "Casio G-Shock Watch", category: "Electronics", location: "Main Hall", date: "2026-07-20", status: "RETRIEVED" },
-  { id: "ITM-006", name: "Blue Water Bottle", category: "Water Bottles", location: "Gymnasium", date: "2026-07-19", status: "FOUND", locker: "B02" },
-  { id: "ITM-007", name: "House Keys (4 pcs)", category: "Keys", location: "Bus Stop", date: "2026-07-18", status: "EXPIRED" },
-  { id: "ITM-008", name: "Physics Notes Folder", category: "Documents", location: "Lecture Hall B", date: "2026-07-17", status: "FOUND" },
-];
-
 function statusColor(s: string) {
   switch (s) {
     case "FOUND": return "#7FB8B5";
@@ -79,7 +69,7 @@ export default function AdminItems() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [items, setItems] = useState<Item[]>(initialItems);
+  const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -106,23 +96,75 @@ export default function AdminItems() {
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const liveStreamRef = useRef<MediaStream | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lockerMap, setLockerMap] = useState<Record<string, string>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function authHeaders(): Record<string, string> {
+    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  }
+
+  function mapApiItem(raw: any): Item {
+    return {
+      id: raw.id,
+      name: raw.itemName,
+      category: raw.category || "Others",
+      location: raw.foundLocation || "",
+      date: (raw.foundDate || raw.createdAt || "").slice(0, 10),
+      status: raw.status,
+      locker: raw.locker?.lockerNumber,
+    };
+  }
+
+  async function fetchItems() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/items", { headers: authHeaders(), cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to load items");
+      setItems((data.data || []).map(mapApiItem));
+    } catch (e: any) {
+      setItems([]);
+      setLoadError(e?.message || "Failed to load items");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchLockers() {
+    try {
+      const res = await fetch("/api/lockers", { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      const map: Record<string, string> = {};
+      for (const l of data.data || []) map[String(l.lockerNumber).toUpperCase()] = l.id;
+      setLockerMap(map);
+    } catch {
+      // Locker lookup optional — save will warn if locker unknown
+    }
+  }
 
   useEffect(() => {
     setMounted(true);
     const s = localStorage.getItem("user");
     setUser(s ? JSON.parse(s) : { name: "Admin User", role: "ADMIN" });
+    fetchItems();
+    fetchLockers();
     if (typeof window !== "undefined") {
       const add = new URLSearchParams(window.location.search).get("add");
       if (add === "1") {
         setEditing(null);
-        setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc("");
+        setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null);
         setShowModal(true);
         window.history.replaceState(null, "", window.location.pathname);
       }
     }
   }, []);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); toast.success("Logged out"); router.push("/login?skip=1"); }
+  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
   if (!user || !mounted) return null;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -155,11 +197,11 @@ export default function AdminItems() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast.error("Please choose an image file");
+      showCenteredMessage("error", "Please choose an image file");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5MB");
+      showCenteredMessage("error", "Image must be under 5MB");
       return;
     }
     setFormPhoto(file);
@@ -185,7 +227,7 @@ export default function AdminItems() {
         }
       }, 50);
     } catch {
-      toast.error("Cannot open camera — use Upload or Take Photo instead");
+      showCenteredMessage("error", "Cannot open camera — use Upload or Take Photo instead");
       setShowCamera(false);
     }
   }
@@ -199,7 +241,7 @@ export default function AdminItems() {
   function captureLivePhoto() {
     const video = liveVideoRef.current;
     if (!video || video.readyState < 2) {
-      toast.error("Camera not ready yet");
+      showCenteredMessage("error", "Camera not ready yet");
       return;
     }
     const canvas = document.createElement("canvas");
@@ -213,32 +255,67 @@ export default function AdminItems() {
       const file = new File([blob], `item-${Date.now()}.jpg`, { type: "image/jpeg" });
       setFormPhoto(file);
       setFormPreview(URL.createObjectURL(blob));
-      toast.success("Photo captured");
+      showCenteredMessage("success", "Photo captured");
       closeLiveCamera();
     }, "image/jpeg", 0.9);
   }
-  function handleSave() {
+  async function handleSave() {
     if (!formName.trim() || !formCategory || !formLocation.trim() || !formDate) {
-      toast.error("Please fill required fields");
+      showCenteredMessage("error", "Please fill required fields");
       return;
     }
-    if (editing) {
-      setItems(items.map((it) => it.id === editing.id ? { ...it, name: formName.trim(), category: formCategory!, location: formLocation.trim(), date: formDate, locker: formLocker.trim() || undefined } : it));
-      toast.success("Item updated");
-    } else {
-      const newItem: Item = {
-        id: `ITM-${String(items.length + 1).padStart(3, "0")}`,
-        name: formName.trim(),
-        category: formCategory!,
-        location: formLocation.trim(),
-        date: formDate,
-        status: "FOUND",
-        locker: formLocker.trim() || undefined,
-      };
-      setItems([newItem, ...items]);
-      toast.success("Item added");
+    // Resolve locker number (e.g. "A12") to locker id for the API
+    let lockerId: string | null = null;
+    const lockerNum = formLocker.trim().toUpperCase();
+    if (lockerNum) {
+      lockerId = lockerMap[lockerNum] || null;
+      if (!lockerId) {
+        showCenteredMessage("error", `Locker ${formLocker.trim()} not found`);
+        return;
+      }
     }
-    setShowModal(false);
+    setSaving(true);
+    try {
+      const payload: any = {
+        itemName: formName.trim(),
+        category: formCategory,
+        description: formDesc.trim() || null,
+        foundLocation: formLocation.trim(),
+        foundDate: formDate,
+      };
+      // Send photo preview as imageUrl (data URL) when a new photo was chosen
+      if (formPreview && formPreview.startsWith("data:")) payload.imageUrl = formPreview;
+      if (!editing) {
+        if (lockerId) payload.lockerId = lockerId;
+        const res = await fetch("/api/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to add item");
+        showCenteredMessage("success", "Item added");
+      } else {
+        if (formLocker.trim()) payload.lockerId = lockerId;
+        else if (!formLocker.trim() && editing.locker) payload.lockerId = null;
+        const res = await fetch(`/api/items/${editing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to update item");
+        showCenteredMessage("success", "Item updated");
+      }
+      setShowModal(false);
+      setLoading(true);
+      await fetchItems();
+      await fetchLockers();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openDelete(it: Item) {
@@ -247,11 +324,22 @@ export default function AdminItems() {
   function closeDelete() {
     setDeleteTarget(null);
   }
-  function confirmDeleteFinal() {
+  async function confirmDeleteFinal() {
     if (!deleteTarget) return;
-    setItems(items.filter((x) => x.id !== deleteTarget.id));
-    toast.success(`Item ${deleteTarget.id} removed`);
-    closeDelete();
+    try {
+      const res = await fetch(`/api/items/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to delete item");
+      showCenteredMessage("success", `Item ${deleteTarget.id} removed`);
+      closeDelete();
+      setLoading(true);
+      await fetchItems();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Delete failed");
+    }
   }
 
   return (
@@ -325,7 +413,20 @@ export default function AdminItems() {
           </div>
 
           {/* Grid */}
-          {filtered.length === 0 ? (
+          {loading ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading items...</p>
+            </VCard>
+          ) : loadError ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <Package size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
+              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
+              <VButton variant="secondary" onClick={() => void fetchItems()}>
+                <RotateCcw size={14} /> Try again
+              </VButton>
+            </VCard>
+          ) : filtered.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No items found</p>
@@ -460,7 +561,7 @@ export default function AdminItems() {
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
                 <VButton variant="secondary" onClick={() => setShowModal(false)}>Cancel</VButton>
-                <VButton onClick={handleSave}>{editing ? "Save Changes" : "Add Item"}</VButton>
+                <VButton onClick={handleSave} disabled={saving}>{saving ? "Saving..." : editing ? "Save Changes" : "Add Item"}</VButton>
               </div>
             </div>
           </VCard>

@@ -1,48 +1,107 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BellRing, CheckCircle2, Package, QrCode, AlertCircle, FileText,
-  Scan, MapPin, Clock,
+  BellRing, CheckCircle2, Package, AlertCircle, FileText,
+  Loader2, RefreshCw, CheckCheck,
 } from "lucide-react";
-import { toast } from "sonner";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, VBadge, vcolors as c } from "@/components/ui/vault";
+import { VCard, vcolors as c } from "@/components/ui/vault";
 
 interface User { id: string; name: string; email: string; role: string; }
 
-type Notif = {
+type NotificationType = "CLAIM" | "REPORT" | "LOCKER" | "SYSTEM";
+type Filter = "All" | "Claims" | "Reports" | "Locker" | "System";
+
+interface ApiNotification {
   id: string;
   title: string;
-  desc: string;
-  time: string;
-  icon: any;
+  message: string;
+  type: NotificationType;
+  link: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+interface Notif extends ApiNotification {
+  category: Exclude<Filter, "All">;
+  icon: typeof BellRing;
   color: string;
-  read: boolean;
-  category: "All" | "Claims" | "Locker" | "System";
+}
+
+const FILTERS: Filter[] = ["All", "Claims", "Reports", "Locker", "System"];
+
+const TYPE_META: Record<NotificationType, { category: Exclude<Filter, "All">; icon: typeof BellRing; color: string }> = {
+  CLAIM: { category: "Claims", icon: CheckCircle2, color: "#7FB8B5" },
+  REPORT: { category: "Reports", icon: FileText, color: "#355C8A" },
+  LOCKER: { category: "Locker", icon: Package, color: "#29486A" },
+  SYSTEM: { category: "System", icon: BellRing, color: "#64748b" },
 };
 
-const initialNotifs: Notif[] = [
-  { id: "1", title: "Claim Approved", desc: "Your claim for MacBook Pro 14\" has been approved. Get your QR code to collect it.", time: "2h ago", icon: CheckCircle2, color: "#7FB8B5", read: false, category: "Claims" },
-  { id: "2", title: "Locker Assigned", desc: "Locker #A12 assigned for item pickup. You have 48 hours to collect.", time: "5h ago", icon: Package, color: "#355C8A", read: false, category: "Locker" },
-  { id: "3", title: "QR Code Ready", desc: "Scan your QR at the kiosk to retrieve your item.", time: "1d ago", icon: QrCode, color: "#29486A", read: false, category: "Locker" },
-  { id: "4", title: "Claim Under Review", desc: "Your claim for Brown Leather Wallet is under review.", time: "1d ago", icon: FileText, color: "#355C8A", read: true, category: "Claims" },
-  { id: "5", title: "Report Received", desc: "Your found item report for Silver Samsung phone has been received.", time: "2d ago", icon: AlertCircle, color: "#7FB8B5", read: true, category: "System" },
-  { id: "6", title: "Pickup Reminder", desc: "Reminder: Locker #B07 will expire in 12 hours. Please collect soon.", time: "2d ago", icon: Clock, color: "#dc2626", read: true, category: "Locker" },
-  { id: "7", title: "New Item Matches Your Lost Report", desc: "A found item matching \"Black Adidas backpack\" was just reported.", time: "3d ago", icon: Package, color: "#355C8A", read: true, category: "System" },
-  { id: "8", title: "Claim Rejected", desc: "Your claim for House Keys was rejected. Contact support for details.", time: "4d ago", icon: AlertCircle, color: "#dc2626", read: true, category: "Claims" },
-];
+function relativeTime(value: string) {
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) return "";
+  const diff = Date.now() - then;
+  if (diff < 45_000) return "Just now";
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
 
-const filters: Notif["category"][] = ["All", "Claims", "Locker", "System"];
+function toNotif(raw: ApiNotification): Notif {
+  const meta = TYPE_META[raw.type] || TYPE_META.SYSTEM;
+  return {
+    ...raw,
+    category: meta.category,
+    icon: meta.icon,
+    color: meta.color,
+  };
+}
 
 export default function StudentNotifications() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [notifs, setNotifs] = useState<Notif[]>(initialNotifs);
-  const [filter, setFilter] = useState<Notif["category"]>("All");
+  const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [filter, setFilter] = useState<Filter>("All");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
+
+  const load = useCallback(async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setLoading(false);
+      setError("Session expired — please sign in again");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/notifications", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load notifications");
+      const list = (data.data as ApiNotification[]).map(toNotif);
+      setNotifs(list);
+      setUnreadCount(Number(data.unreadCount ?? list.filter((n) => !n.isRead).length));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load notifications");
+      setNotifs([]);
+      setUnreadCount(0);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -50,29 +109,83 @@ export default function StudentNotifications() {
     const token = localStorage.getItem("token");
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
+      setLoading(false);
+      setError("Session expired — please sign in again");
       return;
     }
     setUser(JSON.parse(stored));
-  }, []);
+    void load();
+  }, [load]);
 
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast.success("Logged out");
-    router.push("/login?skip=1");
+    router.push("/login?skip=1&loggedOut=1");
   }
+
+  async function markAsRead(id: string) {
+    const target = notifs.find((n) => n.id === id);
+    if (!target || target.isRead) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+    window.dispatchEvent(new Event("vaultq:notifications"));
+
+    try {
+      const res = await fetch(`/api/notifications/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: false } : n)));
+        setUnreadCount((prev) => prev + 1);
+        window.dispatchEvent(new Event("vaultq:notifications"));
+      }
+    } catch {
+      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: false } : n)));
+      setUnreadCount((prev) => prev + 1);
+      window.dispatchEvent(new Event("vaultq:notifications"));
+    }
+  }
+
+  async function markAllRead() {
+    if (markingAll || unreadCount === 0) return;
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    setMarkingAll(true);
+    try {
+      const res = await fetch("/api/notifications/read-all", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
+        setUnreadCount(0);
+        window.dispatchEvent(new Event("vaultq:notifications"));
+      }
+    } finally {
+      setMarkingAll(false);
+    }
+  }
+
+  function openNotification(n: Notif) {
+    void markAsRead(n.id);
+    if (n.link) router.push(n.link);
+  }
+
+  const filtered = useMemo(
+    () =>
+      notifs.filter((n) => {
+        if (filter !== "All" && n.category !== filter) return false;
+        if (showUnreadOnly && n.isRead) return false;
+        return true;
+      }),
+    [notifs, filter, showUnreadOnly],
+  );
 
   if (!user || !mounted) return null;
-
-  const filtered = notifs.filter((n) => {
-    if (filter !== "All" && n.category !== filter) return false;
-    if (showUnreadOnly && n.read) return false;
-    return true;
-  });
-
-  function markAsRead(id: string) {
-    setNotifs(notifs.map((n) => n.id === id ? { ...n, read: true } : n));
-  }
 
   return (
     <StudentShell active="Notifications" userName={user.name} userRole={user.role} pageTitle="Notifications" logout={handleLogout}>
@@ -81,7 +194,7 @@ export default function StudentNotifications() {
           {/* Filter bar */}
           <div className="flex flex-wrap items-center gap-3 mb-6">
             <div className="flex rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
-              {filters.map((f) => (
+              {FILTERS.map((f) => (
                 <button key={f} type="button"
                   className="px-3.5 h-10 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
                   style={{
@@ -94,7 +207,7 @@ export default function StudentNotifications() {
               ))}
             </div>
             <button type="button"
-              className={`h-10 px-3.5 rounded-xl text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer ${showUnreadOnly ? "shadow-sm" : ""}`}
+              className="h-10 px-3.5 rounded-xl text-xs font-semibold border transition-all duration-200 cursor-pointer"
               style={{
                 borderColor: showUnreadOnly ? c.primary : c.border,
                 color: showUnreadOnly ? c.primary : c.textMuted,
@@ -103,23 +216,59 @@ export default function StudentNotifications() {
               onClick={() => setShowUnreadOnly(!showUnreadOnly)}>
               Unread only
             </button>
+
+            <span className="text-xs ml-auto" style={{ color: c.textMuted }}>
+              {unreadCount} unread · {notifs.length} total
+            </span>
+            <button type="button"
+              className="h-10 px-3.5 rounded-xl text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ borderColor: c.border, color: c.textMuted }}
+              onClick={() => void load()} disabled={loading}>
+              <RefreshCw size={13} className={`inline mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh
+            </button>
+            <button type="button"
+              className="h-10 px-3.5 rounded-xl text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ borderColor: c.border, color: c.primary }}
+              onClick={() => void markAllRead()} disabled={markingAll || unreadCount === 0}>
+              {markingAll ? <Loader2 size={13} className="inline mr-1 animate-spin" /> : <CheckCheck size={13} className="inline mr-1" />}
+              Mark all read
+            </button>
           </div>
 
           {/* List */}
           <VCard className="flex-1 overflow-hidden flex flex-col">
-            {filtered.length === 0 ? (
+            {loading ? (
+              <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+                <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
+                <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading notifications...</p>
+              </div>
+            ) : error ? (
+              <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+                <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+                <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>
+                <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{error}</p>
+                <button type="button"
+                  className="h-10 px-4 rounded-xl text-sm font-semibold border bg-white cursor-pointer"
+                  style={{ borderColor: c.border, color: c.primary }}
+                  onClick={() => void load()}>
+                  <RefreshCw size={14} className="inline mr-1.5" /> Try again
+                </button>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
                 <BellRing size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
                 <p className="text-base font-medium" style={{ color: c.textMuted }}>No notifications</p>
-                <p className="text-sm mt-1" style={{ color: c.textLight }}>You&apos;re all caught up.</p>
+                <p className="text-sm mt-1" style={{ color: c.textLight }}>
+                  {notifs.length === 0 ? "You're all caught up." : "Nothing matches these filters."}
+                </p>
               </div>
             ) : (
               <div className="divide-y" style={{ borderColor: c.borderLight }}>
                 {filtered.map((n) => (
                   <div key={n.id}
                     className="relative flex gap-4 px-5 lg:px-6 py-4 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
-                    onClick={() => markAsRead(n.id)}>
-                    {!n.read && (
+                    onClick={() => openNotification(n)}>
+                    {!n.isRead && (
                       <span className="absolute left-2 top-5 w-2 h-2 rounded-full" style={{ backgroundColor: c.primary }} />
                     )}
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ml-1"
@@ -129,13 +278,18 @@ export default function StudentNotifications() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-semibold truncate" style={{ color: c.text }}>{n.title}</p>
-                        <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: c.textLight }}>{n.time}</span>
+                        <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: c.textLight }}>{relativeTime(n.createdAt)}</span>
                       </div>
-                      <p className="text-xs mt-1 leading-relaxed" style={{ color: c.textMuted }}>{n.desc}</p>
-                      <div className="flex items-center gap-2 mt-2">
+                      <p className="text-xs mt-1 leading-relaxed" style={{ color: c.textMuted }}>{n.message}</p>
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
                         <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>
                           {n.category}
                         </span>
+                        {n.link && (
+                          <span className="text-[11px] font-semibold" style={{ color: c.primary }}>
+                            View details →
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

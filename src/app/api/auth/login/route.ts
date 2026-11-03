@@ -4,9 +4,13 @@ import { comparePassword, generateToken } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const { email: rawEmail, password } = await request.json();
+    // Case-insensitive + whitespace tolerant: matching how users actually type emails
+    const email = String(rawEmail || "").trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+    });
     if (!user) {
       return NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
     }
@@ -16,15 +20,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
     }
 
+    if (!(user as any).isActive) {
+      return NextResponse.json({ success: false, error: "Account disabled. Contact admin." }, { status: 403 });
+    }
+
+    // Role is verified by the system itself, not chosen in the form.
+    // Route-level access is enforced separately (src/proxy.ts) and admin APIs
+    // reject non-ADMIN tokens server-side.
     const token = generateToken({ userId: user.id, role: user.role });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       data: {
         user: { id: user.id, name: user.name, email: user.email, role: user.role, cardBarcode: user.cardBarcode },
         token,
       },
     });
+    res.cookies.set("vq_role", user.role, {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+    return res;
   } catch {
     return NextResponse.json({ success: false, error: "Login failed" }, { status: 500 });
   }

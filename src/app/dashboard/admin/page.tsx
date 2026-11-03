@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, FileText, Users, Lock, CheckCircle2, Clock, AlertCircle,
-  Shield, Grid3X3, PlusCircle, Search, QrCode, ChevronRight, BellRing, X,
+  Shield, Grid3X3, PlusCircle, Search, QrCode, ChevronRight, BellRing, X, PackageSearch,
 } from "lucide-react";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
 
@@ -16,6 +16,7 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
+  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -87,8 +88,7 @@ export default function AdminDashboard() {
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast.success("Logged out");
-    router.push("/login?skip=1");
+    router.push("/login?skip=1&loggedOut=1");
   }
 
   if (!user || !mounted) return null;
@@ -97,13 +97,13 @@ export default function AdminDashboard() {
 
   function handleAssign() {
     if (!assignLocker || !assignItemId) {
-      toast.error("Select an item");
+      showCenteredMessage("error", "Select an item");
       return;
     }
     const item = mockUnassignedItems.find((it) => it.id === assignItemId);
     if (!item) return;
     setLockerList(lockerList.map((l) => l.number === assignLocker.number ? { ...l, status: "Occupied", color: "#355C8A" } : l));
-    toast.success(`Assigned ${item.name} to ${assignLocker.number}`);
+    showCenteredMessage("success", `Assigned ${item.name} to ${assignLocker.number}`);
     setAssignLocker(null);
     setAssignItemId("");
   }

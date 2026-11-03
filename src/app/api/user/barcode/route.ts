@@ -8,16 +8,17 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
-    let { cardBarcode } = body;
-    if (cardBarcode === "") cardBarcode = null;
-    if (cardBarcode && !/^[0-9]{10}$/.test(cardBarcode)) {
+    const { cardBarcode } = body;
+    // The profile page treats the card barcode as required — never clear it here.
+    if (!cardBarcode) {
+      return NextResponse.json({ success: false, error: "Card barcode is required" }, { status: 400 });
+    }
+    if (typeof cardBarcode !== "string" || !/^[0-9]{10}$/.test(cardBarcode)) {
       return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits" }, { status: 400 });
     }
-    if (cardBarcode) {
-      const existing = await prisma.user.findUnique({ where: { cardBarcode } });
-      if (existing && existing.id !== user.id) {
-        return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
-      }
+    const existing = await prisma.user.findUnique({ where: { cardBarcode } });
+    if (existing && existing.id !== user.id) {
+      return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
     }
 
     const updated = await prisma.user.update({

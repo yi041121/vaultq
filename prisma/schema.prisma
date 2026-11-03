@@ -12,9 +12,16 @@ enum Role{
   ADMIN
 }
 
-enum LostReportStatus{
+enum ReportType{
+  LOST
+  FOUND
+}
+
+enum ReportStatus{
   PENDING
   MATCHED
+  VERIFIED
+  REJECTED
   CLOSED
 }
 
@@ -44,11 +51,13 @@ model User{
   adminId       String?   @unique @map("admin_id") 
   email         String    @unique
   password      String    
-  cardBarcode   String?   @unique 
+  cardBarcode   String?   @unique
   role          Role      @default(STUDENT)
+  isActive      Boolean   @default(true) @map("is_active")
   createdAt     DateTime  @default(now()) @map("created_at")
 
-  lostReport LostReport[]
+  reports Report[] @relation("ReportAuthor")
+  reviewedReports Report[] @relation("ReportReviewer")
   claims Claim[]
   notifications Notification[]
   items Item[]
@@ -56,20 +65,31 @@ model User{
   @@map("users")
 }
 
-model LostReport{
-  id            String            @id @default(cuid())
-  userId        String            @map("user_id")
-  description   String     
-  locationLost  String?            @map("location_lost")
-  dateLost      DateTime?         @map("date_lost")
-  status        LostReportStatus  @default(PENDING)
-  itemId        String?           @map("item_id")
-  createdAt     DateTime          @default(now()) @map("created_at")
+model Report{
+  id            String        @id @default(cuid())
+  userId        String        @map("user_id")
+  type          ReportType
+  itemName      String        @map("item_name")
+  category      String?
+  description   String
+  location      String?
+  date          DateTime?
+  imageUrl      String?       @map("image_url")
+  status        ReportStatus  @default(PENDING)
+  itemId        String?       @map("item_id")
+  reviewedById  String?       @map("reviewed_by_id")
+  reviewedAt    DateTime?     @map("reviewed_at")
+  adminNote     String?       @map("admin_note")
+  createdAt     DateTime      @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id])
-  item Item? @relation(fields: [itemId], references: [id])
+  user       User  @relation("ReportAuthor", fields: [userId], references: [id])
+  reviewedBy User? @relation("ReportReviewer", fields: [reviewedById], references: [id])
+  item       Item? @relation(fields: [itemId], references: [id])
 
-  @@map("lost_reports")
+  @@index([userId, createdAt])
+  @@index([status, type, createdAt])
+  @@index([itemId])
+  @@map("reports")
 }
 
 model Item{
@@ -86,7 +106,7 @@ model Item{
   createdAt       DateTime          @default(now()) @map("created_at")
 
   admin User @relation(fields: [adminId], references: [id])
-  lostReports LostReport[]
+  reports Report[]
   claims Claim[]
   locker Locker? @relation(fields: [lockerId], references: [id])
 
@@ -133,16 +153,26 @@ model QrCode{
   @@map("qr_codes")
 }
 
+enum NotificationType{
+  CLAIM
+  REPORT
+  LOCKER
+  SYSTEM
+}
+
 model Notification{
   id             String           @id   @default(cuid())
   userId         String           @map("user_id")
   title          String           
   message        String           
+  type           NotificationType @default(SYSTEM)
+  link           String?
   isRead         Boolean          @default(false) @map("is_read")
   createdAt      DateTime         @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references:[id])
 
+  @@index([userId, isRead, createdAt])
   @@map("notifications")
 }
 

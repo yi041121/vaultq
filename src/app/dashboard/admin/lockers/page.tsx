@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Package, Grid3X3, Lock, FileText, Users, Search, Plus, Wrench, Unlock, Eye, X, CheckCircle2,
+  Package, Grid3X3, Lock, FileText, Users, Search, Plus, Wrench, Unlock, Eye, X, CheckCircle2, PackageSearch,
 } from "lucide-react";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VBadge, VButton, VSearchInput, vcolors as c, font as f,
@@ -15,6 +15,7 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
+  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -65,14 +66,64 @@ export default function AdminLockers() {
   const [selectedLocker, setSelectedLocker] = useState<Locker | null>(null);
   const [assignLocker, setAssignLocker] = useState<Locker | null>(null);
   const [assignItemId, setAssignItemId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [apiLive, setApiLive] = useState(false);
+  const [unassignedItems, setUnassignedItems] = useState<{ id: string; name: string; category: string }[]>([]);
+
+  function authHeaders(): Record<string, string> {
+    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  }
+
+  function mapApiLocker(raw: any): Locker {
+    return {
+      id: raw.id,
+      number: raw.lockerNumber,
+      status: raw.status,
+      item: raw.item ? { name: raw.item.itemName, category: raw.item.category || "" } : undefined,
+    };
+  }
+
+  async function fetchLockers() {
+    try {
+      const res = await fetch("/api/lockers", { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to load lockers");
+      setLockers((data.data || []).map(mapApiLocker));
+      setApiLive(true);
+    } catch (e: any) {
+      console.warn("Lockers API unreachable, using mock data:", e?.message);
+      setLockers(initialLockers);
+      setApiLive(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchUnassigned() {
+    try {
+      const res = await fetch("/api/items?status=FOUND", { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setUnassignedItems(
+        (data.data || [])
+          .filter((it: any) => !it.locker)
+          .map((it: any) => ({ id: it.id, name: it.itemName, category: it.category || "Others" }))
+      );
+    } catch {
+      // Assign modal falls back to bundled mock list
+    }
+  }
 
   useEffect(() => {
     setMounted(true);
     const s = localStorage.getItem("user");
     setUser(s ? JSON.parse(s) : { name: "Admin User", role: "ADMIN" });
+    fetchLockers();
+    fetchUnassigned();
   }, []);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); toast.success("Logged out"); router.push("/login?skip=1"); }
+  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
   if (!user || !mounted) return null;
 
   const stats = {
@@ -88,23 +139,70 @@ export default function AdminLockers() {
     return true;
   });
 
-  function updateStatus(id: string, status: Locker["status"]) {
-    setLockers(lockers.map((l) => l.id === id ? { ...l, status, item: status === "AVAILABLE" ? undefined : l.item } : l));
-    toast.success(`Locker ${lockers.find((l) => l.id === id)?.number} → ${status.toLowerCase()}`);
-    setSelectedLocker(null);
+  async function refresh() {
+    setLoading(true);
+    await fetchLockers();
+    await fetchUnassigned();
   }
 
-  function handleAssign() {
-    if (!assignLocker || !assignItemId) {
-      toast.error("Select an item");
+  async function updateStatus(id: string, status: Locker["status"]) {
+    const current = lockers.find((l) => l.id === id);
+    if (!apiLive) {
+      setLockers(lockers.map((l) => l.id === id ? { ...l, status, item: status === "AVAILABLE" ? undefined : l.item } : l));
+      showCenteredMessage("success", `Locker ${current?.number} → ${status.toLowerCase()}`);
+      setSelectedLocker(null);
       return;
     }
-    const item = mockFoundItems.find((it) => it.id === assignItemId);
+    try {
+      const body: any = {};
+      // Releasing an occupied locker back to available frees the item inside
+      if (status === "AVAILABLE" && current?.status === "OCCUPIED") body.release = true;
+      else body.status = status;
+      const res = await fetch(`/api/lockers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to update locker");
+      showCenteredMessage("success", `Locker ${current?.number} → ${status.toLowerCase()}`);
+      setSelectedLocker(null);
+      await refresh();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Update failed");
+    }
+  }
+
+  async function handleAssign() {
+    if (!assignLocker || !assignItemId) {
+      showCenteredMessage("error", "Select an item");
+      return;
+    }
+    const pool = unassignedItems.length ? unassignedItems : mockFoundItems;
+    const item = pool.find((it) => it.id === assignItemId);
     if (!item) return;
-    setLockers(lockers.map((l) => l.id === assignLocker.id ? { ...l, status: "OCCUPIED" as const, item: { name: item.name, category: item.category, student: "—", date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) } } : l));
-    toast.success(`Assigned ${item.name} to ${assignLocker.number}`);
-    setAssignLocker(null);
-    setAssignItemId("");
+    if (!apiLive) {
+      setLockers(lockers.map((l) => l.id === assignLocker.id ? { ...l, status: "OCCUPIED" as const, item: { name: item.name, category: item.category, student: "—", date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) } } : l));
+      showCenteredMessage("success", `Assigned ${item.name} to ${assignLocker.number}`);
+      setAssignLocker(null);
+      setAssignItemId("");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/lockers/${assignLocker.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ itemId: assignItemId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to assign item");
+      showCenteredMessage("success", `Assigned ${item.name} to ${assignLocker.number}`);
+      setAssignLocker(null);
+      setAssignItemId("");
+      await refresh();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Assign failed");
+    }
   }
 
   return (
@@ -127,6 +225,11 @@ export default function AdminLockers() {
           </div>
 
           {/* Grid */}
+          {loading ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading lockers...</p>
+            </VCard>
+          ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1">
             {filtered.map((l) => (
               <VCard key={l.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-md" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
@@ -142,8 +245,10 @@ export default function AdminLockers() {
                 {l.item ? (
                   <div className="rounded-lg p-3 mb-3" style={{ backgroundColor: c.fill }}>
                     <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{l.item.name}</p>
-                    <p className="text-[11px] mt-1" style={{ color: c.textMuted }}>{l.item.category} · {l.item.student}</p>
-                    <p className="text-[11px] flex items-center gap-1 mt-1" style={{ color: c.textMuted }}><Package size={10} /> {l.item.date}</p>
+                    <p className="text-[11px] mt-1" style={{ color: c.textMuted }}>{l.item.category}{l.item.student ? ` · ${l.item.student}` : ""}</p>
+                    {l.item.date && (
+                      <p className="text-[11px] flex items-center gap-1 mt-1" style={{ color: c.textMuted }}><Package size={10} /> {l.item.date}</p>
+                    )}
                   </div>
                 ) : (
                   <p className="text-xs text-center py-3 mb-3 rounded-lg border-2 border-dashed" style={{ borderColor: c.border, color: c.textLight, backgroundColor: "#fff" }}>
@@ -162,7 +267,8 @@ export default function AdminLockers() {
               </VCard>
             ))}
           </div>
-          {filtered.length === 0 && (
+          )}
+          {!loading && filtered.length === 0 && (
             <VCard className="py-16 text-center mt-4">
               <Search size={32} className="mx-auto mb-3" style={{ color: c.textLight }} />
               <p className="text-sm" style={{ color: c.textMuted }}>No lockers match filter.</p>
@@ -187,7 +293,7 @@ export default function AdminLockers() {
             {selectedLocker.item ? (
               <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
                 <p className="text-sm font-semibold" style={{ color: c.text }}>{selectedLocker.item.name}</p>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{selectedLocker.item.category} · {selectedLocker.item.student} · {selectedLocker.item.date}</p>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{selectedLocker.item.category}{selectedLocker.item.student ? ` · ${selectedLocker.item.student}` : ""}{selectedLocker.item.date ? ` · ${selectedLocker.item.date}` : ""}</p>
               </div>
             ) : (
               <p className="text-sm p-4 rounded-xl border-2 border-dashed text-center mb-4" style={{ borderColor: c.border, color: c.textMuted, backgroundColor: "#fff" }}>
@@ -224,7 +330,7 @@ export default function AdminLockers() {
             </div>
             <p className="text-xs mb-3" style={{ color: c.textMuted }}>Select a found item without locker to assign:</p>
             <div className="space-y-2 mb-4 max-h-60 overflow-auto">
-              {mockFoundItems.map((it) => (
+              {(unassignedItems.length ? unassignedItems : mockFoundItems).map((it) => (
                 <button key={it.id} type="button" onClick={() => setAssignItemId(it.id)}
                   className={`w-full text-left p-3 rounded-xl border flex items-center justify-between transition-colors duration-200 cursor-pointer ${assignItemId === it.id ? "bg-[#e6eef5] border-[#355C8A]" : "bg-white hover:bg-[#f8fafc]"}`}
                   style={{ borderColor: assignItemId === it.id ? c.primary : c.border }}>

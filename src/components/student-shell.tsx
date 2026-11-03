@@ -1,9 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, Menu, X, LogOut, Bell } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, Menu, X, LogOut } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
+import CenteredMessageHost from "@/components/centered-message";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { NotificationBell } from "@/components/notification-bell";
 
 interface NavItem {
   label: string;
@@ -34,11 +37,18 @@ const defaultNav: NavItem[] = [
 export function StudentShell({ active, children, userName, userRole, pageTitle, bell, bottomNav = defaultNav, logout }: StudentShellProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  function requestLogout() {
+    setSidebarOpen(false);
+    setConfirmLogout(true);
+  }
 
   const navItems = bottomNav.map((item) => ({ ...item, active: item.label === active }));
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
+      <CenteredMessageHost />
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-56 flex-col z-40" style={{ backgroundColor: colors.sidebar }}>
         <div className="px-5 py-5 border-b flex items-center gap-3" style={{ borderColor: colors.sidebarBorder }}>
@@ -74,7 +84,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
               <p className="text-sm font-medium text-white truncate">{userName}</p>
               <p className="text-xs" style={{ color: colors.sidebarText }}>{userRole}</p>
             </div>
-            <button onClick={logout} className="text-white/40 hover:text-white transition-colors shrink-0 cursor-pointer">
+            <button onClick={requestLogout} className="text-white/40 hover:text-white transition-colors shrink-0 cursor-pointer">
               <LogOut size={16} />
             </button>
           </div>
@@ -99,12 +109,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
             <h1 className="text-base lg:text-lg font-bold absolute left-1/2 -translate-x-1/2" style={{ color: colors.text }}>{pageTitle}</h1>
           )}
           <div className="flex items-center gap-3">
-            {bell ?? (
-              <div className="relative w-9 h-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: colors.borderLight }}>
-                <Bell size={18} style={{ color: colors.textMuted }} />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ backgroundColor: colors.accent }} />
-              </div>
-            )}
+            {bell ?? <NotificationBell role={userRole} />}
           </div>
         </header>
 
@@ -140,7 +145,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
                 ))}
               </nav>
               <div className="px-3 py-4 border-t" style={{ borderColor: colors.sidebarBorder }}>
-                <button onClick={logout} className="flex items-center gap-3 px-3 py-2.5 w-full text-sm cursor-pointer"
+                <button onClick={requestLogout} className="flex items-center gap-3 px-3 py-2.5 w-full text-sm cursor-pointer"
                   style={{ color: colors.sidebarText }}>
                   <LogOut size={18} />
                   <span>Sign out</span>
@@ -169,6 +174,16 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
           </button>
         ))}
       </nav>
+
+      {/* Logout confirm dialog */}
+      <ConfirmDialog
+        open={confirmLogout}
+        title="Log out?"
+        subtitle="You will need to sign in again to access your account."
+        confirmLabel="Log out"
+        onCancel={() => setConfirmLogout(false)}
+        onConfirm={() => { setConfirmLogout(false); logout(); }}
+      />
     </div>
   );
 }

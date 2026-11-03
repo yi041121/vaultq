@@ -3,13 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bell, Search, FileText, QrCode, Clock,
+  Search, FileText, Clock,
   Package, Monitor, Briefcase, CreditCard, Key,
-  BookText, CupSoda, ChevronRight, Home, PlusCircle,
-  BellRing, User, LogOut, RefreshCw,
-  AlertCircle, CheckCircle2, Scan, Grid3X3, X, Eye, MapPin
+  BookText, CupSoda, ChevronRight, PlusCircle,
+  BellRing, User, RefreshCw,
+  AlertCircle, Grid3X3, X, Eye, MapPin
 } from "lucide-react";
-import { toast } from "sonner";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VBadge, VButton, vcolors as c, font as f, iconSize } from "@/components/ui/vault";
 
@@ -39,12 +38,6 @@ const myClaims = [
   { item: "Student ID Card", status: "Pending", statusColor: "#64748b" },
 ];
 
-const initialBellNotifs = [
-  { id: "1", title: "Claim Approved", desc: "Your MacBook claim has been approved. Get your QR code.", time: "2h ago", icon: CheckCircle2, color: "#7FB8B5", read: false },
-  { id: "2", title: "Locker Assigned", desc: "Locker #A12 assigned for item pickup.", time: "5h ago", icon: Package, color: "#355C8A", read: false },
-  { id: "3", title: "QR Code Ready", desc: "Scan your QR at the kiosk to retrieve your item.", time: "1d ago", icon: QrCode, color: "#29486A", read: false },
-];
-
 const stats = [
   { label: "Total Found Items", value: "24", icon: Package, color: "#355C8A" },
   { label: "Active Claims", value: "4", icon: FileText, color: "#7FB8B5" },
@@ -61,8 +54,6 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [bellNotifs, setBellNotifs] = useState(initialBellNotifs);
   const [viewItem, setViewItem] = useState<typeof foundItems[0] | null>(null);
 
   useEffect(() => {
@@ -79,8 +70,7 @@ export default function StudentDashboard() {
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast.success("Logged out");
-    router.push("/login?skip=1");
+    router.push("/login?skip=1&loggedOut=1");
   }
 
   if (!user || !mounted) return null;
@@ -89,56 +79,11 @@ export default function StudentDashboard() {
     { label: "Report Lost Item", icon: AlertCircle, desc: "Submit a lost item report", path: "/dashboard/student/report?type=lost" },
     { label: "Report Found Item", icon: PlusCircle, desc: "Log a found item", path: "/dashboard/student/report?type=found" },
     { label: "My Claims", icon: FileText, desc: "Track your claims", path: "/dashboard/student/claims" },
-    { label: "Scan QR Code", icon: Scan, desc: "Pick up your item", path: "/dashboard/student/scan" },
+    { label: "My Reports", icon: FileText, desc: "Track lost & found reports", path: "/dashboard/student/report?tab=reports" },
   ];
 
-  const hasUnread = bellNotifs.some((n) => !n.read);
-
-  const bell = (
-    <div className="relative">
-      <button type="button"
-        className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors duration-200 cursor-pointer"
-        style={{ backgroundColor: c.borderLight }}
-        onClick={() => setNotifOpen(!notifOpen)}>
-        <Bell size={18} style={{ color: c.textMuted }} />
-        {hasUnread && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ backgroundColor: c.accent }} />}
-      </button>
-      {notifOpen && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setNotifOpen(false)} />
-          <div className="absolute right-0 top-12 z-30 w-80 rounded-2xl border bg-white shadow-xl" style={{ borderColor: c.border }}>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: c.border }}>
-              <span className="text-sm font-semibold" style={{ color: c.text }}>Notifications</span>
-              <BellRing size={15} style={{ color: c.textMuted }} />
-            </div>
-            <div className="p-2 space-y-0.5">
-              {bellNotifs.map((n) => (
-                <div key={n.id}
-                  className="relative flex gap-3 px-3 py-2.5 rounded-xl transition-colors duration-200 cursor-pointer hover:bg-[#f8fafc]"
-                  onClick={() => setBellNotifs(bellNotifs.map((b) => b.id === n.id ? { ...b, read: true } : b))}>
-                  {!n.read && (
-                    <span className="absolute left-1.5 top-3 w-2 h-2 rounded-full" style={{ backgroundColor: c.primary }} />
-                  )}
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ml-1"
-                    style={{ backgroundColor: `${n.color}15` }}>
-                    <n.icon size={14} style={{ color: n.color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium" style={{ color: c.text }}>{n.title}</p>
-                    <p className="text-xs mt-0.5" style={{ color: c.textMuted }}>{n.desc}</p>
-                    <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>{n.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-
   return (
-    <StudentShell active="Home" userName={user.name} userRole={user.role} pageTitle="Dashboard" bell={bell} logout={handleLogout}>
+    <StudentShell active="Home" userName={user.name} userRole={user.role} pageTitle="Dashboard" logout={handleLogout}>
       <main className="pb-6 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full">
           {/* Stats row */}

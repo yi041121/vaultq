@@ -7,13 +7,44 @@ export async function GET(request: NextRequest) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-  const claims = await prisma.claim.findMany({
-    where: user.role === "ADMIN" ? {} : { userId: user.id },
-    include: { item: { select: { itemName: true, category: true, foundLocation: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+  try {
+    const claims = await prisma.claim.findMany({
+      where: user.role === "ADMIN" ? {} : { userId: user.id },
+      include: {
+        item: {
+          select: {
+            id: true,
+            itemName: true,
+            category: true,
+            description: true,
+            foundLocation: true,
+            foundDate: true,
+            status: true,
+            imageUrl: true,
+            locker: { select: { lockerNumber: true } },
+          },
+        },
+        user: { select: { name: true, studentId: true, email: true } },
+        qrCode: { select: { expiresAt: true, isUsed: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-  return NextResponse.json({ success: true, data: claims });
+    // Locker numbers are only revealed once the claim is approved.
+    const data =
+      user.role === "STUDENT"
+        ? claims.map((claim) =>
+            claim.status === "APPROVED"
+              ? claim
+              : { ...claim, item: { ...claim.item, locker: null } },
+          )
+        : claims;
+
+    return NextResponse.json({ success: true, data });
+  } catch (e) {
+    console.error("Claims list failed", e);
+    return NextResponse.json({ success: false, error: "Failed to list claims" }, { status: 500 });
+  }
 }
 
 // POST /api/claims — student claims a found item with photo evidence
@@ -59,6 +90,22 @@ export async function POST(request: NextRequest) {
     if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
     if (item.status !== "FOUND") return NextResponse.json({ success: false, error: "Item not available for claim" }, { status: 400 });
 
+    // A student cannot claim the item they handed in themselves.
+    const ownFoundReport = await prisma.report.findFirst({
+      where: { itemId, userId: user.id, type: "FOUND", status: "VERIFIED" },
+      select: { id: true },
+    });
+    if (ownFoundReport) {
+      return NextResponse.json(
+        { success: false, error: "You cannot claim an item you reported as found" },
+        { status: 403 },
+      );
+    }
+
+    // An approved claim already owns this item — block further claims.
+    const approved = await prisma.claim.findFirst({ where: { itemId, status: "APPROVED" } });
+    if (approved) return NextResponse.json({ success: false, error: "Item already claimed" }, { status: 400 });
+
     const existing = await prisma.claim.findFirst({ where: { itemId, userId: user.id, status: "PENDING" } });
     if (existing) return NextResponse.json({ success: false, error: "You already have a pending claim for this item" }, { status: 409 });
 
@@ -71,14 +118,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Notify admin (optional)
+    // Notify the student that the claim was received.
     await prisma.notification.create({
       data: {
         userId: user.id,
         title: "Claim Submitted",
         message: `Your claim for ${item.itemName} with evidence is awaiting verification.`,
+        type: "CLAIM",
+        link: "/dashboard/student/claims",
       },
-    });
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, data: claim }, { status: 201 });
   } catch (e) {

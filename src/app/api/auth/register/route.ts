@@ -1,11 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, generateToken } from "@/lib/auth";
+import { getPersonNameError } from "@/lib/person-name";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     let { name, studentId, adminId, cardBarcode, email, password } = body;
+    name = String(name || "").trim().replace(/\s+/g, " ");
+    const nameError = getPersonNameError(name);
+    if (nameError) {
+      return NextResponse.json({ success: false, error: nameError }, { status: 400 });
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+      return NextResponse.json({ success: false, error: "Valid email address required" }, { status: 400 });
+    }
+    // Normalize: store and compare emails in lowercase (case-insensitive matching)
+    email = String(email).trim().toLowerCase();
+    // Students must register with their TARC student email
+    if (!adminId && !email.endsWith("@student.tarc.edu.my")) {
+      return NextResponse.json({ success: false, error: "Email must be your @student.tarc.edu.my address" }, { status: 400 });
+    }
     if (cardBarcode === "") cardBarcode = null;
     if (cardBarcode && !/^[0-9]{10}$/.test(cardBarcode)) {
       return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits (e.g. 2000132602)" }, { status: 400 });
@@ -13,6 +28,12 @@ export async function POST(request: NextRequest) {
     if (cardBarcode) {
       const existing = await prisma.user.findUnique({ where: { cardBarcode } });
       if (existing) return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
+    }
+    if (email) {
+      const dupeEmail = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+      });
+      if (dupeEmail) return NextResponse.json({ success: false, error: "Email already registered" }, { status: 409 });
     }
 
     const hashedPassword = await hashPassword(password);

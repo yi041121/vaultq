@@ -5,11 +5,16 @@ import { useRouter } from "next/navigation";
 import {
   Package, FileText, Clock, QrCode, CheckCircle2,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3,
-  MapPin, Camera, Timer, Lock, X,
+  MapPin, Camera, Timer, Lock, X, Loader2, RefreshCw, Eye,
 } from "lucide-react";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VBadge, VPagination, VButton, vcolors as c } from "@/components/ui/vault";
+import {
+  mapUserClaim, CLAIM_STATUS_COLOR,
+  type UserClaim, type ClaimDisplayStatus,
+} from "@/lib/claim-mapper";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -23,81 +28,67 @@ const filterIcons: Record<string, any> = {
   Others: Grid3X3,
 };
 
-type ClaimStatus = "Pending" | "Under Review" | "Approved" | "QR Ready" | "Collected" | "Rejected";
+const filters: (ClaimDisplayStatus | "All")[] = ["All", "Pending", "Approved", "QR Ready", "Collected", "Rejected"];
 
-const statusConfig: Record<ClaimStatus, { color: string; dot: string }> = {
-  Pending: { color: "#64748b", dot: "#94a3b8" },
-  "Under Review": { color: "#355C8A", dot: "#355C8A" },
-  Approved: { color: "#7FB8B5", dot: "#7FB8B5" },
-  "QR Ready": { color: "#29486A", dot: "#29486A" },
-  Collected: { color: "#16a34a", dot: "#16a34a" },
-  Rejected: { color: "#dc2626", dot: "#dc2626" },
+const statusPriority: Record<ClaimDisplayStatus, number> = {
+  Pending: 0,
+  Approved: 1,
+  "QR Ready": 2,
+  Collected: 3,
+  Rejected: 4,
 };
 
-type Claim = {
-  id: string;
-  itemName: string;
-  category: string;
-  location: string;
-  date: string;
-  status: ClaimStatus;
-  locker?: string;
-  evidencePreview?: string | null;
-  reason?: string;
+function fmtDay(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "—";
+  return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtTimestamp(value: string) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+type QrModal = {
+  claimId: string;
+  reference: string;
+  locker: string | null;
+  token: string;
+  expiresAt: string;
+  qrDataUrl: string;
 };
-
-const mockClaims: Claim[] = [
-  { id: "CLM-001", itemName: "MacBook Pro 14\"", category: "Electronics", location: "Library 3rd Floor", date: "2026-07-24", status: "QR Ready", locker: "A12" },
-  { id: "CLM-002", itemName: "Brown Leather Wallet", category: "Bags", location: "Student Lounge", date: "2026-07-23", status: "Under Review" },
-  { id: "CLM-003", itemName: "AirPods Pro", category: "Electronics", location: "Sports Complex", date: "2026-07-22", status: "Approved", locker: "B07" },
-  { id: "CLM-004", itemName: "Student ID Card", category: "Student Cards", location: "Cafeteria", date: "2026-07-21", status: "Pending" },
-  { id: "CLM-005", itemName: "Casio G-Shock Watch", category: "Electronics", location: "Main Hall", date: "2026-07-20", status: "Collected" },
-  { id: "CLM-006", itemName: "House Keys (4 pcs)", category: "Keys", location: "Bus Stop", date: "2026-07-18", status: "Rejected" },
-];
-
-const filters: (ClaimStatus | "All")[] = ["All", "Pending", "Under Review", "Approved", "QR Ready", "Collected", "Rejected"];
 
 export default function StudentClaims() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [filter, setFilter] = useState<ClaimStatus | "All">("All");
+  const [filter, setFilter] = useState<ClaimDisplayStatus | "All">("All");
   const [page, setPage] = useState(1);
-  const [allClaims, setAllClaims] = useState<Claim[]>(mockClaims);
-  const [qrModal, setQrModal] = useState<{ claimId: string; locker: string; token: string; expiresAt: string; qrDataUrl: string } | null>(null);
-  const [compareClaim, setCompareClaim] = useState<Claim | null>(null);
+  const [claims, setClaims] = useState<UserClaim[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [qrModal, setQrModal] = useState<QrModal | null>(null);
+  const [qrLoadingId, setQrLoadingId] = useState<string | null>(null);
+  const [detailsClaim, setDetailsClaim] = useState<UserClaim | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<UserClaim | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const pageSize = 6;
 
-  function foundImageFor(cl: Claim) {
-    return `https://picsum.photos/seed/found-${cl.id}/600/400`;
-  }
-
-  async function openQR(cl: Claim) {
-    let token = `vaultq-${cl.id}-${Date.now().toString(36)}`;
-    let expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    let qrDataUrl = "";
-    // Try real API generation first
+  async function loadClaims(token: string) {
+    setLoading(true);
+    setLoadError(null);
     try {
-      const t = localStorage.getItem("token");
-      const res = await fetch("/api/qrcode/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
-        body: JSON.stringify({ claimId: cl.id }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.data?.qrToken) {
-        token = data.data.qrToken;
-        expiresAt = data.data.expiresAt;
-      }
-    } catch {}
-    try {
-      const QRCode = await import("qrcode");
-      qrDataUrl = await QRCode.toDataURL(token, { width: 280, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } });
-    } catch {}
-    setQrModal({ claimId: cl.id, locker: cl.locker || "A12", token, expiresAt, qrDataUrl });
-    const store = JSON.parse(localStorage.getItem("vaultq_qr") || "{}");
-    store[cl.id] = { token, locker: cl.locker || "A12", expiresAt };
-    localStorage.setItem("vaultq_qr", JSON.stringify(store));
+      const res = await fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
+      setClaims((data.data as any[]).map(mapUserClaim));
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load claims");
+      setClaims([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -106,41 +97,100 @@ export default function StudentClaims() {
     const token = localStorage.getItem("token");
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
-    } else {
-      setUser(JSON.parse(stored));
+      setLoading(false);
+      setLoadError("Session expired — please sign in again");
+      return;
     }
-    // Merge local claims with evidence
-    try {
-      const local = JSON.parse(localStorage.getItem("vaultq_claims") || "[]");
-      const mapped: Claim[] = local.map((lc: any) => ({
-        id: lc.id,
-        itemName: lc.itemName,
-        category: lc.category,
-        location: lc.location,
-        date: lc.date,
-        status: "Pending" as ClaimStatus,
-        evidencePreview: lc.evidencePreview || null,
-        reason: lc.reason,
-      }));
-      if (mapped.length) setAllClaims([...mapped, ...mockClaims]);
-    } catch {}
+    setUser(JSON.parse(stored));
+    void loadClaims(token);
   }, []);
 
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast.success("Logged out");
-    router.push("/login?skip=1");
+    router.push("/login?skip=1&loggedOut=1");
+  }
+
+  async function openQR(cl: UserClaim) {
+    if (qrLoadingId) return;
+    const token = localStorage.getItem("token");
+    if (!token) {
+      showCenteredMessage("error", "Session expired — please sign in again");
+      return;
+    }
+    setQrLoadingId(cl.id);
+    try {
+      const res = await fetch("/api/qrcode/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ claimId: cl.id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showCenteredMessage("error", data?.error || "Could not generate QR code");
+        return;
+      }
+      const qr = data.data;
+      let qrDataUrl = "";
+      try {
+        const QRCode = await import("qrcode");
+        qrDataUrl = await QRCode.toDataURL(qr.qrToken, { width: 280, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } });
+      } catch {}
+      setQrModal({
+        claimId: cl.id,
+        reference: cl.reference,
+        locker: cl.locker,
+        token: qr.qrToken,
+        expiresAt: qr.expiresAt,
+        qrDataUrl,
+      });
+      // The server now has a valid QR for this claim.
+      setClaims((prev) => prev.map((item) => item.id === cl.id ? { ...item, displayStatus: "QR Ready", hasValidQr: true } : item));
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Could not generate QR code");
+    } finally {
+      setQrLoadingId(null);
+    }
+  }
+
+  async function handleCancel() {
+    if (!cancelTarget || cancelling) return;
+    const target = cancelTarget;
+    const token = localStorage.getItem("token");
+    if (!token) {
+      showCenteredMessage("error", "Session expired — please sign in again");
+      setCancelTarget(null);
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/claims/${target.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showCenteredMessage("error", data?.error || "Failed to cancel claim");
+        return;
+      }
+      setClaims((prev) => prev.filter((cl) => cl.id !== target.id));
+      setDetailsClaim((prev) => (prev && prev.id === target.id ? null : prev));
+      showCenteredMessage("success", "Claim cancelled");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to cancel claim");
+    } finally {
+      setCancelling(false);
+      setCancelTarget(null);
+    }
   }
 
   if (!user || !mounted) return null;
 
-  const filtered = filter === "All" ? allClaims : allClaims.filter((cl) => cl.status === filter);
-  const statusPriority: Record<ClaimStatus, number> = { Pending: 0, "Under Review": 1, Approved: 2, "QR Ready": 3, Collected: 4, Rejected: 5 };
+  const filtered = filter === "All" ? claims : claims.filter((cl) => cl.displayStatus === filter);
   const sorted = [...filtered].sort((a, b) => {
-    const p = statusPriority[a.status] - statusPriority[b.status];
+    const p = statusPriority[a.displayStatus] - statusPriority[b.displayStatus];
     if (p !== 0) return p;
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
+    return new Date(b.claimedAt).getTime() - new Date(a.claimedAt).getTime();
   });
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -151,7 +201,7 @@ export default function StudentClaims() {
       <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
         <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
           <div className="flex flex-wrap items-center gap-2 mb-6">
-            <div className="flex rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
+            <div className="flex flex-wrap rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
               {filters.map((f) => (
                 <button key={f} type="button"
                   className="px-3.5 h-10 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
@@ -166,36 +216,63 @@ export default function StudentClaims() {
             </div>
           </div>
 
-          {sorted.length === 0 ? (
+          {loading ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading your claims...</p>
+            </VCard>
+          ) : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <FileText size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims found</p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>No claims with status &quot;{filter}&quot;.</p>
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load claims</p>
+              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
+              <VButton variant="secondary" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadClaims(t); }}>
+                <RefreshCw size={14} /> Try again
+              </VButton>
+            </VCard>
+          ) : sorted.length === 0 ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <FileText size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>
+                {claims.length === 0 ? "No claims yet" : "No claims found"}
+              </p>
+              <p className="text-sm mt-1" style={{ color: c.textLight }}>
+                {claims.length === 0
+                  ? "Search for a found item and submit a claim with photo evidence."
+                  : `No claims with status "${filter}".`}
+              </p>
             </VCard>
           ) : (
             <>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 flex-1">
                 {paginated.map((cl) => {
                   const Icon = filterIcons[cl.category] || Package;
-                  const cfg = statusConfig[cl.status];
+                  const statusColor = CLAIM_STATUS_COLOR[cl.displayStatus];
+                  const canShowQr = cl.displayStatus === "Approved" || cl.displayStatus === "QR Ready";
                   return (
                     <VCard key={cl.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                       <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-                        <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                        <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
+                        {cl.itemImageUrl ? (
+                          <img src={cl.itemImageUrl} alt={cl.itemName} className="absolute inset-0 w-full h-full object-cover" />
+                        ) : (
+                          <>
+                            <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                            <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
+                          </>
+                        )}
                       </div>
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{cl.itemName}</h3>
-                        <VBadge color={cfg.color}>{cl.status}</VBadge>
+                        <VBadge color={statusColor}>{cl.displayStatus}</VBadge>
                       </div>
-                      <p className="text-[11px] font-medium mb-3" style={{ color: c.textLight }}>{cl.id} · {cl.category}</p>
+                      <p className="text-[11px] font-medium mb-3" style={{ color: c.textLight }}>{cl.reference} · {cl.category}</p>
                       <div className="space-y-1.5 mb-4 text-xs" style={{ color: c.textMuted }}>
                         <p className="flex items-center gap-1.5">
-                          <MapPin size={12} style={{ color: c.textMuted }} /> {cl.location}
+                          <MapPin size={12} style={{ color: c.textMuted }} /> {cl.location || "—"}
                         </p>
                         <p className="flex items-center gap-1.5">
-                          <Clock size={12} style={{ color: c.textLight }} /> {new Date(cl.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                          <Clock size={12} style={{ color: c.textLight }} /> Found {fmtDay(cl.foundDate)}
                         </p>
                         {cl.locker && (
                           <p className="flex items-center gap-1.5">
@@ -203,10 +280,10 @@ export default function StudentClaims() {
                           </p>
                         )}
                         {cl.reason && (
-                          <p className="text-xs p-2 rounded-lg mt-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>&quot;{cl.reason}&quot;</p>
+                          <p className="text-xs p-2 rounded-lg mt-2 line-clamp-3" style={{ backgroundColor: c.fill, color: c.textMuted }}>&quot;{cl.reason}&quot;</p>
                         )}
-                        {cl.evidencePreview && (
-                          <button type="button" onClick={() => setCompareClaim(cl)}
+                        {cl.evidenceImageUrl && (
+                          <button type="button" onClick={() => setDetailsClaim(cl)}
                             className="text-xs font-medium mt-2 flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer"
                             style={{ color: c.primary }}>
                             <Camera size={12} /> Compare photos
@@ -214,32 +291,31 @@ export default function StudentClaims() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-auto">
-                        {cl.status === "QR Ready" && (
-                          <button type="button" onClick={() => openQR(cl)}
-                            className="flex-1 h-9 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer"
-                            style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.primaryDark; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}>
-                            <QrCode size={14} /> View QR
-                          </button>
-                        )}
-                        {cl.status === "Approved" && (
-                          <button type="button"
-                            className="flex-1 h-9 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer"
-                            style={{ backgroundColor: c.primary, color: "#fff" }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.primaryDark; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}>
-                            <CheckCircle2 size={14} /> View Details
-                          </button>
-                        )}
-                        {(cl.status === "Pending" || cl.status === "Under Review") && (
+                        {canShowQr && (
                           <>
-                            <button type="button"
+                            <button type="button" onClick={() => setDetailsClaim(cl)}
+                              className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
+                              style={{ borderColor: c.border, color: c.textMuted }}>
+                              <Eye size={13} /> Details
+                            </button>
+                            <button type="button" onClick={() => openQR(cl)} disabled={qrLoadingId === cl.id}
+                              className="flex-1 h-9 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer disabled:opacity-60"
+                              style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" }}
+                              onMouseEnter={(e) => { if (qrLoadingId !== cl.id) e.currentTarget.style.backgroundColor = c.primaryDark; }}
+                              onMouseLeave={(e) => { if (qrLoadingId !== cl.id) e.currentTarget.style.backgroundColor = c.primary; }}>
+                              {qrLoadingId === cl.id ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
+                              {qrLoadingId === cl.id ? "Preparing..." : cl.displayStatus === "QR Ready" ? "View QR" : "Get QR Code"}
+                            </button>
+                          </>
+                        )}
+                        {cl.displayStatus === "Pending" && (
+                          <>
+                            <button type="button" onClick={() => setDetailsClaim(cl)}
                               className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white transition-colors duration-200 cursor-pointer"
                               style={{ borderColor: c.border, color: c.textMuted }}>
-                              View Details
+                              <Eye size={13} className="inline mr-1" /> Details
                             </button>
-                            <button type="button"
+                            <button type="button" onClick={() => setCancelTarget(cl)}
                               className="px-4 h-9 rounded-xl text-xs font-medium transition-colors duration-200 cursor-pointer"
                               style={{ backgroundColor: c.borderLight, color: c.textMuted }}
                               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.border; }}
@@ -248,11 +324,11 @@ export default function StudentClaims() {
                             </button>
                           </>
                         )}
-                        {(cl.status === "Rejected" || cl.status === "Collected") && (
-                          <button type="button"
-                            className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white transition-colors duration-200 cursor-pointer"
+                        {(cl.displayStatus === "Rejected" || cl.displayStatus === "Collected") && (
+                          <button type="button" onClick={() => setDetailsClaim(cl)}
+                            className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                             style={{ borderColor: c.border, color: c.textMuted }}>
-                            View Details
+                            <Eye size={13} /> View Details
                           </button>
                         )}
                       </div>
@@ -271,30 +347,46 @@ export default function StudentClaims() {
         </div>
       </main>
 
-      {compareClaim && (
+      {/* Claim details / photo comparison */}
+      {detailsClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setCompareClaim(null)} />
+          <div className="absolute inset-0 bg-black/60" onClick={() => setDetailsClaim(null)} />
           <VCard className="relative w-full max-w-3xl max-h-[90vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Compare photos</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{compareClaim.itemName} · {compareClaim.id}</p>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim details</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{detailsClaim.itemName} · {detailsClaim.reference}</p>
               </div>
-              <button type="button" onClick={() => setCompareClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setDetailsClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
-            <div className="grid sm:grid-cols-2 gap-4">
+
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <VBadge color={CLAIM_STATUS_COLOR[detailsClaim.displayStatus]}>{detailsClaim.displayStatus}</VBadge>
+              <span className="text-xs px-2.5 py-1 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>{detailsClaim.category}</span>
+              {detailsClaim.locker && (
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Lock size={12} /> Locker {detailsClaim.locker}</span>
+              )}
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                  <img src={foundImageFor(compareClaim)} alt="Found item" className="w-full h-64 object-cover bg-[#f8fafc]" />
-                  <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>{compareClaim.location}</p>
+                  {detailsClaim.itemImageUrl ? (
+                    <img src={detailsClaim.itemImageUrl} alt="Found item" className="w-full h-64 object-cover bg-[#f8fafc]" />
+                  ) : (
+                    <div className="w-full h-64 flex items-center justify-center" style={{ backgroundColor: c.fill, color: c.textLight }}>
+                      {(() => { const Icon = filterIcons[detailsClaim.category] || Package; return <Icon size={40} />; })()}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>{detailsClaim.location || "—"}</p>
                 </div>
               </div>
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Your evidence photo</p>
-                {compareClaim.evidencePreview ? (
+                {detailsClaim.evidenceImageUrl ? (
                   <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                    <img src={compareClaim.evidencePreview} alt="Evidence" className="w-full h-64 object-cover bg-[#f8fafc]" />
+                    <img src={detailsClaim.evidenceImageUrl} alt="Evidence" className="w-full h-64 object-cover bg-[#f8fafc]" />
                     <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>Uploaded by you</p>
                   </div>
                 ) : (
@@ -305,35 +397,75 @@ export default function StudentClaims() {
                 )}
               </div>
             </div>
-            <div className="flex items-center justify-end mt-5">
-              <VButton variant="secondary" onClick={() => setCompareClaim(null)}>Close</VButton>
+
+            <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Your claim reason</p>
+              <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{detailsClaim.reason || "—"}</p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-xs mb-5" style={{ color: c.textMuted }}>
+              <p><span className="font-medium" style={{ color: c.text }}>Found date:</span> {fmtDay(detailsClaim.foundDate)}</p>
+              <p><span className="font-medium" style={{ color: c.text }}>Claimed on:</span> {fmtTimestamp(detailsClaim.claimedAt)}</p>
+              <p><span className="font-medium" style={{ color: c.text }}>Reviewed on:</span> {fmtTimestamp(detailsClaim.approvedAt || "")}</p>
+              <p><span className="font-medium" style={{ color: c.text }}>Locker:</span> {detailsClaim.locker || "Pending assignment"}</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <VButton variant="secondary" onClick={() => setDetailsClaim(null)}>Close</VButton>
+              {detailsClaim.displayStatus === "Pending" && (
+                <VButton variant="danger" onClick={() => { const target = detailsClaim; setDetailsClaim(null); setCancelTarget(target); }}>
+                  Cancel claim
+                </VButton>
+              )}
+              {(detailsClaim.displayStatus === "Approved" || detailsClaim.displayStatus === "QR Ready") && (
+                <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); void openQR(target); }}>
+                  <QrCode size={14} /> {detailsClaim.displayStatus === "QR Ready" ? "View QR" : "Get QR Code"}
+                </VButton>
+              )}
             </div>
           </VCard>
         </div>
       )}
 
+      {/* Locker QR */}
       {qrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setQrModal(null)} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold" style={{ color: c.text }}>Locker QR Code</h3>
+              <h3 className="text-base font-semibold" style={{ color: c.text }}>Pickup QR Code</h3>
               <button type="button" onClick={() => setQrModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="w-full aspect-square rounded-2xl border-2 flex items-center justify-center p-4 mb-4" style={{ borderColor: c.border, backgroundColor: "#fff" }}>
               {qrModal.qrDataUrl ? <img src={qrModal.qrDataUrl} alt="QR Code" className="w-full h-full object-contain" /> : <QrCode size={48} style={{ color: c.textMuted }} />}
             </div>
-            <p className="text-sm font-semibold flex items-center justify-center gap-1.5" style={{ color: c.text }}><Lock size={14} style={{ color: c.primary }} /> Locker {qrModal.locker}</p>
-            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Claim {qrModal.claimId} · Expires {new Date(qrModal.expiresAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+            <p className="text-sm font-semibold flex items-center justify-center gap-1.5" style={{ color: c.text }}>
+              <Lock size={14} style={{ color: c.primary }} />
+              {qrModal.locker ? `Locker ${qrModal.locker}` : "Locker pending assignment"}
+            </p>
+            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Claim {qrModal.reference} · Expires {fmtTimestamp(qrModal.expiresAt)}</p>
+            <p className="text-xs mt-3 p-3 rounded-lg leading-relaxed" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
+              Show this QR code at the Lost &amp; Found counter or kiosk scanner. Staff will verify it and hand over your item.
+            </p>
             <p className="text-[11px] mt-3 p-2.5 rounded-lg font-mono break-all" style={{ backgroundColor: c.fill, color: c.textMuted }}>{qrModal.token}</p>
             <div className="flex items-center gap-2 mt-4">
               <VButton variant="secondary" className="flex-1" onClick={() => setQrModal(null)}>Close</VButton>
-              <VButton className="flex-1" onClick={() => { navigator.clipboard?.writeText(qrModal.token); toast.success("Token copied"); }}>Copy Token</VButton>
+              <VButton className="flex-1" onClick={() => { navigator.clipboard?.writeText(qrModal.token); showCenteredMessage("success", "Token copied"); }}>Copy Token</VButton>
             </div>
-            <p className="text-[11px] mt-3 flex items-center justify-center gap-1" style={{ color: c.textLight }}><Timer size={12} /> Valid 24h · One-time use</p>
+            <p className="text-[11px] mt-3 flex items-center justify-center gap-1" style={{ color: c.textLight }}><Timer size={12} /> Valid 24h · One-time use · Staff-scanned</p>
           </VCard>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!cancelTarget}
+        title="Cancel this claim?"
+        subtitle={cancelTarget ? `${cancelTarget.itemName} · ${cancelTarget.reference}` : undefined}
+        cancelLabel="Keep claim"
+        confirmLabel={cancelling ? "Cancelling..." : "Cancel claim"}
+        onCancel={() => { if (!cancelling) setCancelTarget(null); }}
+        onConfirm={handleCancel}
+      />
     </StudentShell>
   );
 }

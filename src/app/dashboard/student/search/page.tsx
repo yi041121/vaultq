@@ -3,18 +3,19 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, FileText, QrCode, Package,
+  Search, Package,
   Briefcase, CreditCard, Key, BookText, CupSoda,
-  ChevronDown, Home, PlusCircle, BellRing, User,
-  Monitor, Grid3X3, ArrowUpDown,
-  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye
+  ChevronDown, Monitor, Grid3X3, ArrowUpDown,
+  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye,
+  Loader2, RefreshCw, CheckCircle2,
 } from "lucide-react";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VBadge, VFilterButton, VPagination, VDropdown, VDropdownItem, VSearchInput, VButton, VTextarea,
-  vcolors as c, font as f
+  vcolors as c,
 } from "@/components/ui/vault";
+import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -26,17 +27,6 @@ const categories = [
   { label: "Documents", icon: BookText, color: "#29486A" },
   { label: "Water Bottles", icon: CupSoda, color: "#7FB8B5" },
   { label: "Others", icon: Grid3X3, color: "#355C8A" },
-];
-
-const items = [
-  { id: 1, name: "MacBook Pro 14\"", category: "Electronics", type: "found", location: "Library 3rd Floor", date: "2026-07-24", status: "Found", color: "#7FB8B5", description: "Space Gray, M3 chip, 16GB RAM. Found on table near window with black sleeve. Has small dent on lid and Apple sticker." },
-  { id: 2, name: "Brown Leather Wallet", category: "Bags", type: "found", location: "Student Lounge", date: "2026-07-23", status: "Found", color: "#7FB8B5", description: "Brown leather bifold wallet with zip compartment. Contains IC and student card inside. Found on sofa." },
-  { id: 3, name: "AirPods Pro", category: "Electronics", type: "lost", location: "Sports Complex", date: "2026-07-22", status: "Lost", color: "#355C8A", description: "White AirPods Pro 2nd gen with MagSafe case. Left side has scratch. Lost during basketball session." },
-  { id: 4, name: "Student ID Card", category: "Student Cards", type: "found", location: "Cafeteria", date: "2026-07-21", status: "Found", color: "#7FB8B5", description: "Student ID for Faculty of Computing, matric 2000132602, photo matches holder. Found near counter." },
-  { id: 5, name: "Casio G-Shock Watch", category: "Electronics", type: "lost", location: "Main Hall", date: "2026-07-20", status: "Lost", color: "#355C8A", description: "Black Casio G-Shock DW5600, black resin strap, slight scratch on glass." },
-  { id: 6, name: "Blue Water Bottle", category: "Water Bottles", type: "found", location: "Gymnasium", date: "2026-07-19", status: "Found", color: "#7FB8B5", description: "Blue Hydro Flask 500ml with white cap, has sticker of university logo." },
-  { id: 7, name: "House Keys (4 pcs)", category: "Keys", type: "lost", location: "Bus Stop", date: "2026-07-18", status: "Lost", color: "#355C8A", description: "4 silver keys on blue keychain with VaultQ tag." },
-  { id: 8, name: "Physics Notes Folder", category: "Documents", type: "found", location: "Lecture Hall B", date: "2026-07-17", status: "Found", color: "#7FB8B5", description: "Blue folder with handwritten physics notes, labeled 'Semester 2'." },
 ];
 
 const filterIcons: Record<string, any> = {
@@ -54,8 +44,12 @@ export default function StudentSearch() {
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  const [items, setItems] = useState<FoundItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [claimedItemIds, setClaimedItemIds] = useState<Set<string>>(new Set());
+
   const [query, setQuery] = useState("");
-  const [searchType, setSearchType] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest");
   const [sortOpen, setSortOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
@@ -69,15 +63,65 @@ export default function StudentSearch() {
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
-  const [viewItem, setViewItem] = useState<typeof items[0] | null>(null);
+  const [viewItem, setViewItem] = useState<FoundItem | null>(null);
 
   // Claim modal state
-  const [claimItem, setClaimItem] = useState<typeof items[0] | null>(null);
+  const [claimItem, setClaimItem] = useState<FoundItem | null>(null);
   const [claimReason, setClaimReason] = useState("");
   const [claimPhoto, setClaimPhoto] = useState<File | null>(null);
   const [claimPreview, setClaimPreview] = useState<string | null>(null);
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const deepLinkHandled = useRef(false);
+
+  async function loadData(token: string) {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [itemsRes, claimsRes] = await Promise.all([
+        fetch("/api/items", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
+        fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
+      ]);
+      const itemsJson = await itemsRes.json().catch(() => null);
+      if (!itemsRes.ok || !itemsJson?.success) {
+        throw new Error(itemsJson?.error || "Failed to load items");
+      }
+      const mapped = (itemsJson.data as any[]).map(mapApiItem);
+      setItems(mapped);
+
+      // A match notification deep-links to /search?item=<id>. Open that item
+      // once the list has loaded, then drop the query string.
+      if (!deepLinkHandled.current) {
+        deepLinkHandled.current = true;
+        const targetId = new URLSearchParams(window.location.search).get("item");
+        if (targetId) {
+          window.history.replaceState(null, "", "/dashboard/student/search");
+          const target = mapped.find((item) => item.id === targetId);
+          if (target) {
+            setViewItem(target);
+          } else {
+            showCenteredMessage("error", "That item is no longer available");
+          }
+        }
+      }
+
+      // Items this student already has a pending/approved claim for.
+      if (claimsRes.ok) {
+        const claimsJson = await claimsRes.json().catch(() => null);
+        if (claimsJson?.success && Array.isArray(claimsJson.data)) {
+          const ids = (claimsJson.data as any[])
+            .filter((cl) => cl.status === "PENDING" || cl.status === "APPROVED")
+            .map((cl) => cl.itemId as string);
+          setClaimedItemIds(new Set(ids));
+        }
+      }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load items");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -85,22 +129,23 @@ export default function StudentSearch() {
     const token = localStorage.getItem("token");
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
+      setLoading(false);
+      setLoadError("Session expired — please sign in again");
       return;
     }
     setUser(JSON.parse(stored));
+    void loadData(token);
   }, []);
 
   function handleLogout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    toast.success("Logged out");
-    router.push("/login?skip=1");
+    router.push("/login?skip=1&loggedOut=1");
   }
 
   const filtered = items
     .filter((item) => {
-      if (query && !item.name.toLowerCase().includes(query.toLowerCase())) return false;
-      if (searchType !== "all" && item.type !== searchType) return false;
+      if (query && !`${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase())) return false;
       if (selectedCategory && item.category !== selectedCategory) return false;
       if (dateFrom && dateTo) {
         if (item.date < dateFrom) return false;
@@ -120,6 +165,11 @@ export default function StudentSearch() {
 
   function fmtDay(d: Date) {
     return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  function fmtItemDate(d: string) {
+    if (!d) return "—";
+    return new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   }
 
   function toISO(d: Date) {
@@ -145,9 +195,17 @@ export default function StudentSearch() {
     return d > parseDate(tempFrom) && d < parseDate(tempTo);
   }
 
-  function openClaim(item: typeof items[0]) {
-    if (item.type !== "found") {
-      router.push("/dashboard/student/report?type=lost");
+  function openClaim(item: FoundItem) {
+    if (item.reportedByMe) {
+      showCenteredMessage("error", "You cannot claim an item you reported as found");
+      return;
+    }
+    if (item.status !== "FOUND") {
+      showCenteredMessage("error", "This item is no longer available for claim");
+      return;
+    }
+    if (claimedItemIds.has(item.id)) {
+      showCenteredMessage("error", "You already have a claim for this item");
       return;
     }
     setViewItem(null);
@@ -161,11 +219,11 @@ export default function StudentSearch() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast.error("Please upload an image file");
+      showCenteredMessage("error", "Please upload an image file");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5MB");
+      showCenteredMessage("error", "Image must be under 5MB");
       return;
     }
     setClaimPhoto(file);
@@ -177,56 +235,69 @@ export default function StudentSearch() {
   async function handleSubmitClaim() {
     if (!claimItem) return;
     if (!claimReason.trim()) {
-      toast.error("Please describe why this item is yours");
+      showCenteredMessage("error", "Please describe why this item is yours");
       return;
     }
     if (!claimPhoto) {
-      toast.error("Please upload photo evidence");
+      showCenteredMessage("error", "Please upload photo evidence");
       return;
     }
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      showCenteredMessage("error", "Session expired — please sign in again");
+      return;
+    }
+
+    const item = claimItem;
     setClaimSubmitting(true);
-    const existing = JSON.parse(localStorage.getItem("vaultq_claims") || "[]");
-    const newClaim = {
-      id: `CLM-${Date.now()}`,
-      itemId: claimItem.id,
-      itemName: claimItem.name,
-      category: claimItem.category,
-      location: claimItem.location,
-      date: claimItem.date,
-      reason: claimReason.trim(),
-      evidencePreview: claimPreview,
-      status: "PENDING",
-      createdAt: new Date().toISOString(),
-    };
-    localStorage.setItem("vaultq_claims", JSON.stringify([...existing, newClaim]));
     try {
-      const token = localStorage.getItem("token");
       const form = new FormData();
-      form.append("itemId", String(claimItem.id));
+      form.append("itemId", item.id);
       form.append("claimReason", claimReason.trim());
-      if (claimPhoto) form.append("evidence", claimPhoto);
+      form.append("evidence", claimPhoto);
+
       const res = await fetch("/api/claims", {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: { Authorization: `Bearer ${token}` },
         body: form,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok && data.error) {
-        console.warn("API claim failed, using local mock:", data.error);
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showCenteredMessage("error", data?.error || "Failed to submit claim");
+        return;
       }
-    } catch (e) {
-      console.warn("Claim API not reachable, using local mock");
-    }
-    setTimeout(() => {
-      setClaimSubmitting(false);
+
+      setClaimedItemIds((prev) => new Set(prev).add(item.id));
       setClaimItem(null);
-      toast.success("Claim submitted with evidence — awaiting verification");
-    }, 600);
+      setClaimReason("");
+      setClaimPhoto(null);
+      setClaimPreview(null);
+      if (fileRef.current) fileRef.current.value = "";
+      showCenteredMessage("success", "Claim submitted with evidence — awaiting verification");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to submit claim");
+    } finally {
+      setClaimSubmitting(false);
+    }
   }
 
   if (!user || !mounted) return null;
 
-  const hasFilters = !!(query || searchType !== "all" || selectedCategory || dateFrom);
+  const hasFilters = !!(query || selectedCategory || dateFrom);
+
+  function resetFilters() {
+    setQuery("");
+    setSelectedCategory(null);
+    setDateFrom("");
+    setDateTo("");
+    setSortOrder("newest");
+    setPage(1);
+    setCalOffset(0);
+    setSortOpen(false);
+    setCategoryOpen(false);
+    setDateRangeOpen(false);
+  }
 
   return (
     <StudentShell active="Search" userName={user.name} userRole={user.role} pageTitle="Search Items" logout={handleLogout}>
@@ -235,19 +306,6 @@ export default function StudentSearch() {
           {/* Search + filters */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" />
-            <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
-              {["all", "lost", "found"].map((t) => (
-                <button key={t} type="button"
-                  className="px-3 text-sm font-medium transition-all duration-150 cursor-pointer"
-                  style={{
-                    backgroundColor: searchType === t ? c.primary : "transparent",
-                    color: searchType === t ? "#fff" : c.textMuted,
-                  }}
-                  onClick={() => { setSearchType(t); setPage(1); }}>
-                  {t === "all" ? "All" : t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              ))}
-            </div>
             <VDropdown
               open={categoryOpen}
               onOpenChange={setCategoryOpen}
@@ -423,19 +481,7 @@ export default function StudentSearch() {
                 style={{ borderColor: c.borderLight, color: c.primary, fontWeight: "600" }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.primarySoft; e.currentTarget.style.borderColor = c.primary; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#fff"; e.currentTarget.style.borderColor = c.borderLight; }}
-                onClick={() => {
-                  setQuery("");
-                  setSearchType("all");
-                  setSelectedCategory(null);
-                  setDateFrom("");
-                  setDateTo("");
-                  setSortOrder("newest");
-                  setPage(1);
-                  setCalOffset(0);
-                  setSortOpen(false);
-                  setCategoryOpen(false);
-                  setDateRangeOpen(false);
-                }}>
+                onClick={resetFilters}>
                 <RotateCcw size={13} />
                 <span>Reset</span>
               </button>
@@ -443,7 +489,21 @@ export default function StudentSearch() {
           </div>
 
           {/* Items grid */}
-          {filtered.length === 0 ? (
+          {loading ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading found items...</p>
+            </VCard>
+          ) : loadError ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
+              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
+              <VButton variant="secondary" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadData(t); }}>
+                <RefreshCw size={14} /> Try again
+              </VButton>
+            </VCard>
+          ) : filtered.length === 0 ? (
             <VCard className="py-20 text-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No items found</p>
@@ -454,24 +514,33 @@ export default function StudentSearch() {
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
                 {paginated.map((item) => {
                   const Icon = filterIcons[item.category] || Package;
+                  const claimed = claimedItemIds.has(item.id);
+                  const ownReport = item.reportedByMe;
+                  const unavailable = claimed || ownReport || item.status !== "FOUND";
                   return (
                     <VCard key={item.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                       <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}
                         onClick={() => setViewItem(item)}>
-                        <div className="absolute inset-0 opacity-40"
-                          style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                        <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                        ) : (
+                          <>
+                            <div className="absolute inset-0 opacity-40"
+                              style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                            <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
+                          </>
+                        )}
                       </div>
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <h3 className="text-sm font-semibold truncate cursor-pointer hover:opacity-80" style={{ color: c.text }} onClick={() => setViewItem(item)}>{item.name}</h3>
-                        <VBadge color={item.color}>{item.status}</VBadge>
+                        <VBadge color={item.color}>{item.statusLabel}</VBadge>
                       </div>
                       <p className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
-                        <MapPin size={12} style={{ color: c.textMuted }} /> {item.location}
+                        <MapPin size={12} style={{ color: c.textMuted }} /> {item.location || "—"}
                       </p>
                       <p className="text-xs flex items-center gap-1 mt-1" style={{ color: c.textMuted }}>
-                        <Clock size={12} style={{ color: c.textLight }} /> {new Date(item.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        <Clock size={12} style={{ color: c.textLight }} /> {fmtItemDate(item.date)}
                       </p>
                       <div className="flex items-center gap-2 mt-4">
                         <button type="button"
@@ -481,12 +550,18 @@ export default function StudentSearch() {
                           <Eye size={13} /> View Details
                         </button>
                         <button type="button"
-                          className="flex-1 h-9 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer"
-                          style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.primaryDark; e.currentTarget.style.boxShadow = "0 3px 10px rgba(41,72,106,0.3)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; e.currentTarget.style.boxShadow = "0 2px 6px rgba(53,92,138,0.25)"; }}
+                          disabled={unavailable}
+                          className="flex-1 h-9 rounded-lg text-xs font-medium transition-all duration-200"
+                          style={{
+                            backgroundColor: unavailable ? c.borderLight : c.primary,
+                            color: unavailable ? c.textMuted : "#fff",
+                            boxShadow: unavailable ? "none" : "0 2px 6px rgba(53,92,138,0.25)",
+                            cursor: unavailable ? "not-allowed" : "pointer",
+                          }}
+                          onMouseEnter={(e) => { if (!unavailable) { e.currentTarget.style.backgroundColor = c.primaryDark; e.currentTarget.style.boxShadow = "0 3px 10px rgba(41,72,106,0.3)"; } }}
+                          onMouseLeave={(e) => { if (!unavailable) { e.currentTarget.style.backgroundColor = c.primary; e.currentTarget.style.boxShadow = "0 2px 6px rgba(53,92,138,0.25)"; } }}
                           onClick={() => openClaim(item)}>
-                          {item.type === "found" ? "Claim" : "Report"}
+                          {claimed ? <><CheckCircle2 size={13} /> Claim submitted</> : ownReport ? "You reported this" : "Claim"}
                         </button>
                       </div>
                     </VCard>
@@ -511,29 +586,47 @@ export default function StudentSearch() {
           <VCard className="relative w-full max-w-lg max-h-[90vh] overflow-auto">
             <div className="w-full h-48 rounded-t-2xl flex items-center justify-center relative overflow-hidden"
               style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-              <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-              {(() => { const Icon = filterIcons[viewItem.category] || Package; return <Icon size={48} style={{ color: c.primary, opacity: 0.6 }} />; })()}
+              {viewItem.imageUrl ? (
+                <img src={viewItem.imageUrl} alt={viewItem.name} className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <>
+                  <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                  {(() => { const Icon = filterIcons[viewItem.category] || Package; return <Icon size={48} style={{ color: c.primary, opacity: 0.6 }} />; })()}
+                </>
+              )}
               <button type="button" onClick={() => setViewItem(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="p-6">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>{viewItem.name}</h3>
-                <VBadge color={viewItem.color}>{viewItem.status}</VBadge>
+                <VBadge color={viewItem.color}>{viewItem.statusLabel}</VBadge>
               </div>
               <div className="flex flex-wrap gap-2 mb-4">
                 <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>{viewItem.category}</span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {viewItem.location}</span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {new Date(viewItem.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {viewItem.location || "—"}</span>
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {fmtItemDate(viewItem.date)}</span>
               </div>
               <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: c.fill }}>
                 <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{viewItem.description}</p>
+                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{viewItem.description || "No description provided."}</p>
               </div>
+              {viewItem.reportedByMe && (
+                <p className="text-[11px] mb-4 p-2.5 rounded-lg" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
+                  You handed this item in. Items you reported as found cannot be claimed by you.
+                </p>
+              )}
               <div className="flex items-center gap-3">
                 <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
-                {viewItem.type === "found" && (
-                  <VButton className="flex-1" onClick={() => openClaim(viewItem)}>Claim this item</VButton>
-                )}
+                <VButton
+                  className="flex-1"
+                  onClick={() => openClaim(viewItem)}
+                  disabled={claimedItemIds.has(viewItem.id) || viewItem.reportedByMe || viewItem.status !== "FOUND"}>
+                  {claimedItemIds.has(viewItem.id)
+                    ? "Claim submitted"
+                    : viewItem.reportedByMe
+                      ? "You reported this"
+                      : "Claim this item"}
+                </VButton>
               </div>
             </div>
           </VCard>
@@ -548,7 +641,7 @@ export default function StudentSearch() {
             <div className="flex items-start justify-between mb-5">
               <div>
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Item</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{claimItem.name} · {claimItem.category} · {claimItem.location}</p>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{claimItem.name} · {claimItem.category} · {claimItem.location || "—"}</p>
               </div>
               <button type="button" onClick={() => setClaimItem(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>

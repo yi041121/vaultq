@@ -4,18 +4,19 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, Grid3X3, Lock, FileText, Users, Search, Clock, MapPin,
-  CheckCircle2, XCircle, Eye, RotateCcw, Camera, X,
+  CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, QrCode,
 } from "lucide-react";
-import { toast } from "sonner";
+import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import {
-  VCard, VBadge, VButton, VSearchInput, VPagination, vcolors as c,
+  VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c,
 } from "@/components/ui/vault";
 
 const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
+  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -32,16 +33,8 @@ type Claim = {
   reason: string;
   locker?: string;
   evidencePreview?: string | null;
+  itemImageUrl?: string | null;
 };
-
-const initialClaims: Claim[] = [
-  { id: "CLM-001", itemName: "MacBook Pro 14\"", category: "Electronics", student: "Alex Tan", studentId: "S12345", location: "Library 3rd Floor", date: "2026-07-24", status: "PENDING", reason: "Lost during study session, has Apple sticker on lid.", evidencePreview: "https://picsum.photos/seed/vaultq-evidence-1/600/400" },
-  { id: "CLM-002", itemName: "Brown Leather Wallet", category: "Bags", location: "Student Lounge", date: "2026-07-23", status: "PENDING", student: "Sarah Lim", studentId: "S12346", reason: "Contains IC and student card, brown leather with zip.", evidencePreview: "https://picsum.photos/seed/vaultq-evidence-2/600/400" },
-  { id: "CLM-003", itemName: "AirPods Pro", category: "Electronics", location: "Sports Complex", date: "2026-07-22", status: "APPROVED", student: "John Doe", studentId: "S12347", reason: "White case with scratch on lid.", locker: "B07" },
-  { id: "CLM-004", itemName: "Student ID Card", category: "Student Cards", location: "Cafeteria", date: "2026-07-21", status: "PENDING", student: "Emily Chen", studentId: "S12348", reason: "Lost ID, photo matches." },
-  { id: "CLM-005", itemName: "Casio G-Shock Watch", category: "Electronics", location: "Main Hall", date: "2026-07-20", status: "REJECTED", student: "Mike Lee", studentId: "S12349", reason: "Description does not match item details." },
-  { id: "CLM-006", itemName: "House Keys (4 pcs)", category: "Keys", location: "Bus Stop", date: "2026-07-18", status: "PENDING", student: "Lisa Wong", studentId: "S12350", reason: "Silver keys with blue keychain." },
-];
 
 const statusOptions = ["All", "PENDING", "APPROVED", "REJECTED"] as const;
 
@@ -58,15 +51,62 @@ export default function AdminClaims() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [claims, setClaims] = useState<Claim[]>(initialClaims);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
   const [page, setPage] = useState(1);
   const [compareClaim, setCompareClaim] = useState<Claim | null>(null);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrToken, setQrToken] = useState("");
+  const [qrVerifying, setQrVerifying] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = 6;
 
-  function foundImageFor(cl: Claim) {
-    return `https://picsum.photos/seed/found-${cl.id}/600/400`;
+  function authHeaders(): Record<string, string> {
+    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  }
+
+  function mapApiClaim(raw: any): Claim {
+    return {
+      id: raw.id,
+      itemName: raw.item?.itemName || "Unknown item",
+      category: raw.item?.category || "Others",
+      student: raw.user?.name || "Unknown",
+      studentId: raw.user?.studentId || "—",
+      location: raw.item?.foundLocation || "",
+      date: String(raw.createdAt || "").slice(0, 10),
+      status: raw.status,
+      reason: raw.claimReason || "",
+      locker: raw.item?.locker?.lockerNumber,
+      evidencePreview: raw.evidenceImageUrl || null,
+      itemImageUrl: raw.item?.imageUrl || null,
+    };
+  }
+
+  async function fetchClaims(openId?: string | null) {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch("/api/claims", { headers: authHeaders(), cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
+      const mapped = (data.data as any[]).map(mapApiClaim);
+      setClaims(mapped);
+      if (openId) {
+        const target = mapped.find((c) => c.id === openId);
+        if (target) {
+          setCompareClaim(target);
+          showCenteredMessage("success", "Opened claim from dashboard");
+        }
+      }
+    } catch (e) {
+      setClaims([]);
+      setLoadError(e instanceof Error ? e.message : "Failed to load claims");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -74,40 +114,15 @@ export default function AdminClaims() {
     const s = localStorage.getItem("user");
     setUser(s ? JSON.parse(s) : { name: "Admin User", role: "ADMIN" });
     // Merge student evidence claims
-    let merged = initialClaims;
-    try {
-      const local = JSON.parse(localStorage.getItem("vaultq_claims") || "[]");
-      const mapped: Claim[] = local.map((lc: any) => ({
-        id: lc.id,
-        itemName: lc.itemName,
-        category: lc.category,
-        student: "Current Student",
-        studentId: "S99999",
-        location: lc.location,
-        date: lc.date,
-        status: "PENDING" as const,
-        reason: lc.reason,
-        evidencePreview: lc.evidencePreview || null,
-      }));
-      if (mapped.length) {
-        merged = [...mapped, ...initialClaims];
-        setClaims(merged);
-      }
-    } catch {}
+    let openId: string | null = null;
     if (typeof window !== "undefined") {
-      const openId = new URLSearchParams(window.location.search).get("open");
-      if (openId) {
-        const target = merged.find((c) => c.id === openId);
-        if (target) {
-          setCompareClaim(target);
-          toast.info(`Opened ${target.id} from dashboard`);
-        }
-        window.history.replaceState(null, "", window.location.pathname);
-      }
+      openId = new URLSearchParams(window.location.search).get("open");
+      if (openId) window.history.replaceState(null, "", window.location.pathname);
     }
+    fetchClaims(openId);
   }, []);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); toast.success("Logged out"); router.push("/login?skip=1"); }
+  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
   if (!user || !mounted) return null;
 
   const filtered = claims.filter((cl) => {
@@ -128,13 +143,84 @@ export default function AdminClaims() {
   const paginated = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const hasFilters = !!(query || statusFilter !== "All");
 
-  function handleApprove(id: string) {
-    setClaims(claims.map((cl) => cl.id === id ? { ...cl, status: "APPROVED" as const, locker: "A12" } : cl));
-    toast.success("Claim approved — locker assigned");
+  async function firstAvailableLocker(): Promise<string | null> {
+    try {
+      const res = await fetch("/api/lockers?status=AVAILABLE", { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(data.data) && data.data.length) return data.data[0].lockerNumber;
+    } catch {}
+    return null;
   }
-  function handleReject(id: string) {
-    setClaims(claims.map((cl) => cl.id === id ? { ...cl, status: "REJECTED" as const } : cl));
-    toast.success("Claim rejected");
+
+  async function handleApprove(id: string) {
+    try {
+      const target = claims.find((claim) => claim.id === id);
+      // Keep an already-assigned locker; only allocate one when the item has none.
+      const lockerNumber = target?.locker ? null : await firstAvailableLocker();
+      const res = await fetch(`/api/claims/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "approve", ...(lockerNumber ? { lockerNumber } : {}) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Approve failed");
+      const assigned = lockerNumber || target?.locker;
+      showCenteredMessage("success", assigned ? `Claim approved — locker ${assigned} assigned` : "Claim approved");
+      await fetchClaims();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Approve failed");
+    }
+  }
+
+  async function handleReject(id: string) {
+    try {
+      const res = await fetch(`/api/claims/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "reject" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Reject failed");
+      showCenteredMessage("success", "Claim rejected");
+      await fetchClaims();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Reject failed");
+    }
+  }
+
+  async function handleVerifyQr() {
+    const token = qrToken.trim();
+    if (!token) {
+      showCenteredMessage("error", "Scan or paste the student's QR token");
+      return;
+    }
+    if (qrVerifying) return;
+    setQrVerifying(true);
+    try {
+      const res = await fetch("/api/qrcode/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        showCenteredMessage("error", data.error || "QR verification failed");
+        return;
+      }
+      const itemName = data.data?.itemName || "Item";
+      const locker = data.data?.locker;
+      showCenteredMessage(
+        "success",
+        locker ? `${itemName} collected — locker ${locker} released` : `${itemName} collected`,
+      );
+      setQrOpen(false);
+      setQrToken("");
+      await fetchClaims();
+    } catch {
+      showCenteredMessage("error", "QR verification failed");
+    } finally {
+      setQrVerifying(false);
+    }
   }
 
   return (
@@ -161,9 +247,29 @@ export default function AdminClaims() {
                 <RotateCcw size={13} /><span>Reset</span>
               </button>
             )}
+            <VButton
+              variant="secondary"
+              className="ml-auto"
+              onClick={() => { setQrToken(""); setQrOpen(true); }}
+            >
+              <QrCode size={14} /> Verify pickup QR
+            </VButton>
           </div>
 
-          {sorted.length === 0 ? (
+          {loading ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading claims...</p>
+            </VCard>
+          ) : loadError ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load claims</p>
+              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
+              <VButton variant="secondary" onClick={() => void fetchClaims()}>
+                <RotateCcw size={14} /> Try again
+              </VButton>
+            </VCard>
+          ) : sorted.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims found</p>
@@ -225,7 +331,14 @@ export default function AdminClaims() {
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                  <img src={foundImageFor(compareClaim)} alt="Found item" className="w-full h-64 object-cover bg-[#f8fafc]" />
+                  {compareClaim.itemImageUrl ? (
+                    <img src={compareClaim.itemImageUrl} alt="Found item" className="w-full h-64 object-cover bg-[#f8fafc]" />
+                  ) : (
+                    <div className="w-full h-64 flex flex-col items-center justify-center gap-2 bg-[#f8fafc]" style={{ color: c.textLight }}>
+                      <Package size={36} />
+                      <span className="text-xs">No item photo uploaded</span>
+                    </div>
+                  )}
                   <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>{compareClaim.location} · {compareClaim.date}</p>
                 </div>
               </div>
@@ -254,6 +367,50 @@ export default function AdminClaims() {
               ) : (
                 <VBadge color={statusColor(compareClaim.status)}>{compareClaim.status}</VBadge>
               )}
+            </div>
+          </VCard>
+        </div>
+      )}
+
+      {/* Staff QR verification */}
+      {qrOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!qrVerifying) setQrOpen(false); }} />
+          <VCard className="relative w-full max-w-md p-6">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Verify pickup QR</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>
+                  Scan or paste the QR shown in the student&apos;s My Claims. The item is marked collected and its locker released.
+                </p>
+              </div>
+              <button type="button" onClick={() => { if (!qrVerifying) setQrOpen(false); }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="rounded-xl p-3 mb-4 flex items-start gap-2.5" style={{ backgroundColor: c.fill }}>
+              <QrCode size={16} className="shrink-0 mt-0.5" style={{ color: c.primary }} />
+              <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>
+                Students present this code at the counter or kiosk scanner. It is valid for 24 hours and can only be used once.
+              </p>
+            </div>
+
+            <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>QR token</label>
+            <VInput
+              autoFocus
+              value={qrToken}
+              onChange={(e) => setQrToken(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleVerifyQr(); }}
+              placeholder="Scan or paste QR token"
+            />
+
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <VButton variant="secondary" onClick={() => { if (!qrVerifying) setQrOpen(false); }}>Cancel</VButton>
+              <VButton onClick={() => void handleVerifyQr()} disabled={qrVerifying || !qrToken.trim()}>
+                {qrVerifying ? "Verifying..." : "Verify QR"}
+              </VButton>
             </div>
           </VCard>
         </div>
