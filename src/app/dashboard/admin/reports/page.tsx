@@ -1,18 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, PackageSearch, PackageCheck, FileText, Lock, Users, Search, Clock, MapPin,
-  CheckCircle2, XCircle, Eye, RotateCcw, X, Loader2, RefreshCw, Camera, Plus, Link2, Grid3X3,
+  CheckCircle2, XCircle, Eye, RotateCcw, X, Loader2, RefreshCw, Camera, Grid3X3,
+  Sparkles, ChevronDown, Plus,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
+import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import {
-  VCard, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, vcolors as c,
+  VCard, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
-import { mapReport, type UserReport, type ReportStatus, type ReportType } from "@/lib/report-mapper";
+import { mapReport, type UserReport, type ReportStatus } from "@/lib/report-mapper";
+import { suggestMatches, suggestionLabel } from "@/lib/report-match";
+import { useEscapeKey } from "@/lib/use-escape-key";
+import { categoryIcon } from "@/lib/category-icons";
+import { DateCalendar } from "@/components/date-calendar";
+import { PhotoPicker } from "@/components/photo-picker";
+import { PhotoSourceDialog } from "@/components/photo-source-dialog";
+import { PhotoCropModal } from "@/components/photo-crop-modal";
+import { CameraCaptureModal } from "@/components/camera-capture-modal";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -40,7 +50,7 @@ const adminNav = [
 
 const statusOptions: Array<ReportStatus | "ALL"> = ["ALL", "PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"];
 const statusLabel: Record<string, string> = {
-  ALL: "All statuses",
+  ALL: "All",
   PENDING: "Pending",
   MATCHED: "Matched",
   VERIFIED: "Verified",
@@ -58,41 +68,42 @@ function fmtDay(value: string | null) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function fmtTimestamp(value: string | null) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+let reportsCache: UserReport[] | null = null;
 
 export default function AdminReports() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  const [reports, setReports] = useState<UserReport[]>([]);
+  const [reports, setReports] = useState<UserReport[]>(reportsCache ?? []);
   const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
   const [lockers, setLockers] = useState<Locker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(reportsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [filterType, setFilterType] = useState<"ALL" | ReportType>("ALL");
-  const [filterStatus, setFilterStatus] = useState<ReportStatus | "ALL">("ALL");
-  const [statusOpen, setStatusOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<ReportStatus | "ALL">("PENDING");
   const [query, setQuery] = useState("");
 
-  const [selected, setSelected] = useState<UserReport | null>(null);
+  const [matchTarget, setMatchTarget] = useState<UserReport | null>(null);
   const [matchQuery, setMatchQuery] = useState("");
+  const [showMatchSearch, setShowMatchSearch] = useState(false);
+  const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
 
   const [verifyReport, setVerifyReport] = useState<UserReport | null>(null);
-  const [verifyMode, setVerifyMode] = useState<"create" | "link">("create");
-  const [verifyItemId, setVerifyItemId] = useState("");
-  const [linkQuery, setLinkQuery] = useState("");
   const [verifyForm, setVerifyForm] = useState({
-    itemName: "", category: "", location: "", date: "", description: "", lockerId: "",
+    itemName: "", category: "", location: "", date: "", description: "",
   });
   const [verifyCategoryOpen, setVerifyCategoryOpen] = useState(false);
-  const [lockerOpen, setLockerOpen] = useState(false);
+  const [verifyDateOpen, setVerifyDateOpen] = useState(false);
+  const [approveStage, setApproveStage] = useState<"form" | "locker">("form");
+  const [approvePhotos, setApprovePhotos] = useState<{ preview: string; originalPreview: string }[]>([]);
+  const [approvePhotoSourceOpen, setApprovePhotoSourceOpen] = useState(false);
+  const [approveCameraOpen, setApproveCameraOpen] = useState(false);
+  const [approveEditingPhoto, setApproveEditingPhoto] = useState<number | null>(null);
+  const [savingPhotos, setSavingPhotos] = useState(false);
+  const approveUploadRef = useRef<HTMLInputElement>(null);
+  const approveCameraInputRef = useRef<HTMLInputElement>(null);
+  const [selectedLockerId, setSelectedLockerId] = useState("");
   const [verifying, setVerifying] = useState(false);
 
   const [rejectReport, setRejectReport] = useState<UserReport | null>(null);
@@ -107,15 +118,17 @@ export default function AdminReports() {
   }
 
   async function fetchReports() {
-    setLoading(true);
+    if (!reportsCache) setLoading(true);
     setLoadError(null);
     try {
       const res = await fetch("/api/reports", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load reports");
-      setReports((data.data as any[]).map(mapReport));
+      const list = (data.data as any[]).map(mapReport);
+      setReports(list);
+      reportsCache = list;
     } catch (e) {
-      setReports([]);
+      if (!reportsCache) setReports([]);
       setLoadError(e instanceof Error ? e.message : "Failed to load reports");
     } finally {
       setLoading(false);
@@ -162,17 +175,119 @@ export default function AdminReports() {
 
   function openVerify(report: UserReport) {
     setVerifyReport(report);
-    setVerifyMode("create");
-    setVerifyItemId("");
-    setLinkQuery("");
+    setApproveStage("form");
+    setVerifyDateOpen(false);
+    setApprovePhotos(report.images.map((src) => ({ preview: src, originalPreview: src })));
+    setApprovePhotoSourceOpen(false);
+    setApproveCameraOpen(false);
+    setApproveEditingPhoto(null);
+    setSelectedLockerId("");
     setVerifyForm({
       itemName: report.itemName,
       category: report.category,
       location: report.location,
       date: report.date,
       description: report.description,
-      lockerId: "",
     });
+  }
+
+  async function addApprovePhotos(files: File[]) {
+    if (!files.length) return;
+    if (approvePhotos.length + files.length > 3) {
+      showCenteredMessage("error", "You can upload up to 3 photos");
+      return;
+    }
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showCenteredMessage("error", "Please upload image files only");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showCenteredMessage("error", "Each image must be under 5MB");
+        return;
+      }
+    }
+    try {
+      const previews = await Promise.all(
+        files.map(
+          (file) =>
+            new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error("Could not read image"));
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
+      setApprovePhotos((prev) =>
+        [...prev, ...previews.map((preview) => ({ preview, originalPreview: preview }))].slice(0, 3),
+      );
+    } catch {
+      showCenteredMessage("error", "Could not read one of the images");
+    }
+  }
+
+  function handleApprovePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    void addApprovePhotos(files);
+  }
+
+  function openApproveCamera() {
+    setApprovePhotoSourceOpen(false);
+    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") {
+      setApproveCameraOpen(true);
+      return;
+    }
+    approveCameraInputRef.current?.click();
+  }
+
+  async function saveApprovePhotos(): Promise<boolean> {
+    if (!verifyReport) return false;
+    const next = approvePhotos.map((photo) => photo.preview);
+    const current = verifyReport.images;
+    if (next.length === current.length && next.every((value, index) => value === current[index])) {
+      return true;
+    }
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      showCenteredMessage("error", "Session expired — please sign in again");
+      return false;
+    }
+    setSavingPhotos(true);
+    try {
+      const res = await fetch(`/api/reports/${verifyReport.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "update", imageUrls: next }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showCenteredMessage("error", data?.error || "Failed to update photos");
+        return false;
+      }
+      const updated = mapReport(data.data);
+      setReports((prev) => prev.map((report) => (report.id === updated.id ? updated : report)));
+      setVerifyReport(updated);
+      setApprovePhotos(updated.images.map((src) => ({ preview: src, originalPreview: src })));
+      return true;
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to update photos");
+      return false;
+    } finally {
+      setSavingPhotos(false);
+    }
+  }
+
+  async function goToApproveStep() {
+    if (savingPhotos) return;
+    const saved = await saveApprovePhotos();
+    if (!saved) return;
+    if (!verifyForm.itemName.trim() || !verifyForm.location.trim()) {
+      showCenteredMessage("error", "Item name and found location are required");
+      return;
+    }
+    setApproveStage("locker");
   }
 
   async function runAction(id: string, body: Record<string, unknown>, successMessage: string) {
@@ -189,7 +304,7 @@ export default function AdminReports() {
         return false;
       }
       showCenteredMessage("success", successMessage);
-      setSelected(null);
+      setMatchTarget(null);
       await fetchReports();
       await fetchSupporting();
       return true;
@@ -202,8 +317,8 @@ export default function AdminReports() {
   }
 
   async function handleMatch(itemId: string) {
-    if (!selected) return;
-    await runAction(selected.id, { action: "match", itemId }, "Report matched — the student has been notified");
+    if (!matchTarget) return;
+    await runAction(matchTarget.id, { action: "match", itemId }, "Report matched — the student has been notified");
   }
 
   async function handleReject() {
@@ -222,23 +337,17 @@ export default function AdminReports() {
     if (!verifyReport || verifying) return;
     setVerifying(true);
     try {
-      const body = verifyMode === "link"
-        ? { itemId: verifyItemId }
-        : {
-            create: {
-              itemName: verifyForm.itemName.trim(),
-              category: verifyForm.category || null,
-              location: verifyForm.location.trim(),
-              date: verifyForm.date || null,
-              description: verifyForm.description.trim() || null,
-              lockerId: verifyForm.lockerId || null,
-            },
-          };
-      if (verifyMode === "link" && !verifyItemId) {
-        showCenteredMessage("error", "Select an item to link");
-        return;
-      }
-      if (verifyMode === "create" && (!verifyForm.itemName.trim() || !verifyForm.location.trim())) {
+      const body = {
+        create: {
+          itemName: verifyForm.itemName.trim(),
+          category: verifyForm.category || null,
+          location: verifyForm.location.trim(),
+          date: verifyForm.date || null,
+          description: verifyForm.description.trim() || null,
+          lockerId: selectedLockerId || null,
+        },
+      };
+      if (!verifyForm.itemName.trim() || !verifyForm.location.trim()) {
         showCenteredMessage("error", "Item name and found location are required");
         return;
       }
@@ -255,7 +364,6 @@ export default function AdminReports() {
       }
       showCenteredMessage("success", "Found report verified and item logged");
       setVerifyReport(null);
-      setSelected(null);
       await fetchReports();
       await fetchSupporting();
     } catch (e) {
@@ -265,11 +373,20 @@ export default function AdminReports() {
     }
   }
 
+  useEscapeKey(!!matchTarget && !viewer, () => setMatchTarget(null));
+  useEscapeKey(approvePhotoSourceOpen, () => setApprovePhotoSourceOpen(false));
+  useEscapeKey(approveStage === "locker", () => { if (!verifying) setApproveStage("form"); }, !verifying);
+  useEscapeKey(!!verifyReport, () => {
+    if (verifying) return;
+    if (verifyDateOpen) { setVerifyDateOpen(false); return; }
+    setVerifyReport(null);
+  }, !verifying && approveStage !== "locker" && !approvePhotoSourceOpen && !approveCameraOpen && approveEditingPhoto === null);
+  useEscapeKey(!!rejectReport, () => { if (!rejecting) setRejectReport(null); }, !rejecting);
+
   if (!user || !mounted) return null;
 
-  const filtered = reports.filter((report) => {
-    if (filterType !== "ALL" && report.type !== filterType) return false;
-    if (filterStatus !== "ALL" && report.status !== filterStatus) return false;
+
+  const baseFiltered = reports.filter((report) => {
     if (query) {
       const haystack = `${report.itemName} ${report.description} ${report.studentName} ${report.studentEmail} ${report.studentId}`.toLowerCase();
       if (!haystack.includes(query.toLowerCase())) return false;
@@ -277,75 +394,58 @@ export default function AdminReports() {
     return true;
   });
 
-  const pendingCount = reports.filter((r) => r.status === "PENDING").length;
+  const filtered = baseFiltered.filter((report) => filterStatus === "ALL" || report.status === filterStatus);
+
   const matchResults = foundItems.filter((item) => {
     if (!matchQuery.trim()) return true;
     const q = matchQuery.toLowerCase();
-    return `${item.itemName} ${item.description || ""} ${item.foundLocation || ""}`.toLowerCase().includes(q);
-  }).slice(0, 6);
-  const linkResults = foundItems.filter((item) => {
-    if (!linkQuery.trim()) return true;
-    const q = linkQuery.toLowerCase();
-    return `${item.itemName} ${item.description || ""} ${item.foundLocation || ""}`.toLowerCase().includes(q);
-  }).slice(0, 6);
+    return `${item.itemName} ${item.description || ""} ${item.foundLocation || ""} ${item.category || ""}`.toLowerCase().includes(q);
+  }).slice(0, 8);
+  const suggestions =
+    matchTarget && matchTarget.type === "LOST"
+      ? suggestMatches(matchTarget, foundItems, { excludeItemId: matchTarget.item?.id ?? null, limit: 3 })
+      : [];
+  const suggestionRows = suggestions.flatMap((suggestion) => {
+    const item = foundItems.find((candidate) => candidate.id === suggestion.itemId);
+    return item ? [{ ...suggestion, item }] : [];
+  });
+
+  function clearFilters() {
+    setFilterStatus("PENDING");
+    setQuery("");
+  }
 
   return (
     <StudentShell active="Reports" userName={user.name} userRole={user.role} pageTitle="Lost & Found Reports" bottomNav={adminNav} logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
         <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
-          {/* Filters */}
+          {/* Search + status */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
-            <div className="flex rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
-              {(["ALL", "LOST", "FOUND"] as const).map((value) => (
-                <button key={value} type="button"
-                  className="px-3.5 h-10 text-xs font-semibold transition-all duration-150 cursor-pointer"
+            <VSearchInput value={query} onChange={setQuery} placeholder="Search item or student..." className="flex-1 min-w-[220px] max-w-xl" />
+            <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
+              {statusOptions.map((status) => (
+                <button key={status} type="button"
+                  className="px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
                   style={{
-                    backgroundColor: filterType === value ? c.primary : "transparent",
-                    color: filterType === value ? "#fff" : c.textMuted,
+                    backgroundColor: filterStatus === status ? c.primary : "transparent",
+                    color: filterStatus === status ? "#fff" : c.textMuted,
                   }}
-                  onClick={() => setFilterType(value)}>
-                  {value === "ALL" ? "All reports" : value === "LOST" ? "Lost" : "Found"}
+                  onClick={() => setFilterStatus(status)}>
+                  {statusLabel[status]}
                 </button>
               ))}
             </div>
-
-            <VDropdown
-              open={statusOpen}
-              onOpenChange={setStatusOpen}
-              width="w-44"
-              trigger={
-                <button type="button"
-                  className="flex items-center gap-2 h-10 px-3.5 rounded-xl text-sm font-medium border bg-white cursor-pointer"
-                  style={{ borderColor: filterStatus === "ALL" ? c.border : c.primary, color: c.text }}
-                  onClick={() => setStatusOpen(!statusOpen)}>
-                  <span>{statusLabel[filterStatus]}</span>
-                  <span className="text-xs" style={{ color: c.textMuted }}>▾</span>
-                </button>
-              }>
-              {(close) => (
-                <>
-                  {statusOptions.map((status) => (
-                    <VDropdownItem key={status} active={filterStatus === status}
-                      onSelect={() => { setFilterStatus(status); close(); }}>
-                      {statusLabel[status]}
-                    </VDropdownItem>
-                  ))}
-                </>
-              )}
-            </VDropdown>
-
-            <VSearchInput value={query} onChange={setQuery} placeholder="Search item or student..." className="flex-1 min-w-[220px] max-w-md" />
-            <span className="text-xs ml-auto" style={{ color: c.textMuted }}>
-              {pendingCount} pending · {reports.length} total
-            </span>
+            {(query || filterStatus !== "PENDING") && (
+              <button type="button"
+                className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border bg-white transition-all duration-200 cursor-pointer"
+                style={{ borderColor: c.borderLight, color: c.primary, fontWeight: "600" }}
+                onClick={clearFilters}>
+                <RotateCcw size={13} /><span>Reset</span>
+              </button>
+            )}
           </div>
 
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading reports...</p>
-            </VCard>
-          ) : loadError ? (
+          {loading ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <PackageSearch size={40} className="mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
@@ -357,15 +457,37 @@ export default function AdminReports() {
               <PackageSearch size={40} className="mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No reports found</p>
               <p className="text-sm mt-1" style={{ color: c.textLight }}>
-                {reports.length === 0 ? "Students have not submitted any reports yet." : "Try adjusting the filters."}
+                {reports.length === 0
+                  ? "Students have not submitted any reports yet."
+                  : filterStatus === "PENDING"
+                    ? "No reports are waiting for review."
+                    : "Try adjusting the filters."}
               </p>
+              {reports.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
+                  <VButton variant="secondary" onClick={clearFilters}><RotateCcw size={14} /> Clear filters</VButton>
+                  {filterStatus === "PENDING" && (
+                    <VButton onClick={() => setFilterStatus("ALL")}>View all reports</VButton>
+                  )}
+                </div>
+              )}
             </VCard>
           ) : (
-            <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-5">
-              {filtered.map((report) => (
-                <VCard key={report.id} className="p-5 flex flex-col">
-                  <div className="w-full h-36 rounded-xl mb-4 relative overflow-hidden flex items-center justify-center"
-                    style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
+              {filtered.map((report) => {
+                const CategoryIcon = categoryIcon(report.category);
+                return (
+                <VCard key={report.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                  <button type="button"
+                    aria-label={report.images.length ? `View ${report.itemName} photos` : `${report.itemName} has no photos`}
+                    disabled={report.images.length === 0}
+                    className={`w-full h-40 rounded-xl mb-4 relative overflow-hidden flex items-center justify-center shrink-0 group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
+                    style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}
+                    onClick={() => {
+                      if (report.images.length) {
+                        setViewer({ photos: report.images, index: 0, title: report.itemName });
+                      }
+                    }}>
                     {report.imageUrl ? (
                       <img src={report.imageUrl} alt={report.itemName} className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
@@ -376,24 +498,49 @@ export default function AdminReports() {
                           : <PackageCheck size={38} style={{ color: c.accent, opacity: 0.7 }} />}
                       </>
                     )}
-                    <div className="absolute top-2 left-2 flex gap-1.5">
-                      <VBadge color={report.type === "LOST" ? c.primary : c.accent}>{report.typeLabel}</VBadge>
-                      <VBadge color={report.color}>{report.statusLabel}</VBadge>
-                    </div>
-                  </div>
+                    {report.images.length > 0 && (
+                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
+                          <Eye size={13} /> View photos
+                        </span>
+                      </span>
+                    )}
+                    {report.images.length > 1 && (
+                      <span className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold text-white"
+                        style={{ backgroundColor: "rgba(15,23,42,0.65)" }}>
+                        <Camera size={11} /> {report.images.length}
+                      </span>
+                    )}
+                  </button>
 
-                  <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 min-w-0">
                     <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
+                    <VBadge color={report.type === "LOST" ? c.primary : c.accent}
+                      style={{ border: `1px solid ${(report.type === "LOST" ? c.primary : c.accent)}40` }}>
+                      {report.typeLabel}
+                    </VBadge>
+                    <VBadge color={report.color} className="ml-auto"
+                      style={{ border: `1px solid ${report.color}40` }}>
+                      {statusLabel[report.status]}
+                    </VBadge>
                   </div>
-                  <p className="text-[11px] mb-2" style={{ color: c.textLight }}>{report.reference} · {report.category}</p>
+                  <p className="text-[11px] mb-2 flex items-center gap-1" style={{ color: c.textMuted }}>
+                    <Users size={12} /> {report.studentName}
+                  </p>
 
-                  <div className="space-y-1.5 text-xs mb-3" style={{ color: c.textMuted }}>
-                    <p className="flex items-center gap-1.5"><Users size={12} /> {report.studentName}{report.studentId ? ` · ${report.studentId}` : ""}</p>
-                    <p className="flex items-center gap-1.5"><MapPin size={12} /> {report.location || "—"}</p>
-                    <p className="flex items-center gap-1.5"><Clock size={12} /> {fmtDay(report.date)}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs mb-2" style={{ color: c.textMuted }}>
+                    <span className="flex items-center gap-1">
+                      <CategoryIcon size={12} style={{ color: c.primary }} />
+                      {report.category}
+                    </span>
+                    <span className="flex items-center gap-1"><MapPin size={12} /> {report.location || "—"}</span>
+                    <span className="flex items-center gap-1"><Clock size={12} /> {fmtDay(report.date)}</span>
                   </div>
 
-                  <p className="text-xs line-clamp-2 mb-3" style={{ color: c.textMuted }}>{report.description}</p>
+                  <p className="text-xs leading-relaxed mb-3 px-2.5 py-2 rounded-lg line-clamp-3"
+                    style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                    {report.description}
+                  </p>
 
                   {report.item && (
                     <p className="text-[11px] mb-3 px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: c.fill, color: c.textMuted }}>
@@ -402,117 +549,105 @@ export default function AdminReports() {
                     </p>
                   )}
 
-                  <div className="mt-auto flex items-center gap-2">
-                    <VButton variant="secondary" className="flex-1" onClick={() => { setSelected(report); setMatchQuery(""); }}>
-                      <Eye size={14} /> Review
-                    </VButton>
-                    {report.type === "FOUND" && report.status === "PENDING" && (
-                      <VButton className="flex-1" onClick={() => openVerify(report)}>
-                        <CheckCircle2 size={14} /> Verify
-                      </VButton>
-                    )}
-                    {report.type === "LOST" && report.status === "PENDING" && (
-                      <VButton className="flex-1" onClick={() => { setSelected(report); setMatchQuery(""); }}>
-                        <Search size={14} /> Match
-                      </VButton>
-                    )}
-                  </div>
+                  {report.status === "PENDING" && (
+                    <div className="mt-auto flex items-center gap-2 pt-4">
+                      {report.type === "LOST" && (
+                        <VButton variant="danger" onClick={() => { setRejectReport(report); setRejectNote(""); }}>
+                          <XCircle size={14} /> Reject
+                        </VButton>
+                      )}
+                      {report.type === "FOUND" ? (
+                        <VButton className="flex-1" onClick={() => openVerify(report)}>
+                          <CheckCircle2 size={14} /> Verify
+                        </VButton>
+                      ) : (
+                        <VButton className="flex-1" onClick={() => { setMatchTarget(report); setMatchQuery(""); setShowMatchSearch(false); }}>
+                          <Search size={14} /> Match
+                        </VButton>
+                      )}
+                    </div>
+                  )}
                 </VCard>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </main>
 
-      {/* Review modal */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setSelected(null)} />
-          <VCard className="relative w-full max-w-3xl max-h-[92vh] overflow-auto p-5 lg:p-6">
-            <div className="flex items-start justify-between gap-3 mb-4">
+      {/* Match modal (lost reports) */}
+      {matchTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setMatchTarget(null)} />
+          <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
-                  <VBadge color={selected.type === "LOST" ? c.primary : c.accent}>{selected.typeLabel}</VBadge>
-                  <VBadge color={selected.color}>{selected.statusLabel}</VBadge>
-                  <span className="text-[11px]" style={{ color: c.textLight }}>{selected.reference}</span>
-                </div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>{selected.itemName}</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-                  {selected.studentName} · {selected.studentEmail}{selected.studentId ? ` · ${selected.studentId}` : ""}
-                </p>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Match a found item</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{matchTarget.itemName} · {matchTarget.studentName}</p>
               </div>
-              <button type="button" onClick={() => setSelected(null)}
+              <button type="button" onClick={() => setMatchTarget(null)}
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-4 mb-4">
-              <div>
-                <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Reported photos</p>
-                {selected.images.length > 0 ? (
-                  <div className={`grid gap-2 ${selected.images.length === 1 ? "grid-cols-1" : selected.images.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
-                    {selected.images.map((src, index) => (
-                      <img key={`${selected.id}-photo-${index}`} src={src} alt={`${selected.itemName} photo ${index + 1}`}
-                        className={`w-full object-cover rounded-xl border bg-[#f8fafc] ${selected.images.length === 1 ? "h-56" : "h-28"}`}
-                        style={{ borderColor: c.border }} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="w-full h-56 rounded-xl border flex flex-col items-center justify-center gap-2" style={{ borderColor: c.border, backgroundColor: c.fill, color: c.textLight }}>
-                    <Camera size={28} />
-                    <span className="text-xs">No photo uploaded</span>
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2 text-xs" style={{ color: c.textMuted }}>
-                <p><span className="font-semibold" style={{ color: c.text }}>Category:</span> {selected.category}</p>
-                <p><span className="font-semibold" style={{ color: c.text }}>Location:</span> {selected.location || "—"}</p>
-                <p><span className="font-semibold" style={{ color: c.text }}>Date:</span> {fmtDay(selected.date)}</p>
-                <p><span className="font-semibold" style={{ color: c.text }}>Submitted:</span> {fmtTimestamp(selected.createdAt)}</p>
-                <p><span className="font-semibold" style={{ color: c.text }}>Reviewed:</span> {fmtTimestamp(selected.reviewedAt)}</p>
-                <div className="rounded-xl p-3 mt-2" style={{ backgroundColor: c.fill }}>
-                  <p className="font-semibold mb-1" style={{ color: c.text }}>Description</p>
-                  <p className="leading-relaxed">{selected.description}</p>
-                </div>
-                {selected.adminNote && (
-                  <div className="rounded-xl p-3" style={{ backgroundColor: "#fef2f2", color: c.danger }}>
-                    <p className="font-semibold mb-1">Admin note</p>
-                    <p>{selected.adminNote}</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            <p className="text-xs mb-3" style={{ color: c.textMuted }}>
+              The student is notified and can submit a claim with evidence.
+            </p>
 
-            {selected.item && (
-              <div className="rounded-xl p-3.5 mb-4 flex items-center gap-3" style={{ backgroundColor: c.primarySoft }}>
-                {selected.item.imageUrl ? (
-                  <img src={selected.item.imageUrl} alt={selected.item.name} className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: c.border }} />
-                ) : (
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.borderLight }}>
-                    <Package size={20} style={{ color: c.primary }} />
-                  </div>
-                )}
-                <div className="flex-1">
-                  <p className="text-xs font-semibold" style={{ color: c.text }}>
-                    {selected.type === "LOST" ? "Matched item" : "Logged item"}: {selected.item.name}
-                  </p>
-                  <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>
-                    Status {selected.item.status}{selected.item.locker ? ` · Locker ${selected.item.locker}` : ""}
-                  </p>
+            {suggestionRows.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold flex items-center gap-1.5 mb-2" style={{ color: c.text }}>
+                  <Sparkles size={13} style={{ color: c.primary }} /> Suggested matches
+                </p>
+                <div className="space-y-2">
+                  {suggestionRows.map(({ item, score }) => {
+                    const chip =
+                      score >= 70
+                        ? { backgroundColor: "#dcfce7", color: "#15803d" }
+                        : score >= 50
+                          ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
+                          : { backgroundColor: c.fill, color: c.textMuted };
+                    return (
+                      <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border"
+                        style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}>
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
+                            <Package size={16} style={{ color: c.primary }} />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
+                            <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={chip}>
+                              {suggestionLabel(score)} {score}
+                            </span>
+                          </div>
+                          <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
+                            {item.category || "Others"} · {fmtDay(item.foundDate)}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                          </p>
+                        </div>
+                        <VButton size="sm" disabled={busyAction} onClick={() => void handleMatch(item.id)}>
+                          Match
+                        </VButton>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Lost report: match to a found item */}
-            {selected.type === "LOST" && ["PENDING", "MATCHED"].includes(selected.status) && (
-              <div className="rounded-xl border p-4 mb-4" style={{ borderColor: c.border }}>
-                <p className="text-sm font-semibold mb-1" style={{ color: c.text }}>
-                  {selected.status === "MATCHED" ? "Change matched item" : "Match to a found item"}
-                </p>
-                <p className="text-xs mb-3" style={{ color: c.textMuted }}>
-                  The student is notified and can submit a claim with evidence. Matching does not hand over the item automatically.
-                </p>
+            {suggestionRows.length > 0 && !showMatchSearch ? (
+              <button type="button"
+                className="text-[11px] font-semibold underline hover:opacity-70 cursor-pointer"
+                style={{ color: c.primary }}
+                onClick={() => { setShowMatchSearch(true); setMatchQuery(""); }}>
+                Search all found items
+              </button>
+            ) : (
+              <>
                 <VSearchInput value={matchQuery} onChange={setMatchQuery} placeholder="Search found items..." className="mb-3" />
                 <div className="space-y-2 max-h-56 overflow-auto">
                   {matchResults.length === 0 ? (
@@ -529,7 +664,7 @@ export default function AdminReports() {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                         <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
-                          {item.foundLocation || "—"} · {fmtDay(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                          {item.category || "Others"} · {item.foundLocation || "—"} · {fmtDay(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                         </p>
                       </div>
                       <VButton size="sm" disabled={busyAction} onClick={() => void handleMatch(item.id)}>
@@ -538,43 +673,24 @@ export default function AdminReports() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </>
             )}
 
-            {/* Found report: verify */}
-            {selected.type === "FOUND" && selected.status === "PENDING" && (
-              <div className="rounded-xl border p-4 mb-4 flex flex-wrap items-center justify-between gap-3" style={{ borderColor: c.border }}>
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: c.text }}>Verify this found report</p>
-                  <p className="text-xs mt-0.5" style={{ color: c.textMuted }}>
-                    Confirm the item was handed in, then log it into inventory with a locker.
-                  </p>
-                </div>
-                <VButton onClick={() => openVerify(selected)}><CheckCircle2 size={14} /> Verify &amp; log item</VButton>
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t" style={{ borderColor: c.borderLight }}>
-              <VButton variant="secondary" onClick={() => setSelected(null)}>Close</VButton>
-              {["PENDING", "MATCHED"].includes(selected.status) && selected.type === "LOST" && (
-                <VButton variant="secondary" disabled={busyAction}
-                  onClick={() => void runAction(selected.id, { action: "close" }, "Lost report closed")}>
-                  Close report
-                </VButton>
-              )}
-              {selected.status !== "VERIFIED" && selected.status !== "REJECTED" && (
-                <VButton variant="danger" onClick={() => { setRejectReport(selected); setRejectNote(""); }}>
-                  <XCircle size={14} /> Reject
-                </VButton>
-              )}
-              {["REJECTED", "CLOSED"].includes(selected.status) && (
-                <VButton onClick={() => void runAction(selected.id, { action: "reopen" }, "Report reopened")}>
-                  <RotateCcw size={14} /> Reopen
-                </VButton>
-              )}
+            <div className="flex items-center justify-end pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
+              <VButton variant="secondary" onClick={() => setMatchTarget(null)}>Close</VButton>
             </div>
           </VCard>
         </div>
+      )}
+
+      {viewer && (
+        <PhotoViewerModal
+          photos={viewer.photos}
+          index={viewer.index}
+          title={viewer.title}
+          onIndexChange={(index) => setViewer((prev) => (prev ? { ...prev, index } : prev))}
+          onClose={() => setViewer(null)}
+        />
       )}
 
       {/* Verify modal */}
@@ -584,7 +700,7 @@ export default function AdminReports() {
           <VCard className="relative w-full max-w-2xl max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Verify found report</h3>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Approve found report</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{verifyReport.itemName} · {verifyReport.studentName}</p>
               </div>
               <button type="button" onClick={() => { if (!verifying) setVerifyReport(null); }}
@@ -593,143 +709,268 @@ export default function AdminReports() {
               </button>
             </div>
 
-            <div className="flex rounded-xl border overflow-hidden mb-4" style={{ borderColor: c.border }}>
-              <button type="button" className="flex-1 h-9 text-xs font-semibold cursor-pointer"
-                style={{ backgroundColor: verifyMode === "create" ? c.primary : "transparent", color: verifyMode === "create" ? "#fff" : c.textMuted }}
-                onClick={() => setVerifyMode("create")}>
-                <Plus size={13} className="inline mr-1" /> Create new item
-              </button>
-              <button type="button" className="flex-1 h-9 text-xs font-semibold cursor-pointer"
-                style={{ backgroundColor: verifyMode === "link" ? c.primary : "transparent", color: verifyMode === "link" ? "#fff" : c.textMuted }}
-                onClick={() => setVerifyMode("link")}>
-                <Link2 size={13} className="inline mr-1" /> Link existing item
-              </button>
-            </div>
-
-            {verifyMode === "create" ? (
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Item name</label>
-                  <VInput value={verifyForm.itemName} onChange={(e) => setVerifyForm({ ...verifyForm, itemName: e.target.value })} />
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                    Item name <span style={{ color: c.danger }}>*</span>
+                  </label>
+                  <VInput value={verifyForm.itemName} maxLength={100}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, itemName: e.target.value })}
+                    placeholder="e.g. Black Adidas backpack" />
                 </div>
+
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Category</label>
+                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                      Category <span style={{ color: c.danger }}>*</span>
+                    </label>
                     <VDropdown open={verifyCategoryOpen} onOpenChange={setVerifyCategoryOpen} width="w-full"
                       trigger={
                         <button type="button" onClick={() => setVerifyCategoryOpen(!verifyCategoryOpen)}
-                          className="w-full h-11 px-3.5 rounded-xl border bg-white text-sm text-left flex items-center justify-between cursor-pointer"
+                          className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm font-medium border bg-white text-left cursor-pointer relative"
                           style={{ borderColor: c.border, color: verifyForm.category ? c.text : c.textMuted }}>
-                          <span>{verifyForm.category || "Select category"}</span>
-                          <span className="text-xs" style={{ color: c.textMuted }}>▾</span>
+                          {(() => { const Icon = categoryIcon(verifyForm.category); return verifyForm.category ? <Icon size={15} style={{ color: c.primary }} /> : null; })()}
+                          <span>{verifyForm.category || "Select a category"}</span>
+                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-xs" style={{ color: c.textMuted }}>▾</span>
                         </button>
                       }>
                       {(close) => (
                         <>
-                          {ITEM_CATEGORIES.map((cat) => (
-                            <VDropdownItem key={cat} active={verifyForm.category === cat}
-                              onSelect={() => { setVerifyForm({ ...verifyForm, category: cat }); close(); }}>
-                              {cat}
-                            </VDropdownItem>
-                          ))}
+                          {ITEM_CATEGORIES.map((cat) => {
+                            const Icon = categoryIcon(cat);
+                            return (
+                              <VDropdownItem key={cat} active={verifyForm.category === cat}
+                                onSelect={() => { setVerifyForm({ ...verifyForm, category: cat }); close(); }}>
+                                <Icon size={15} style={{ color: c.primary }} /> {cat}
+                              </VDropdownItem>
+                            );
+                          })}
                         </>
                       )}
                     </VDropdown>
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Found location</label>
-                    <VInput value={verifyForm.location} onChange={(e) => setVerifyForm({ ...verifyForm, location: e.target.value })} />
+
+                  <div className="relative">
+                    <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                      Found date <span style={{ color: c.danger }}>*</span>
+                    </label>
+                    <VFilterButton active={!!verifyForm.date} className="w-full justify-between" style={{ height: 44 }}
+                      onClick={() => setVerifyDateOpen((open) => !open)}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Clock size={14} style={{ color: c.primary }} />
+                        <span className="truncate">{verifyForm.date ? fmtDay(verifyForm.date) : "Select date"}</span>
+                      </span>
+                      <ChevronDown size={13} style={{ color: c.textMuted }} />
+                    </VFilterButton>
+
+                    {verifyDateOpen && (
+                      <>
+                        <div className="fixed inset-0 z-20" onClick={() => setVerifyDateOpen(false)} />
+                        <div className="absolute right-4 top-[70px] z-30">
+                          <DateCalendar value={verifyForm.date} compact
+                            onChange={(iso) => setVerifyForm((prev) => ({ ...prev, date: iso }))}
+                            onClose={() => setVerifyDateOpen(false)} />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Found date</label>
-                    <VInput type="date" value={verifyForm.date} onChange={(e) => setVerifyForm({ ...verifyForm, date: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Assign locker (optional)</label>
-                    <VDropdown open={lockerOpen} onOpenChange={setLockerOpen} width="w-full"
-                      trigger={
-                        <button type="button" onClick={() => setLockerOpen(!lockerOpen)}
-                          className="w-full h-11 px-3.5 rounded-xl border bg-white text-sm text-left flex items-center justify-between cursor-pointer"
-                          style={{ borderColor: c.border, color: verifyForm.lockerId ? c.text : c.textMuted }}>
-                          <span>{lockers.find((l) => l.id === verifyForm.lockerId)?.lockerNumber || "Choose a locker"}</span>
-                          <span className="text-xs" style={{ color: c.textMuted }}>▾</span>
-                        </button>
-                      }>
-                      {(close) => (
-                        <>
-                          <VDropdownItem active={!verifyForm.lockerId}
-                            onSelect={() => { setVerifyForm({ ...verifyForm, lockerId: "" }); close(); }}>
-                            No locker yet
-                          </VDropdownItem>
-                          {lockers.map((locker) => (
-                            <VDropdownItem key={locker.id} active={verifyForm.lockerId === locker.id}
-                              onSelect={() => { setVerifyForm({ ...verifyForm, lockerId: locker.id }); close(); }}>
-                              <Lock size={13} /> Locker {locker.lockerNumber}
-                            </VDropdownItem>
-                          ))}
-                        </>
-                      )}
-                    </VDropdown>
-                  </div>
-                </div>
+
                 <div>
-                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Description</label>
-                  <VTextarea rows={3} value={verifyForm.description} onChange={(e) => setVerifyForm({ ...verifyForm, description: e.target.value })} />
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                    Found location <span style={{ color: c.danger }}>*</span>
+                  </label>
+                  <VInput value={verifyForm.location} maxLength={200}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, location: e.target.value })}
+                    placeholder="e.g. Library 3rd Floor" />
                 </div>
-                {verifyReport.images.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Photos from report</p>
-                    <div className={`grid gap-2 ${verifyReport.images.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
-                      {verifyReport.images.map((src, index) => (
-                        <img key={`${verifyReport.id}-verify-photo-${index}`} src={src} alt={`Report photo ${index + 1}`}
-                          className={`w-full object-cover rounded-xl border ${verifyReport.images.length === 1 ? "h-36" : "h-24"}`}
-                          style={{ borderColor: c.border }} />
+
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Description</label>
+                  <VTextarea rows={3} value={verifyForm.description} maxLength={2000}
+                    onChange={(e) => setVerifyForm({ ...verifyForm, description: e.target.value })}
+                    placeholder="Provide details like color, brand and distinguishing features..." />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <label className="text-sm font-medium" style={{ color: c.text }}>
+                      Photos <span className="font-normal" style={{ color: c.textLight }}>({approvePhotos.length}/3)</span>
+                    </label>
+                    {approvePhotos.length > 0 && approvePhotos.length < 3 && (
+                      <button type="button" onClick={() => setApprovePhotoSourceOpen(true)}
+                        className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                        style={{ borderColor: c.border, color: c.primary }}>
+                        <Plus size={13} /> Add photo
+                      </button>
+                    )}
+                  </div>
+                  <input ref={approveUploadRef} type="file" accept="image/*" multiple className="hidden" onChange={handleApprovePhotoChange} />
+                  <input ref={approveCameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleApprovePhotoChange} />
+
+                  {approvePhotos.length === 0 ? (
+                    <PhotoPicker
+                      onUpload={() => approveUploadRef.current?.click()}
+                      onTakePhoto={openApproveCamera}
+                    />
+                  ) : (
+                    <div className={`grid gap-2 ${approvePhotos.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
+                      {approvePhotos.map((photo, index) => (
+                        <div key={`approve-photo-${index}`} className="relative rounded-xl overflow-hidden border group" style={{ borderColor: c.border }}>
+                          <button type="button" aria-label={`View or crop photo ${index + 1}`}
+                            className="block w-full cursor-pointer"
+                            onClick={() => setApproveEditingPhoto(index)}>
+                            <img src={photo.preview} alt={`Report photo ${index + 1}`}
+                              className={`w-full object-cover ${approvePhotos.length === 1 ? "h-32" : "h-20"}`} />
+                            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+                              <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
+                                View &amp; crop
+                              </span>
+                            </span>
+                          </button>
+                          {photo.preview !== photo.originalPreview && (
+                            <button type="button" aria-label={`Revert photo ${index + 1} to original`}
+                              className="absolute bottom-1.5 left-1.5 z-10 inline-flex items-center gap-1 h-6 px-2 rounded-full bg-black/60 text-white text-[9px] font-semibold hover:bg-black/80 cursor-pointer"
+                              onClick={() => setApprovePhotos((prev) =>
+                                prev.map((item, i) => (i === index ? { ...item, preview: item.originalPreview } : item)),
+                              )}>
+                              Revert
+                            </button>
+                          )}
+                          <button type="button" aria-label={`Remove photo ${index + 1}`}
+                            className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 cursor-pointer"
+                            onClick={() => setApprovePhotos((prev) => prev.filter((_, i) => i !== index))}>
+                            <X size={12} />
+                          </button>
+                        </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  )}
+                  <p className="text-[11px] mt-1" style={{ color: c.textLight }}>JPG or PNG · up to 5MB each</p>
+                </div>
                 <p className="text-[11px]" style={{ color: c.textLight }}>
-                  Only verify after the item has been physically handed in. The item will appear in Search immediately.
+                  Only approve after the item has been physically handed in. The item will appear in Search immediately.
                 </p>
               </div>
-            ) : (
-              <div>
-                <VSearchInput value={linkQuery} onChange={setLinkQuery} placeholder="Search existing found items..." className="mb-3" />
-                <div className="space-y-2 max-h-72 overflow-auto">
-                  {linkResults.length === 0 ? (
-                    <p className="text-xs py-4 text-center" style={{ color: c.textLight }}>No found items match your search.</p>
-                  ) : linkResults.map((item) => (
-                    <button key={item.id} type="button"
-                      className="w-full flex items-center gap-3 p-2.5 rounded-xl border text-left cursor-pointer transition-colors"
-                      style={{ borderColor: verifyItemId === item.id ? c.primary : c.borderLight, backgroundColor: verifyItemId === item.id ? c.primarySoft : "#fff" }}
-                      onClick={() => setVerifyItemId(item.id)}>
-                      {item.imageUrl ? (
-                        <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
-                          <Package size={16} style={{ color: c.primary }} />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
-                        <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
-                          {item.foundLocation || "—"} · {fmtDay(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
-                        </p>
-                      </div>
-                      {verifyItemId === item.id && <CheckCircle2 size={16} style={{ color: c.primary }} />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+
 
             <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
               <VButton variant="secondary" onClick={() => { if (!verifying) setVerifyReport(null); }}>Cancel</VButton>
+              <VButton variant="danger" disabled={verifying || savingPhotos}
+                onClick={() => { setRejectReport(verifyReport); setRejectNote(""); setVerifyReport(null); }}>
+                <XCircle size={14} /> Reject
+              </VButton>
+              <VButton onClick={() => void goToApproveStep()} disabled={verifying || savingPhotos}>
+                {savingPhotos ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {savingPhotos ? "Saving..." : "Approve"}
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
+      {approvePhotoSourceOpen && (
+        <PhotoSourceDialog
+          onClose={() => setApprovePhotoSourceOpen(false)}
+          onTakePhoto={openApproveCamera}
+          onUpload={() => { setApprovePhotoSourceOpen(false); approveUploadRef.current?.click(); }}
+        />
+      )}
+
+      {approveCameraOpen && (
+        <CameraCaptureModal
+          onClose={() => setApproveCameraOpen(false)}
+          onUseUpload={() => { setApproveCameraOpen(false); approveUploadRef.current?.click(); }}
+          onCapture={(photo) => {
+            setApprovePhotos((prev) =>
+              prev.length >= 3 ? prev : [...prev, { preview: photo.preview, originalPreview: photo.preview }],
+            );
+            setApproveCameraOpen(false);
+          }}
+        />
+      )}
+
+      {approveEditingPhoto !== null && approvePhotos[approveEditingPhoto] && (
+        <PhotoCropModal
+          src={approvePhotos[approveEditingPhoto].preview}
+          onClose={() => setApproveEditingPhoto(null)}
+          onSave={(photo) => {
+            setApprovePhotos((prev) =>
+              prev.map((item, index) => (index === approveEditingPhoto ? { ...item, preview: photo.preview } : item)),
+            );
+            setApproveEditingPhoto(null);
+          }}
+        />
+      )}
+
+      {verifyReport && approveStage === "locker" && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!verifying) setApproveStage("form"); }} />
+          <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Assign a locker</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{verifyReport.itemName} · {verifyReport.studentName}</p>
+              </div>
+              <button type="button" onClick={() => { if (!verifying) setApproveStage("form"); }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs mb-3" style={{ color: c.textMuted }}>
+              Choose an available locker to store the item.
+            </p>
+
+            <div className="grid grid-cols-3 gap-2 max-h-64 overflow-auto pr-1">
+              <button type="button"
+                className="rounded-xl border border-dashed p-3 flex flex-col items-center gap-1.5 cursor-pointer"
+                style={{
+                  borderColor: selectedLockerId === "" ? c.primary : c.border,
+                  backgroundColor: selectedLockerId === "" ? c.primarySoft : "#fff",
+                  color: c.textMuted,
+                }}
+                onClick={() => setSelectedLockerId("")}>
+                <div className="w-full h-14 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
+                  <Package size={22} style={{ color: c.textMuted }} />
+                </div>
+                <span className="text-xs font-semibold" style={{ color: c.text }}>No locker</span>
+                <span className="text-[10px]">Store later</span>
+              </button>
+              {lockers.map((locker) => {
+                const selected = selectedLockerId === locker.id;
+                return (
+                  <button key={locker.id} type="button"
+                    className="rounded-xl border p-3 flex flex-col items-center gap-1.5 cursor-pointer transition-colors duration-150"
+                    style={{
+                      borderColor: selected ? c.primary : c.borderLight,
+                      backgroundColor: selected ? c.primarySoft : "#fff",
+                    }}
+                    onClick={() => setSelectedLockerId(locker.id)}>
+                    <div className="w-full h-14 rounded-lg flex items-center justify-center"
+                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+                      {selected
+                        ? <CheckCircle2 size={22} style={{ color: c.primary }} />
+                        : <Lock size={22} style={{ color: c.textMuted }} />}
+                    </div>
+                    <span className="text-xs font-bold" style={{ color: c.text }}>{locker.lockerNumber}</span>
+                    <span className="text-[10px]" style={{ color: c.textMuted }}>Available</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {lockers.length === 0 && (
+              <p className="text-[11px] mt-3 text-center" style={{ color: c.textLight }}>
+                No lockers are currently available. You can approve without a locker.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
+              <VButton variant="secondary" disabled={verifying} onClick={() => setApproveStage("form")}>Back</VButton>
               <VButton onClick={handleVerify} disabled={verifying}>
                 {verifying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                {verifying ? "Verifying..." : "Verify report"}
+                {verifying ? "Approving..." : "Approve"}
               </VButton>
             </div>
           </VCard>

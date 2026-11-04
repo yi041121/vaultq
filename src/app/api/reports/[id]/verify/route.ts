@@ -5,6 +5,7 @@ import { isItemCategory } from "@/lib/categories";
 import { createItemRecord } from "@/lib/item-service";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
+import { startsWithNumber } from "@/lib/text-validation";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     const lockerId = input.lockerId || null;
 
     if (!itemName) return NextResponse.json({ success: false, error: "Item name required" }, { status: 400 });
+    if (startsWithNumber(itemName)) return NextResponse.json({ success: false, error: "Item name cannot start with a number" }, { status: 400 });
     if (!foundLocation) return NextResponse.json({ success: false, error: "Found location required" }, { status: 400 });
     if (category && !isItemCategory(category)) {
       return NextResponse.json({ success: false, error: "Invalid category" }, { status: 400 });

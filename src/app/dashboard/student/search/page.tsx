@@ -39,13 +39,15 @@ const filterIcons: Record<string, any> = {
   Others: Grid3X3,
 };
 
+let searchItemsCache: FoundItem[] | null = null;
+
 export default function StudentSearch() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  const [items, setItems] = useState<FoundItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<FoundItem[]>(searchItemsCache ?? []);
+  const [loading, setLoading] = useState(searchItemsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [claimedItemIds, setClaimedItemIds] = useState<Set<string>>(new Set());
 
@@ -75,7 +77,7 @@ export default function StudentSearch() {
   const deepLinkHandled = useRef(false);
 
   async function loadData(token: string) {
-    setLoading(true);
+    if (!searchItemsCache) setLoading(true);
     setLoadError(null);
     try {
       const [itemsRes, claimsRes] = await Promise.all([
@@ -88,6 +90,7 @@ export default function StudentSearch() {
       }
       const mapped = (itemsJson.data as any[]).map(mapApiItem);
       setItems(mapped);
+      searchItemsCache = mapped;
 
       // A match notification deep-links to /search?item=<id>. Open that item
       // once the list has loaded, then drop the query string.
@@ -117,7 +120,7 @@ export default function StudentSearch() {
       }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load items");
-      setItems([]);
+      if (!searchItemsCache) setItems([]);
     } finally {
       setLoading(false);
     }
@@ -138,6 +141,7 @@ export default function StudentSearch() {
   }, []);
 
   function handleLogout() {
+    searchItemsCache = null;
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -489,12 +493,7 @@ export default function StudentSearch() {
           </div>
 
           {/* Items grid */}
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading found items...</p>
-            </VCard>
-          ) : loadError ? (
+          {loading ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>

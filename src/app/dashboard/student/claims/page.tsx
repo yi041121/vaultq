@@ -59,14 +59,16 @@ type QrModal = {
   qrDataUrl: string;
 };
 
+let studentClaimsCache: UserClaim[] | null = null;
+
 export default function StudentClaims() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<ClaimDisplayStatus | "All">("All");
   const [page, setPage] = useState(1);
-  const [claims, setClaims] = useState<UserClaim[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [claims, setClaims] = useState<UserClaim[]>(studentClaimsCache ?? []);
+  const [loading, setLoading] = useState(studentClaimsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [qrModal, setQrModal] = useState<QrModal | null>(null);
   const [qrLoadingId, setQrLoadingId] = useState<string | null>(null);
@@ -76,16 +78,18 @@ export default function StudentClaims() {
   const pageSize = 6;
 
   async function loadClaims(token: string) {
-    setLoading(true);
+    if (!studentClaimsCache) setLoading(true);
     setLoadError(null);
     try {
       const res = await fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
-      setClaims((data.data as any[]).map(mapUserClaim));
+      const mapped = (data.data as any[]).map(mapUserClaim);
+      setClaims(mapped);
+      studentClaimsCache = mapped;
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load claims");
-      setClaims([]);
+      if (!studentClaimsCache) setClaims([]);
     } finally {
       setLoading(false);
     }
@@ -106,6 +110,7 @@ export default function StudentClaims() {
   }, []);
 
   function handleLogout() {
+    studentClaimsCache = null;
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -216,12 +221,7 @@ export default function StudentClaims() {
             </div>
           </div>
 
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading your claims...</p>
-            </VCard>
-          ) : loadError ? (
+          {loading ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <FileText size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load claims</p>

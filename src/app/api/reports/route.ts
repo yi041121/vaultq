@@ -4,14 +4,9 @@ import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
+import { VALID_REPORT_TYPES, validateReportDetails } from "@/lib/report-validation";
 
-const VALID_TYPES = ["LOST", "FOUND"] as const;
 const VALID_STATUS = ["PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"] as const;
-
-function todayIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
 
 // GET /api/reports?type=&status=&q=&category= — own reports, or all for admin
 export async function GET(request: NextRequest) {
@@ -26,7 +21,7 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get("category") || "";
 
     const where: any = user.role === "ADMIN" ? {} : { userId: user.id };
-    if ((VALID_TYPES as readonly string[]).includes(type)) where.type = type;
+    if ((VALID_REPORT_TYPES as readonly string[]).includes(type)) where.type = type;
     if ((VALID_STATUS as readonly string[]).includes(status)) where.status = status;
     if (category && isItemCategory(category)) where.category = category;
     if (q) {
@@ -121,30 +116,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!type || !(VALID_TYPES as readonly string[]).includes(type)) {
+    if (!type || !(VALID_REPORT_TYPES as readonly string[]).includes(type)) {
       return NextResponse.json({ success: false, error: "type must be LOST or FOUND" }, { status: 400 });
     }
-    const cleanName = (itemName || "").trim();
-    if (cleanName.length < 2 || cleanName.length > 100) {
-      return NextResponse.json({ success: false, error: "Item name must be 2-100 characters" }, { status: 400 });
+
+    const parsed = validateReportDetails({ itemName, category, description, location, date });
+    if (!parsed.ok) {
+      return NextResponse.json({ success: false, error: parsed.error }, { status: 400 });
     }
-    const cleanDescription = (description || "").trim();
-    if (cleanDescription.length < 5 || cleanDescription.length > 2000) {
-      return NextResponse.json({ success: false, error: "Description must be 5-2000 characters" }, { status: 400 });
-    }
-    const cleanLocation = (location || "").trim();
-    if (cleanLocation.length < 2 || cleanLocation.length > 200) {
-      return NextResponse.json({ success: false, error: "Location must be 2-200 characters" }, { status: 400 });
-    }
-    if (category && !isItemCategory(category)) {
-      return NextResponse.json({ success: false, error: "Invalid category" }, { status: 400 });
-    }
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00.000Z`).getTime())) {
-      return NextResponse.json({ success: false, error: "A valid date is required" }, { status: 400 });
-    }
-    if (date > todayIso()) {
-      return NextResponse.json({ success: false, error: "Date cannot be in the future" }, { status: 400 });
-    }
+    const { itemName: cleanName, category: cleanCategory, description: cleanDescription, location: cleanLocation, date: cleanDate } = parsed.value;
 
     const duplicate = await prisma.report.findFirst({
       where: {
@@ -164,10 +144,10 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         type: type as any,
         itemName: cleanName,
-        category: category || null,
+        category: cleanCategory,
         description: cleanDescription,
         location: cleanLocation,
-        date: new Date(`${date}T00:00:00.000Z`),
+        date: cleanDate,
         imageUrl: imageUrls[0] || null,
         imageUrls,
       },

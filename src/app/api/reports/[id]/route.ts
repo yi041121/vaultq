@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
+import { validateReportDetails } from "@/lib/report-validation";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -31,22 +32,118 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   }
 }
 
-// PATCH /api/reports/:id — admin match / reject / close / reopen
+// PATCH /api/reports/:id — student edits own pending report, or admin match / reject / close / reopen
 export async function PATCH(request: NextRequest, { params }: Ctx) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-  if (user.role !== "ADMIN") return NextResponse.json({ success: false, error: "Admin only" }, { status: 403 });
   const { id } = await params;
 
   try {
     const body = await request.json();
+
+    if (user.role === "STUDENT") {
+      if ((body.action ?? "update") !== "update") {
+        return NextResponse.json({ success: false, error: "Admin only" }, { status: 403 });
+      }
+
+      const report = await prisma.report.findUnique({ where: { id } });
+      if (!report) return NextResponse.json({ success: false, error: "Report not found" }, { status: 404 });
+      if (report.userId !== user.id) {
+        return NextResponse.json({ success: false, error: "Not your report" }, { status: 403 });
+      }
+      if (report.status !== "PENDING") {
+        return NextResponse.json(
+          { success: false, error: `A ${report.status.toLowerCase()} report can no longer be edited` },
+          { status: 409 },
+        );
+      }
+
+      const parsed = validateReportDetails(body);
+      if (!parsed.ok) {
+        return NextResponse.json({ success: false, error: parsed.error }, { status: 400 });
+      }
+
+      let imageUpdate: { imageUrl: string | null; imageUrls: string[] } | null = null;
+      if (body.imageUrls !== undefined) {
+        if (!Array.isArray(body.imageUrls) || body.imageUrls.length > 3) {
+          return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
+        }
+        for (const value of body.imageUrls) {
+          if (typeof value !== "string" || !value.startsWith("data:image/")) {
+            return NextResponse.json({ success: false, error: "Photos must be images" }, { status: 400 });
+          }
+          const base64 = value.slice(value.indexOf(",") + 1);
+          if (Math.ceil(base64.length * 0.75) > 5 * 1024 * 1024) {
+            return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
+          }
+        }
+        imageUpdate = { imageUrls: body.imageUrls, imageUrl: body.imageUrls[0] || null };
+      }
+
+      const duplicate = await prisma.report.findFirst({
+        where: {
+          id: { not: id },
+          userId: user.id,
+          type: report.type,
+          itemName: { equals: parsed.value.itemName, mode: "insensitive" },
+          status: "PENDING",
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        return NextResponse.json(
+          { success: false, error: "You already have another pending report for this item" },
+          { status: 409 },
+        );
+      }
+
+      const updated = await prisma.report.update({
+        where: { id },
+        data: { ...parsed.value, ...(imageUpdate ?? {}) },
+        include: REPORT_INCLUDE,
+      });
+
+      return NextResponse.json({ success: true, data: updated });
+    }
+
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
     const action = body.action;
-    if (!["match", "reject", "close", "reopen"].includes(action)) {
+    if (!["update", "match", "reject", "close", "reopen"].includes(action)) {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
     const report = await prisma.report.findUnique({ where: { id } });
     if (!report) return NextResponse.json({ success: false, error: "Report not found" }, { status: 404 });
+
+    if (action === "update") {
+      if (report.status !== "PENDING") {
+        return NextResponse.json(
+          { success: false, error: `A ${report.status.toLowerCase()} report can no longer be edited` },
+          { status: 409 },
+        );
+      }
+      if (!Array.isArray(body.imageUrls) || body.imageUrls.length > 3) {
+        return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
+      }
+      for (const value of body.imageUrls) {
+        if (typeof value !== "string" || !value.startsWith("data:image/")) {
+          return NextResponse.json({ success: false, error: "Photos must be images" }, { status: 400 });
+        }
+        const base64 = value.slice(value.indexOf(",") + 1);
+        if (Math.ceil(base64.length * 0.75) > 5 * 1024 * 1024) {
+          return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
+        }
+      }
+      const updated = await prisma.report.update({
+        where: { id },
+        data: { imageUrls: body.imageUrls, imageUrl: body.imageUrls[0] || null },
+        include: REPORT_INCLUDE,
+      });
+      return NextResponse.json({ success: true, data: updated });
+    }
 
     if (action === "match") {
       if (report.type !== "LOST") {

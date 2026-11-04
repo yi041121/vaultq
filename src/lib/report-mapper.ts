@@ -30,6 +30,7 @@ export interface UserReport {
   adminNote: string | null;
   createdAt: string;
   reviewedAt: string | null;
+  reviewedByName: string | null;
   studentName: string;
   studentId: string;
   studentEmail: string;
@@ -100,6 +101,7 @@ export function mapReport(raw: any): UserReport {
     adminNote: raw?.adminNote || null,
     createdAt: raw?.createdAt ? String(raw.createdAt) : "",
     reviewedAt: raw?.reviewedAt ? String(raw.reviewedAt) : null,
+    reviewedByName: raw?.reviewedBy?.name || null,
     studentName: raw?.user?.name || "Unknown student",
     studentId: raw?.user?.studentId || "",
     studentEmail: raw?.user?.email || "",

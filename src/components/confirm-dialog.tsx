@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
+import { useEscapeKey } from "@/lib/use-escape-key";
 import { vcolors as c } from "@/components/ui/vault";
 
 interface ConfirmDialogProps {
@@ -15,6 +16,7 @@ interface ConfirmDialogProps {
 
 /** Centered confirmation dialog (white card, red warning icon, Cancel + confirm). */
 export function ConfirmDialog({ open, title, subtitle, cancelLabel = "Cancel", confirmLabel, onCancel, onConfirm }: ConfirmDialogProps) {
+  useEscapeKey(open, onCancel);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">

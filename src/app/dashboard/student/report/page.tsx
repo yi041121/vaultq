@@ -3,25 +3,32 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  PackageSearch, PackageCheck, MapPin, Clock, Camera, X, CheckCircle2,
-  Loader2, RefreshCw, Plus, ArrowRight, FileText, ImagePlus, Upload,
+  PackageSearch, PackageCheck, Clock, X, CheckCircle2,
+  Loader2, RefreshCw, Plus, ArrowRight, FileText, RotateCcw,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
-  ChevronDown, ChevronLeft, ChevronRight,
+  ChevronDown, ZoomIn,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
+import { DateCalendar } from "@/components/date-calendar";
+import { PhotoViewerModal } from "@/components/photo-viewer-modal";
+import { PhotoSourceDialog } from "@/components/photo-source-dialog";
+import { PhotoPicker } from "@/components/photo-picker";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VBadge, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
+import { startsWithNumber } from "@/lib/text-validation";
+import { useEscapeKey } from "@/lib/use-escape-key";
 
 interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
 type ReportPhoto = { file: File; preview: string; originalFile: File; originalPreview: string };
+type EditPhoto = { preview: string; originalPreview: string };
 
 const categoryIcons: Record<string, any> = {
   Electronics: Monitor,
@@ -47,18 +54,15 @@ function fmtTimestamp(value: string) {
   return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function toISO(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** Formats the report's own date (no time). */
+function fmtReportDate(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "—";
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+  });
 }
 
-function monthGrid(year: number, month: number) {
-  const first = new Date(year, month, 1);
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: Array<Date | null> = [];
-  for (let i = 0; i < first.getDay(); i++) cells.push(null);
-  for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
-  return cells;
-}
+let studentReportsCache: UserReport[] | null = null;
 
 export default function StudentReport() {
   const router = useRouter();
@@ -74,35 +78,38 @@ export default function StudentReport() {
   const [date, setDate] = useState("");
   const [photos, setPhotos] = useState<ReportPhoto[]>([]);
   const [editingPhoto, setEditingPhoto] = useState<number | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState<"new" | "edit" | null>(null);
+  const [photoSourceTarget, setPhotoSourceTarget] = useState<"new" | "edit" | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
-  const [calOffset, setCalOffset] = useState(0);
-  const [draftDate, setDraftDate] = useState("");
-  const [clickedDate, setClickedDate] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<ReportType | null>(null);
 
-  const [reports, setReports] = useState<UserReport[]>([]);
-  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reports, setReports] = useState<UserReport[]>(studentReportsCache ?? []);
+  const [reportsLoading, setReportsLoading] = useState(studentReportsCache === null);
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<UserReport | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
+  const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<UserReport | null>(null);
+  const [editForm, setEditForm] = useState({ itemName: "", category: "", description: "", location: "", date: "" });
+  const [editCategoryOpen, setEditCategoryOpen] = useState(false);
+  const [editDateOpen, setEditDateOpen] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editPhotos, setEditPhotos] = useState<EditPhoto[]>([]);
+  const [editingEditPhoto, setEditingEditPhoto] = useState<number | null>(null);
+  const editPhotoInputRef = useRef<HTMLInputElement>(null);
+  const editCameraInputRef = useRef<HTMLInputElement>(null);
 
-  const todayDate = new Date();
-  const todayIso = toISO(todayDate);
-  const currentMonthStart = new Date(todayDate.getFullYear(), todayDate.getMonth(), 1);
-  const calendarMonth = new Date(todayDate.getFullYear(), todayDate.getMonth() + calOffset, 1);
-  const canGoNextMonth = calendarMonth < currentMonthStart;
   const formValid = !!(
     type && itemName.trim().length >= 2 && category && description.trim().length >= 5 &&
-    location.trim().length >= 2 && date
+    location.trim().length >= 2 && date &&
+    !startsWithNumber(itemName) && !startsWithNumber(description) && !startsWithNumber(location)
   );
 
   async function loadReports(token: string) {
-    setReportsLoading(true);
+    if (!studentReportsCache) setReportsLoading(true);
     setReportsError(null);
     try {
       const res = await fetch("/api/reports", {
@@ -111,10 +118,12 @@ export default function StudentReport() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load reports");
-      setReports((data.data as any[]).map(mapReport));
+      const mapped = (data.data as any[]).map(mapReport);
+      setReports(mapped);
+      studentReportsCache = mapped;
     } catch (e) {
       setReportsError(e instanceof Error ? e.message : "Failed to load reports");
-      setReports([]);
+      if (!studentReportsCache) setReports([]);
     } finally {
       setReportsLoading(false);
     }
@@ -140,7 +149,16 @@ export default function StudentReport() {
     if (params.get("tab") === "reports") setTab("reports");
   }, []);
 
+  function switchTab(next: "new" | "reports") {
+    setTab(next);
+    if (typeof window !== "undefined") {
+      const url = next === "reports" ? "/dashboard/student/report?tab=reports" : "/dashboard/student/report";
+      window.history.replaceState(null, "", url);
+    }
+  }
+
   function handleLogout() {
+    studentReportsCache = null;
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -155,8 +173,8 @@ export default function StudentReport() {
     setDate("");
     setPhotos([]);
     setEditingPhoto(null);
-    setCameraOpen(false);
-    setPhotoSourceOpen(false);
+    setCameraTarget(null);
+    setPhotoSourceTarget(null);
   }
 
   function selectType(next: ReportType) {
@@ -164,33 +182,20 @@ export default function StudentReport() {
     setSubmitted(null);
   }
 
-  function openCamera() {
-    setPhotoSourceOpen(false);
+  function openCameraFor(target: "new" | "edit") {
+    setPhotoSourceTarget(null);
     // Live camera requires a secure context (localhost or HTTPS). On other
     // origins, fall back to the device's native camera/file picker.
     if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") {
-      setCameraOpen(true);
+      setCameraTarget(target);
       return;
     }
-    cameraInputRef.current?.click();
+    if (target === "edit") editCameraInputRef.current?.click();
+    else cameraInputRef.current?.click();
   }
 
   function toggleDateCalendar() {
-    if (dateOpen) {
-      setDateOpen(false);
-      return;
-    }
-    setDraftDate(date);
-    setClickedDate(null);
-    if (date) {
-      const selected = new Date(`${date}T00:00:00`);
-      setCalOffset(
-        (selected.getFullYear() - todayDate.getFullYear()) * 12 + selected.getMonth() - todayDate.getMonth(),
-      );
-    } else {
-      setCalOffset(0);
-    }
-    setDateOpen(true);
+    setDateOpen((open) => !open);
   }
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -235,6 +240,18 @@ export default function StudentReport() {
 
   async function handleSubmit() {
     if (!type) return;
+    if (startsWithNumber(itemName)) {
+      showCenteredMessage("error", "Item name cannot start with a number");
+      return;
+    }
+    if (startsWithNumber(description)) {
+      showCenteredMessage("error", "Description cannot start with a number");
+      return;
+    }
+    if (startsWithNumber(location)) {
+      showCenteredMessage("error", "Location cannot start with a number");
+      return;
+    }
     if (!formValid) {
       showCenteredMessage("error", "Please complete all required fields");
       return;
@@ -312,6 +329,134 @@ export default function StudentReport() {
     }
   }
 
+  function openEdit(report: UserReport) {
+    setEditTarget(report);
+    setEditForm({
+      itemName: report.itemName,
+      category: report.category,
+      description: report.description,
+      location: report.location,
+      date: report.date,
+    });
+    setEditCategoryOpen(false);
+    setEditDateOpen(false);
+    setEditingEditPhoto(null);
+    setEditPhotos(report.images.map((src) => ({ preview: src, originalPreview: src })));
+  }
+
+  async function handleEditPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    if (editPhotos.length + files.length > 3) {
+      showCenteredMessage("error", "You can upload up to 3 photos");
+      return;
+    }
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showCenteredMessage("error", "Please upload image files only");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showCenteredMessage("error", "Each image must be under 5MB");
+        return;
+      }
+    }
+    try {
+      const previews = await Promise.all(
+        files.map(
+          (file) =>
+            new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error("Could not read image"));
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
+      setEditPhotos((prev) =>
+        [...prev, ...previews.map((preview) => ({ preview, originalPreview: preview }))].slice(0, 3),
+      );
+    } catch {
+      showCenteredMessage("error", "Could not read one of the images");
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editTarget || savingEdit) return;
+    const token = localStorage.getItem("token");
+    if (!token) {
+      showCenteredMessage("error", "Session expired — please sign in again");
+      return;
+    }
+    if (editForm.itemName.trim().length < 2) {
+      showCenteredMessage("error", "Item name must be at least 2 characters");
+      return;
+    }
+    if (startsWithNumber(editForm.itemName)) {
+      showCenteredMessage("error", "Item name cannot start with a number");
+      return;
+    }
+    if (editForm.description.trim().length < 5) {
+      showCenteredMessage("error", "Description must be at least 5 characters");
+      return;
+    }
+    if (startsWithNumber(editForm.description)) {
+      showCenteredMessage("error", "Description cannot start with a number");
+      return;
+    }
+    if (editForm.location.trim().length < 2) {
+      showCenteredMessage("error", "Location must be at least 2 characters");
+      return;
+    }
+    if (startsWithNumber(editForm.location)) {
+      showCenteredMessage("error", "Location cannot start with a number");
+      return;
+    }
+    if (!editForm.date) {
+      showCenteredMessage("error", "Please choose a date");
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/reports/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          action: "update",
+          itemName: editForm.itemName.trim(),
+          category: editForm.category,
+          description: editForm.description.trim(),
+          location: editForm.location.trim(),
+          date: editForm.date,
+          imageUrls: editPhotos.map((photo) => photo.preview),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        showCenteredMessage("error", data?.error || "Failed to update report");
+        return;
+      }
+      const updated = mapReport(data.data);
+      setReports((prev) => prev.map((report) => (report.id === updated.id ? updated : report)));
+      setEditTarget(null);
+      showCenteredMessage("success", "Report updated");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to update report");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
+  useEscapeKey(!!editTarget && !viewer && !photoSourceTarget && !cameraTarget && editingEditPhoto === null, () => {
+    if (savingEdit) return;
+    if (editDateOpen) { setEditDateOpen(false); return; }
+    if (editCategoryOpen) { setEditCategoryOpen(false); return; }
+    setEditTarget(null);
+  });
+
   if (!user || !mounted) return null;
 
   return (
@@ -323,25 +468,20 @@ export default function StudentReport() {
             <button type="button"
               className="flex-1 h-10 text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={{ backgroundColor: tab === "new" ? c.primary : "transparent", color: tab === "new" ? "#fff" : c.textMuted }}
-              onClick={() => setTab("new")}>
+              onClick={() => switchTab("new")}>
               New report
             </button>
             <button type="button"
               className="flex-1 h-10 text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={{ backgroundColor: tab === "reports" ? c.primary : "transparent", color: tab === "reports" ? "#fff" : c.textMuted }}
-              onClick={() => setTab("reports")}>
+              onClick={() => switchTab("reports")}>
               My reports{reports.length > 0 ? ` (${reports.length})` : ""}
             </button>
           </div>
 
           {tab === "reports" ? (
             <div className="w-full max-w-3xl mx-auto flex-1">
-              {reportsLoading ? (
-                <VCard className="py-20 text-center flex flex-col items-center justify-center">
-                  <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
-                  <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading your reports...</p>
-                </VCard>
-              ) : reportsError ? (
+              {reportsLoading ? null : reportsError ? (
                 <VCard className="py-20 text-center flex flex-col items-center justify-center">
                   <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
                   <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
@@ -357,7 +497,7 @@ export default function StudentReport() {
                   <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>
                     Report a lost item or hand in something you found.
                   </p>
-                  <VButton onClick={() => setTab("new")}><Plus size={14} /> New report</VButton>
+                  <VButton onClick={() => switchTab("new")}><Plus size={14} /> New report</VButton>
                 </VCard>
               ) : (
                 <div className="space-y-4">
@@ -368,14 +508,14 @@ export default function StudentReport() {
                       <VCard key={report.id} className="p-5 lg:p-6">
                         <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                           <div className="flex items-start gap-3 min-w-0">
-                            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-                              style={{ backgroundColor: `${typeColor[report.type]}15` }}>
-                              <Icon size={20} style={{ color: typeColor[report.type] }} />
+                            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 -mt-1"
+                              style={{ backgroundColor: c.primary }}>
+                              <Icon size={20} style={{ color: "#fff" }} />
                             </div>
                             <div className="min-w-0">
                               <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
                               <p className="text-[11px] mt-0.5" style={{ color: c.textLight }}>
-                                {report.reference} · {report.typeLabel} · {fmtTimestamp(report.createdAt)}
+                                {fmtReportDate(report.date)}{" · "}{report.location || "—"}{" · "}{report.category}
                               </p>
                             </div>
                           </div>
@@ -385,20 +525,27 @@ export default function StudentReport() {
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs mb-3" style={{ color: c.textMuted }}>
-                          <span className="flex items-center gap-1"><MapPin size={12} /> {report.location || "—"}</span>
-                          <span className="flex items-center gap-1"><Clock size={12} /> {fmtDay(report.date)}</span>
-                          <span>{report.category}</span>
+                        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: c.textLight }}>Description</p>
+                          <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{report.description}</p>
                         </div>
-
-                        <p className="text-sm leading-relaxed mb-3" style={{ color: c.textMuted }}>{report.description}</p>
 
                         {report.images.length > 0 && (
                           <div className={`grid gap-2 mb-3 ${report.images.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
                             {report.images.map((src, index) => (
-                              <img key={`${report.id}-photo-${index}`} src={src} alt={`${report.itemName} photo ${index + 1}`}
-                                className={`w-full object-cover rounded-xl border ${report.images.length === 1 ? "h-40" : "h-28"}`}
-                                style={{ borderColor: c.border }} />
+                              <button key={`${report.id}-photo-${index}`} type="button"
+                                aria-label={`View photo ${index + 1}`}
+                                className="group relative rounded-xl overflow-hidden border cursor-pointer bg-[#f8fafc]"
+                                style={{ borderColor: c.border }}
+                                onClick={() => setViewer({ photos: report.images, index, title: report.itemName })}>
+                                <img src={src} alt={`${report.itemName} photo ${index + 1}`}
+                                  className={`w-full object-cover ${report.images.length === 1 ? "h-40" : "h-28"}`} />
+                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
+                                    <ZoomIn size={13} /> View photo
+                                  </span>
+                                </span>
+                              </button>
                             ))}
                           </div>
                         )}
@@ -412,10 +559,15 @@ export default function StudentReport() {
                         {report.item && (
                           <div className="rounded-xl p-3.5 mb-3 flex flex-wrap items-center gap-3" style={{ backgroundColor: c.fill }}>
                             {report.item.imageUrl ? (
-                              <img src={report.item.imageUrl} alt={report.item.name} className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: c.border }} />
+                              <button type="button"
+                                aria-label={`View ${report.item.name} photo`}
+                                className="cursor-pointer shrink-0"
+                                onClick={() => setViewer({ photos: [report.item!.imageUrl!], index: 0, title: report.item!.name })}>
+                                <img src={report.item.imageUrl} alt={report.item.name} className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: c.border }} />
+                              </button>
                             ) : (
                               <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.borderLight }}>
-                                <Icon size={20} style={{ color: c.primary }} />
+                                <PackageCheck size={20} style={{ color: c.primary }} />
                               </div>
                             )}
                             <div className="flex-1 min-w-[160px]">
@@ -435,15 +587,19 @@ export default function StudentReport() {
                         )}
 
                         {report.type === "FOUND" && report.status === "PENDING" && (
-                          <p className="text-[11px] mb-3 p-2.5 rounded-lg" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
-                            Please hand this item to the Lost &amp; Found office. An admin will verify it and assign a locker.
-                          </p>
+                          <div className="rounded-xl p-3.5 mb-3 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `${c.accent}12`, color: c.textMuted }}>
+                            <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: c.accent }} />
+                            <span>Please hand this item to the Lost &amp; Found office. An admin will verify it and assign a locker.</span>
+                          </div>
                         )}
 
                         {report.status === "PENDING" && (
-                          <div className="flex justify-end">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <VButton variant="secondary" size="sm" onClick={() => openEdit(report)}>
+                              Edit
+                            </VButton>
                             <VButton variant="danger" size="sm" onClick={() => setWithdrawTarget(report)}>
-                              Withdraw report
+                              Withdraw
                             </VButton>
                           </div>
                         )}
@@ -470,7 +626,7 @@ export default function StudentReport() {
                     <VButton variant="secondary" size="lg" onClick={() => { setSubmitted(null); resetForm(); }}>
                       Report another
                     </VButton>
-                    <VButton size="lg" onClick={() => { setSubmitted(null); setTab("reports"); }}>
+                    <VButton size="lg" onClick={() => { setSubmitted(null); switchTab("reports"); }}>
                       View my reports
                     </VButton>
                   </div>
@@ -523,7 +679,7 @@ export default function StudentReport() {
                   {type === "FOUND" && (
                     <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `${c.accent}12`, color: c.textMuted }}>
                       <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: c.accent }} />
-                      <span>After submitting, hand the item to the Lost &amp; Found office. An admin will verify it and assign a locker before it appears in Search.</span>
+                      <span>After submitting, hand the item to the Lost &amp; Found office. An admin will verify it and assign a locker.</span>
                     </div>
                   )}
 
@@ -535,6 +691,9 @@ export default function StudentReport() {
                         </label>
                         <VInput value={itemName} maxLength={100} onChange={(e) => setItemName(e.target.value)}
                           placeholder={type === "LOST" ? "e.g. Black Adidas backpack" : "e.g. Silver Samsung phone"} />
+                        {itemName.trim() && startsWithNumber(itemName) && (
+                          <p className="text-[11px] mt-1" style={{ color: c.danger }}>Item name cannot start with a number.</p>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -586,80 +745,8 @@ export default function StudentReport() {
                           {dateOpen && (
                             <>
                               <div className="fixed inset-0 z-20" onClick={() => setDateOpen(false)} />
-                              <div className="absolute right-4 top-[76px] z-30 w-[300px] max-w-[calc(100vw-3rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
-                                <div className="flex items-center justify-between mb-3">
-                                  <button type="button"
-                                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-                                    style={{ backgroundColor: c.fill, color: c.textMuted }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                                    onClick={() => setCalOffset(calOffset - 1)}>
-                                    <ChevronLeft size={14} />
-                                  </button>
-                                  <span className="text-xs font-medium" style={{ color: c.primary }}>
-                                    {calendarMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-                                  </span>
-                                  <button type="button" disabled={!canGoNextMonth}
-                                    className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                    style={{ backgroundColor: c.fill, color: c.textMuted }}
-                                    onMouseEnter={(e) => { if (canGoNextMonth) e.currentTarget.style.backgroundColor = c.borderLight; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                                    onClick={() => setCalOffset(calOffset + 1)}>
-                                    <ChevronRight size={14} />
-                                  </button>
-                                </div>
-                                <div className="grid grid-cols-7 gap-0.5 text-center">
-                                  {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
-                                    <span key={day} className="text-[10px] font-semibold py-1" style={{ color: c.textMuted }}>{day}</span>
-                                  ))}
-                                  {monthGrid(calendarMonth.getFullYear(), calendarMonth.getMonth()).map((day, index) => {
-                                    if (!day) return <span key={index} />;
-                                    const iso = toISO(day);
-                                    const isSelected = draftDate === iso;
-                                    const isFuture = iso > todayIso;
-                                    return (
-                                      <button key={index} type="button" disabled={isFuture}
-                                        className="h-8 w-8 mx-auto rounded-full text-xs transition-all duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                        style={{
-                                          backgroundColor: isSelected ? c.primary : "transparent",
-                                          color: isSelected ? "#fff" : c.text,
-                                          fontWeight: isSelected ? "700" : "400",
-                                        }}
-                                        onMouseEnter={(e) => { if (!isSelected && !isFuture) e.currentTarget.style.backgroundColor = c.fill; }}
-                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "transparent"; }}
-                                        onClick={() => {
-                                          if (clickedDate === iso) {
-                                            setDraftDate(iso);
-                                            setDate(iso);
-                                            setDateOpen(false);
-                                            return;
-                                          }
-                                          setDraftDate(iso);
-                                          setClickedDate(iso);
-                                        }}>
-                                        {day.getDate()}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: c.fill }}>
-                                  <button type="button"
-                                    className="h-8 px-3 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer"
-                                    style={{ backgroundColor: c.fill, color: c.textMuted }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                                    onClick={() => { setDraftDate(""); setClickedDate(null); setDate(""); setDateOpen(false); }}>
-                                    Clear
-                                  </button>
-                                  <button type="button" disabled={!draftDate}
-                                    className="h-8 px-4 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                                    style={{ backgroundColor: c.primary, color: "#fff" }}
-                                    onMouseEnter={(e) => { if (draftDate) e.currentTarget.style.backgroundColor = c.primaryDark; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}
-                                    onClick={() => { setDate(draftDate); setDateOpen(false); }}>
-                                    Confirm
-                                  </button>
-                                </div>
+                              <div className="absolute right-6 top-[72px] z-30">
+                                <DateCalendar value={date} onChange={setDate} onClose={() => setDateOpen(false)} />
                               </div>
                             </>
                           )}
@@ -675,6 +762,9 @@ export default function StudentReport() {
                           {type === "LOST" ? "Last seen location" : "Found location"} <span style={{ color: c.danger }}>*</span>
                         </label>
                         <VInput value={location} maxLength={200} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Library 3rd Floor" />
+                        {location.trim() && startsWithNumber(location) && (
+                          <p className="text-[11px] mt-1" style={{ color: c.danger }}>Location cannot start with a number.</p>
+                        )}
                       </div>
                       <div>
                         <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
@@ -682,6 +772,9 @@ export default function StudentReport() {
                         </label>
                         <VTextarea value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} rows={3}
                           placeholder="Provide details like color, brand and distinguishing features..." />
+                        {description.trim() && startsWithNumber(description) && (
+                          <p className="text-[11px] mt-1" style={{ color: c.danger }}>Description cannot start with a number.</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -697,7 +790,7 @@ export default function StudentReport() {
                           <button type="button"
                             className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-semibold border bg-white cursor-pointer hover:opacity-80"
                             style={{ borderColor: c.border, color: c.primary }}
-                            onClick={() => setPhotoSourceOpen(true)}>
+                            onClick={() => setPhotoSourceTarget("new")}>
                             <Plus size={13} /> Add photo
                           </button>
                         )}
@@ -706,15 +799,10 @@ export default function StudentReport() {
                     <input id="report-photo" type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoChange} />
                     <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
                     {photos.length === 0 ? (
-                      <button type="button"
-                        className="w-full h-20 rounded-xl border border-dashed flex items-center justify-center gap-2 transition-colors duration-200 cursor-pointer"
-                        style={{ borderColor: c.border, color: c.textMuted, backgroundColor: c.fill }}
-                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = c.primary; e.currentTarget.style.color = c.primary; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.textMuted; }}
-                        onClick={() => setPhotoSourceOpen(true)}>
-                        <ImagePlus size={18} />
-                        <span className="text-xs font-medium">Choose photos</span>
-                      </button>
+                      <PhotoPicker
+                        onUpload={() => document.getElementById("report-photo")?.click()}
+                        onTakePhoto={() => openCameraFor("new")}
+                      />
                     ) : (
                       <div className={`grid gap-2 ${photos.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
                         {photos.map((photo, index) => (
@@ -729,6 +817,20 @@ export default function StudentReport() {
                                 </span>
                               </span>
                             </button>
+                            {photo.preview !== photo.originalPreview && (
+                              <button type="button"
+                                aria-label={`Revert photo ${index + 1} to original`}
+                                className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 h-7 px-2 rounded-full bg-black/60 text-white text-[10px] font-semibold hover:bg-black/80 cursor-pointer"
+                                onClick={() => setPhotos((prev) =>
+                                  prev.map((item, i) =>
+                                    i === index
+                                      ? { ...item, file: item.originalFile, preview: item.originalPreview }
+                                      : item,
+                                  ),
+                                )}>
+                                <RotateCcw size={11} /> Revert
+                              </button>
+                            )}
                             <button type="button" onClick={() => setPhotos((prev) => prev.filter((_, i) => i !== index))}
                               aria-label={`Remove photo ${index + 1}`}
                               className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 cursor-pointer">
@@ -755,57 +857,43 @@ export default function StudentReport() {
         </div>
       </main>
 
-      {photoSourceOpen && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setPhotoSourceOpen(false)} />
-          <VCard className="relative w-full max-w-sm p-5">
-            <div className="flex items-start justify-between gap-3 mb-1">
-              <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Add a photo</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>Take a new photo or upload one from your files.</p>
-              </div>
-              <button type="button" onClick={() => setPhotoSourceOpen(false)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0"
-                style={{ color: c.textMuted }} aria-label="Close photo options">
-                <X size={16} />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              <button type="button"
-                className="flex flex-col items-center justify-center gap-2 h-28 rounded-xl border bg-white cursor-pointer transition-colors duration-200 hover:bg-[#f8fafc]"
-                style={{ borderColor: c.border, color: c.text }}
-                onClick={openCamera}>
-                <Camera size={24} style={{ color: c.primary }} />
-                <span className="text-sm font-semibold">Take photo</span>
-                <span className="text-[11px]" style={{ color: c.textLight }}>Use your camera</span>
-              </button>
-              <button type="button"
-                className="flex flex-col items-center justify-center gap-2 h-28 rounded-xl border bg-white cursor-pointer transition-colors duration-200 hover:bg-[#f8fafc]"
-                style={{ borderColor: c.border, color: c.text }}
-                onClick={() => { setPhotoSourceOpen(false); document.getElementById("report-photo")?.click(); }}>
-                <Upload size={24} style={{ color: c.primary }} />
-                <span className="text-sm font-semibold">Upload photo</span>
-                <span className="text-[11px]" style={{ color: c.textLight }}>Choose from files</span>
-              </button>
-            </div>
-          </VCard>
-        </div>
+      {photoSourceTarget && (
+        <PhotoSourceDialog
+          onClose={() => setPhotoSourceTarget(null)}
+          onTakePhoto={() => openCameraFor(photoSourceTarget)}
+          onUpload={() => {
+            const target = photoSourceTarget;
+            setPhotoSourceTarget(null);
+            if (target === "edit") editPhotoInputRef.current?.click();
+            else document.getElementById("report-photo")?.click();
+          }}
+        />
       )}
 
-      {cameraOpen && (
+      {cameraTarget && (
         <CameraCaptureModal
-          onClose={() => setCameraOpen(false)}
+          onClose={() => setCameraTarget(null)}
           onUseUpload={() => {
-            setCameraOpen(false);
-            document.getElementById("report-photo")?.click();
+            const target = cameraTarget;
+            setCameraTarget(null);
+            if (target === "edit") editPhotoInputRef.current?.click();
+            else document.getElementById("report-photo")?.click();
           }}
           onCapture={(photo) => {
-            setPhotos((prev) =>
-              prev.length >= 3
-                ? prev
-                : [...prev, { ...photo, originalFile: photo.file, originalPreview: photo.preview }],
-            );
-            setCameraOpen(false);
+            if (cameraTarget === "edit") {
+              setEditPhotos((prev) =>
+                prev.length >= 3
+                  ? prev
+                  : [...prev, { preview: photo.preview, originalPreview: photo.preview }],
+              );
+            } else {
+              setPhotos((prev) =>
+                prev.length >= 3
+                  ? prev
+                  : [...prev, { ...photo, originalFile: photo.file, originalPreview: photo.preview }],
+              );
+            }
+            setCameraTarget(null);
           }}
         />
       )}
@@ -813,18 +901,7 @@ export default function StudentReport() {
       {editingPhoto !== null && photos[editingPhoto] && (
         <PhotoCropModal
           src={photos[editingPhoto].preview}
-          originalSrc={photos[editingPhoto].originalPreview}
           onClose={() => setEditingPhoto(null)}
-          onRevert={() => {
-            setPhotos((prev) =>
-              prev.map((item, index) =>
-                index === editingPhoto
-                  ? { ...item, file: item.originalFile, preview: item.originalPreview }
-                  : item,
-              ),
-            );
-            setEditingPhoto(null);
-          }}
           onSave={(photo) => {
             setPhotos((prev) =>
               prev.map((item, index) =>
@@ -836,10 +913,201 @@ export default function StudentReport() {
         />
       )}
 
+      {editingEditPhoto !== null && editPhotos[editingEditPhoto] && (
+        <PhotoCropModal
+          src={editPhotos[editingEditPhoto].preview}
+          onClose={() => setEditingEditPhoto(null)}
+          onSave={(photo) => {
+            setEditPhotos((prev) =>
+              prev.map((item, index) =>
+                index === editingEditPhoto ? { ...item, preview: photo.preview } : item,
+              ),
+            );
+            setEditingEditPhoto(null);
+          }}
+        />
+      )}
+
+      {viewer && (
+        <PhotoViewerModal
+          photos={viewer.photos}
+          index={viewer.index}
+          title={viewer.title}
+          onIndexChange={(index) => setViewer((prev) => (prev ? { ...prev, index } : prev))}
+          onClose={() => setViewer(null)}
+        />
+      )}
+
+      {editTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!savingEdit) setEditTarget(null); }} />
+          <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5 lg:p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Edit report details</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{editTarget.typeLabel}</p>
+              </div>
+              <button type="button" onClick={() => { if (!savingEdit) setEditTarget(null); }} aria-label="Close edit report"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Item name</label>
+                <VInput value={editForm.itemName} maxLength={100}
+                  onChange={(e) => setEditForm({ ...editForm, itemName: e.target.value })} />
+                {editForm.itemName.trim() && startsWithNumber(editForm.itemName) && (
+                  <p className="text-[11px] mt-1" style={{ color: c.danger }}>Item name cannot start with a number.</p>
+                )}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Category</label>
+                  <VDropdown open={editCategoryOpen} onOpenChange={setEditCategoryOpen} width="w-full"
+                    trigger={
+                      <button type="button"
+                        className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm font-medium border bg-white text-left cursor-pointer relative"
+                        style={{ borderColor: c.border, color: editForm.category ? c.text : c.textMuted }}
+                        onClick={() => setEditCategoryOpen(!editCategoryOpen)}>
+                        {editForm.category
+                          ? <>{(() => { const Icon = categoryIcons[editForm.category] || Grid3X3; return <Icon size={15} style={{ color: c.primary }} />; })()}<span>{editForm.category}</span></>
+                          : <span>Select a category</span>}
+                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-xs" style={{ color: c.textMuted }}>▾</span>
+                      </button>
+                    }>
+                    {(close) => (
+                      <>
+                        {ITEM_CATEGORIES.map((cat) => {
+                          const Icon = categoryIcons[cat] || Grid3X3;
+                          return (
+                            <VDropdownItem key={cat} active={editForm.category === cat}
+                              onSelect={() => { setEditForm({ ...editForm, category: cat }); close(); }}>
+                              <Icon size={15} style={{ color: c.primary }} /> {cat}
+                            </VDropdownItem>
+                          );
+                        })}
+                      </>
+                    )}
+                  </VDropdown>
+                </div>
+
+                <div className="relative">
+                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Date</label>
+                  <VFilterButton active={!!editForm.date} className="w-full justify-between" style={{ height: 44 }}
+                    onClick={() => setEditDateOpen((open) => !open)}>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Clock size={14} style={{ color: c.primary }} />
+                      <span className="truncate">{editForm.date ? fmtDay(editForm.date) : "Select date"}</span>
+                    </span>
+                    <ChevronDown size={13} style={{ color: c.textMuted }} />
+                  </VFilterButton>
+
+                  {editDateOpen && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setEditDateOpen(false)} />
+                      <div className="absolute right-[-8px] top-[66px] z-30">
+                        <DateCalendar value={editForm.date} compact
+                          onChange={(iso) => setEditForm((prev) => ({ ...prev, date: iso }))}
+                          onClose={() => setEditDateOpen(false)} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Location</label>
+                <VInput value={editForm.location} maxLength={200}
+                  onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+                {editForm.location.trim() && startsWithNumber(editForm.location) && (
+                  <p className="text-[11px] mt-1" style={{ color: c.danger }}>Location cannot start with a number.</p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Description</label>
+                <VTextarea rows={4} value={editForm.description} maxLength={2000}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
+                {editForm.description.trim() && startsWithNumber(editForm.description) && (
+                  <p className="text-[11px] mt-1" style={{ color: c.danger }}>Description cannot start with a number.</p>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <label className="text-xs font-semibold" style={{ color: c.text }}>
+                    Photos <span className="font-normal" style={{ color: c.textLight }}>({editPhotos.length}/3)</span>
+                  </label>
+                  {editPhotos.length > 0 && editPhotos.length < 3 && (
+                    <button type="button" onClick={() => setPhotoSourceTarget("edit")}
+                      className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                      style={{ borderColor: c.border, color: c.primary }}>
+                      <Plus size={13} /> Add photo
+                    </button>
+                  )}
+                </div>
+                <input ref={editPhotoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleEditPhotoChange} />
+                <input ref={editCameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleEditPhotoChange} />
+                {editPhotos.length === 0 ? (
+                  <PhotoPicker
+                    onUpload={() => editPhotoInputRef.current?.click()}
+                    onTakePhoto={() => openCameraFor("edit")}
+                  />
+                ) : (
+                  <div className={`grid gap-2 ${editPhotos.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
+                    {editPhotos.map((photo, index) => (
+                      <div key={`edit-photo-${index}`} className="relative rounded-xl overflow-hidden border group" style={{ borderColor: c.border }}>
+                        <button type="button" aria-label={`View or crop photo ${index + 1}`}
+                          className="block w-full cursor-pointer"
+                          onClick={() => setEditingEditPhoto(index)}>
+                          <img src={photo.preview} alt={`Report photo ${index + 1}`}
+                            className={`w-full object-cover ${editPhotos.length === 1 ? "h-32" : "h-20"}`} />
+                          <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
+                              <Crop size={12} /> View &amp; crop
+                            </span>
+                          </span>
+                        </button>
+                        {photo.preview !== photo.originalPreview && (
+                          <button type="button" aria-label={`Revert photo ${index + 1} to original`}
+                            className="absolute bottom-1.5 left-1.5 z-10 inline-flex items-center gap-1 h-6 px-2 rounded-full bg-black/60 text-white text-[9px] font-semibold hover:bg-black/80 cursor-pointer"
+                            onClick={() => setEditPhotos((prev) =>
+                              prev.map((item, i) => (i === index ? { ...item, preview: item.originalPreview } : item)),
+                            )}>
+                            <RotateCcw size={10} /> Revert
+                          </button>
+                        )}
+                        <button type="button" aria-label={`Remove photo ${index + 1}`}
+                          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 cursor-pointer"
+                          onClick={() => setEditPhotos((prev) => prev.filter((_, i) => i !== index))}>
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>JPG or PNG · up to 5MB each</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
+              <VButton variant="secondary" onClick={() => { if (!savingEdit) setEditTarget(null); }}>Cancel</VButton>
+              <VButton onClick={handleSaveEdit} disabled={savingEdit}>
+                {savingEdit ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {savingEdit ? "Saving..." : "Save changes"}
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
       <ConfirmDialog
         open={!!withdrawTarget}
         title="Withdraw this report?"
-        subtitle={withdrawTarget ? `${withdrawTarget.itemName} · ${withdrawTarget.reference}` : undefined}
+        subtitle={withdrawTarget ? withdrawTarget.itemName : undefined}
         cancelLabel="Keep report"
         confirmLabel={withdrawing ? "Withdrawing..." : "Withdraw"}
         onCancel={() => { if (!withdrawing) setWithdrawTarget(null); }}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { startsWithNumber } from "@/lib/text-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 
@@ -66,6 +67,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     const data: any = {};
     if (itemName !== undefined) {
       if (!String(itemName).trim()) return NextResponse.json({ success: false, error: "itemName cannot be empty" }, { status: 400 });
+      if (startsWithNumber(String(itemName))) {
+        return NextResponse.json({ success: false, error: "Item name cannot start with a number" }, { status: 400 });
+      }
       data.itemName = String(itemName).trim();
     }
     if (category !== undefined) data.category = category || null;

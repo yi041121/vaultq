@@ -7,6 +7,7 @@ import {
   CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, QrCode,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
+import { useEscapeKey } from "@/lib/use-escape-key";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c,
@@ -47,11 +48,13 @@ function statusColor(s: string) {
   }
 }
 
+let claimsCache: Claim[] | null = null;
+
 export default function AdminClaims() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [claims, setClaims] = useState<Claim[]>([]);
+  const [claims, setClaims] = useState<Claim[]>(claimsCache ?? []);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
   const [page, setPage] = useState(1);
@@ -59,7 +62,7 @@ export default function AdminClaims() {
   const [qrOpen, setQrOpen] = useState(false);
   const [qrToken, setQrToken] = useState("");
   const [qrVerifying, setQrVerifying] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(claimsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = 6;
 
@@ -86,7 +89,7 @@ export default function AdminClaims() {
   }
 
   async function fetchClaims(openId?: string | null) {
-    setLoading(true);
+    if (!claimsCache) setLoading(true);
     setLoadError(null);
     try {
       const res = await fetch("/api/claims", { headers: authHeaders(), cache: "no-store" });
@@ -94,6 +97,7 @@ export default function AdminClaims() {
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
       const mapped = (data.data as any[]).map(mapApiClaim);
       setClaims(mapped);
+      claimsCache = mapped;
       if (openId) {
         const target = mapped.find((c) => c.id === openId);
         if (target) {
@@ -102,7 +106,7 @@ export default function AdminClaims() {
         }
       }
     } catch (e) {
-      setClaims([]);
+      if (!claimsCache) setClaims([]);
       setLoadError(e instanceof Error ? e.message : "Failed to load claims");
     } finally {
       setLoading(false);
@@ -123,6 +127,9 @@ export default function AdminClaims() {
   }, []);
 
   function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
+  useEscapeKey(!!compareClaim, () => setCompareClaim(null));
+  useEscapeKey(qrOpen, () => { if (!qrVerifying) setQrOpen(false); }, !qrVerifying);
+
   if (!user || !mounted) return null;
 
   const filtered = claims.filter((cl) => {
@@ -256,11 +263,7 @@ export default function AdminClaims() {
             </VButton>
           </div>
 
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading claims...</p>
-            </VCard>
-          ) : loadError ? (
+          {loading ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load claims</p>

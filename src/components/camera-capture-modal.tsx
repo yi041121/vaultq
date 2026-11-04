@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Info, Loader2, Upload, X } from "lucide-react";
 import { VButton, VCard, vcolors as c } from "@/components/ui/vault";
+import { useEscapeKey } from "@/lib/use-escape-key";
 
 interface CameraCaptureModalProps {
   onClose: () => void;
@@ -99,6 +100,8 @@ export function CameraCaptureModal({ onClose, onCapture, onUseUpload }: CameraCa
     stopStream();
     onClose();
   }
+
+  useEscapeKey(true, close);
 
   function capture() {
     const video = videoRef.current;

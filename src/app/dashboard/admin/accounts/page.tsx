@@ -39,6 +39,11 @@ const initialStudents: Student[] = [
 
 const statusOptions = ["All", "HAS_CLAIMS", "NO_CLAIMS", "NO_BARCODE"] as const;
 
+// Keeps the last loaded list so revisiting the page renders instantly instead
+// of flashing the loading state on every navigation.
+let accountsCache: Student[] | null = null;
+let accountsCacheLive = false;
+
 function maskedBarcode(code: string) {
   return `•••••${code.slice(-4)}`;
 }
@@ -47,7 +52,7 @@ export default function AdminAccounts() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [students, setStudents] = useState<Student[]>(initialStudents);
+  const [students, setStudents] = useState<Student[]>(accountsCache ?? initialStudents);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
   const [page, setPage] = useState(1);
@@ -72,8 +77,8 @@ export default function AdminAccounts() {
   const [editBarcode, setEditBarcode] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [apiLive, setApiLive] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [apiLive, setApiLive] = useState(accountsCacheLive);
 
   function authHeaders(): Record<string, string> {
     const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -99,12 +104,19 @@ export default function AdminAccounts() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load accounts");
       // Admin accounts never appear on this page
-      setStudents((data.data || []).filter((u: any) => (u.role || "STUDENT") !== "ADMIN").map(mapApiUser));
+      const list = (data.data || [])
+        .filter((u: any) => (u.role || "STUDENT") !== "ADMIN")
+        .map(mapApiUser);
+      setStudents(list);
       setApiLive(true);
+      accountsCache = list;
+      accountsCacheLive = true;
     } catch (e: any) {
       console.warn("Accounts API unreachable, using mock data:", e?.message);
-      setStudents(initialStudents);
-      setApiLive(false);
+      if (!accountsCache) {
+        setStudents(initialStudents);
+        setApiLive(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -206,7 +218,6 @@ export default function AdminAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to create account");
       setShowModal(false);
       showCenteredMessage("success", `Account created for ${formName.trim()}`);
-      setLoading(true);
       await fetchAccounts();
     } catch (e: any) {
       setFormError(e?.message || "Create failed");
@@ -260,7 +271,6 @@ export default function AdminAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to update account");
       showCenteredMessage("success", `${editName.trim()} updated`);
       setEditTarget(null);
-      setLoading(true);
       await fetchAccounts();
     } catch (e: any) {
       setEditError(e?.message || "Update failed");
@@ -295,7 +305,6 @@ export default function AdminAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to delete account");
       showCenteredMessage("success", `${st.name} deleted`);
       setDeleteTarget(null);
-      setLoading(true);
       await fetchAccounts();
     } catch (e: any) {
       setDeleteTarget(null);
@@ -334,11 +343,7 @@ export default function AdminAccounts() {
             </div>
           </div>
 
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading accounts...</p>
-            </VCard>
-          ) : filtered.length === 0 ? (
+          {loading ? null : filtered.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No accounts found</p>

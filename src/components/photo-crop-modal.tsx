@@ -3,15 +3,14 @@
 import { useCallback, useState } from "react";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
-import { Crop, Loader2, RotateCcw, X } from "lucide-react";
+import { Crop, Loader2, X } from "lucide-react";
 import "react-easy-crop/react-easy-crop.css";
+import { useEscapeKey } from "@/lib/use-escape-key";
 import { vcolors as c } from "@/components/ui/vault";
 
 interface PhotoCropModalProps {
   src: string;
-  originalSrc: string;
   onClose: () => void;
-  onRevert: () => void;
   onSave: (photo: { file: File; preview: string }) => void;
 }
 
@@ -52,11 +51,13 @@ async function cropPhoto(src: string, area: Area) {
 }
 
 /** Large photo preview with a square crop area. */
-export function PhotoCropModal({ src, originalSrc, onClose, onRevert, onSave }: PhotoCropModalProps) {
+export function PhotoCropModal({ src, onClose, onSave }: PhotoCropModalProps) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [area, setArea] = useState<Area | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEscapeKey(true, onClose, !saving);
 
   const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     setArea(croppedAreaPixels);
@@ -115,16 +116,7 @@ export function PhotoCropModal({ src, originalSrc, onClose, onRevert, onSave }: 
           />
         </div>
 
-        <div className="flex items-center justify-between gap-2 mt-5">
-          <div>
-            {src !== originalSrc && (
-              <button type="button" onClick={onRevert} disabled={saving}
-                className="h-10 px-3 rounded-xl text-sm font-medium border bg-white inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                style={{ borderColor: c.border, color: c.textMuted }}>
-                <RotateCcw size={14} /> Revert original
-              </button>
-            )}
-          </div>
+        <div className="flex items-center justify-end gap-2 mt-5">
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} disabled={saving}
               className="h-10 px-4 rounded-xl text-sm font-medium border bg-white cursor-pointer disabled:opacity-50"

@@ -8,6 +8,7 @@ import {
   ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
+import { useEscapeKey } from "@/lib/use-escape-key";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
@@ -65,11 +66,13 @@ function statusColor(s: string) {
   }
 }
 
+let itemsCache: Item[] | null = null;
+
 export default function AdminItems() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<Item[]>(itemsCache ?? []);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -96,7 +99,7 @@ export default function AdminItems() {
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const liveStreamRef = useRef<MediaStream | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(itemsCache === null);
   const [lockerMap, setLockerMap] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -119,15 +122,17 @@ export default function AdminItems() {
   }
 
   async function fetchItems() {
-    setLoading(true);
+    if (!itemsCache) setLoading(true);
     setLoadError(null);
     try {
       const res = await fetch("/api/items", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load items");
-      setItems((data.data || []).map(mapApiItem));
+      const list = (data.data || []).map(mapApiItem);
+      setItems(list);
+      itemsCache = list;
     } catch (e: any) {
-      setItems([]);
+      if (!itemsCache) setItems([]);
       setLoadError(e?.message || "Failed to load items");
     } finally {
       setLoading(false);
@@ -154,7 +159,10 @@ export default function AdminItems() {
     fetchItems();
     fetchLockers();
     if (typeof window !== "undefined") {
-      const add = new URLSearchParams(window.location.search).get("add");
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get("q");
+      if (q) setQuery(q);
+      const add = params.get("add");
       if (add === "1") {
         setEditing(null);
         setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null);
@@ -165,6 +173,9 @@ export default function AdminItems() {
   }, []);
 
   function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
+  useEscapeKey(showModal, () => { if (!saving) setShowModal(false); }, !saving);
+  useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
+
   if (!user || !mounted) return null;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -308,7 +319,6 @@ export default function AdminItems() {
         showCenteredMessage("success", "Item updated");
       }
       setShowModal(false);
-      setLoading(true);
       await fetchItems();
       await fetchLockers();
     } catch (e: any) {
@@ -335,7 +345,6 @@ export default function AdminItems() {
       if (!res.ok) throw new Error(data.error || "Failed to delete item");
       showCenteredMessage("success", `Item ${deleteTarget.id} removed`);
       closeDelete();
-      setLoading(true);
       await fetchItems();
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Delete failed");
@@ -413,11 +422,7 @@ export default function AdminItems() {
           </div>
 
           {/* Grid */}
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading items...</p>
-            </VCard>
-          ) : loadError ? (
+          {loading ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Package size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>

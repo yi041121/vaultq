@@ -56,17 +56,19 @@ function statusColor(s: string) {
   }
 }
 
+let lockersCache: Locker[] | null = null;
+
 export default function AdminLockers() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [lockers, setLockers] = useState<Locker[]>(initialLockers);
+  const [lockers, setLockers] = useState<Locker[]>(lockersCache ?? initialLockers);
   const [filter, setFilter] = useState<"All" | Locker["status"]>("All");
   const [query, setQuery] = useState("");
   const [selectedLocker, setSelectedLocker] = useState<Locker | null>(null);
   const [assignLocker, setAssignLocker] = useState<Locker | null>(null);
   const [assignItemId, setAssignItemId] = useState<string>("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [apiLive, setApiLive] = useState(false);
   const [unassignedItems, setUnassignedItems] = useState<{ id: string; name: string; category: string }[]>([]);
 
@@ -89,7 +91,9 @@ export default function AdminLockers() {
       const res = await fetch("/api/lockers", { headers: authHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load lockers");
-      setLockers((data.data || []).map(mapApiLocker));
+      const list = (data.data || []).map(mapApiLocker);
+      setLockers(list);
+      lockersCache = list;
       setApiLive(true);
     } catch (e: any) {
       console.warn("Lockers API unreachable, using mock data:", e?.message);
@@ -140,7 +144,6 @@ export default function AdminLockers() {
   });
 
   async function refresh() {
-    setLoading(true);
     await fetchLockers();
     await fetchUnassigned();
   }
@@ -225,11 +228,7 @@ export default function AdminLockers() {
           </div>
 
           {/* Grid */}
-          {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading lockers...</p>
-            </VCard>
-          ) : (
+          {loading ? null : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1">
             {filtered.map((l) => (
               <VCard key={l.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-md" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>

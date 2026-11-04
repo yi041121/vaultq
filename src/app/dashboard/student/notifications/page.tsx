@@ -63,15 +63,17 @@ function toNotif(raw: ApiNotification): Notif {
   };
 }
 
+let notificationsCache: Notif[] | null = null;
+
 export default function StudentNotifications() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [notifs, setNotifs] = useState<Notif[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifs, setNotifs] = useState<Notif[]>(notificationsCache ?? []);
+  const [unreadCount, setUnreadCount] = useState(notificationsCache ? notificationsCache.filter((n) => !n.isRead).length : 0);
   const [filter, setFilter] = useState<Filter>("All");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(notificationsCache === null);
   const [error, setError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
 
@@ -82,7 +84,7 @@ export default function StudentNotifications() {
       setError("Session expired — please sign in again");
       return;
     }
-    setLoading(true);
+    if (!notificationsCache) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/notifications", {
@@ -93,15 +95,20 @@ export default function StudentNotifications() {
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load notifications");
       const list = (data.data as ApiNotification[]).map(toNotif);
       setNotifs(list);
+      notificationsCache = list;
       setUnreadCount(Number(data.unreadCount ?? list.filter((n) => !n.isRead).length));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notifications");
-      setNotifs([]);
+      if (!notificationsCache) setNotifs([]);
       setUnreadCount(0);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (notificationsCache !== null) notificationsCache = notifs;
+  }, [notifs]);
 
   useEffect(() => {
     setMounted(true);
@@ -118,6 +125,7 @@ export default function StudentNotifications() {
   }, [load]);
 
   function handleLogout() {
+    notificationsCache = null;
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -237,12 +245,7 @@ export default function StudentNotifications() {
 
           {/* List */}
           <VCard className="flex-1 overflow-hidden flex flex-col">
-            {loading ? (
-              <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                <Loader2 size={32} className="animate-spin mb-4" style={{ color: c.primary }} />
-                <p className="text-base font-medium" style={{ color: c.textMuted }}>Loading notifications...</p>
-              </div>
-            ) : error ? (
+            {loading ? null : error ? (
               <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
                 <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
                 <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>

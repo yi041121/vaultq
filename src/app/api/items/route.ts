@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
 import { createItemRecord } from "@/lib/item-service";
+import { startsWithNumber } from "@/lib/text-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
     const { itemName, category, description, foundLocation, foundDate, lockerId, imageUrl, status } = body;
 
     if (!itemName?.trim()) return NextResponse.json({ success: false, error: "itemName required" }, { status: 400 });
+    if (startsWithNumber(itemName)) return NextResponse.json({ success: false, error: "Item name cannot start with a number" }, { status: 400 });
     if (!foundLocation?.trim()) return NextResponse.json({ success: false, error: "foundLocation required" }, { status: 400 });
     if (category && !isItemCategory(category)) {
       return NextResponse.json({ success: false, error: "Invalid category" }, { status: 400 });

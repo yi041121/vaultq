@@ -1,0 +1,130 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { vcolors as c } from "@/components/ui/vault";
+
+function toISO(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthGrid(year: number, month: number) {
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: Array<Date | null> = [];
+  for (let i = 0; i < first.getDay(); i++) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+  return cells;
+}
+
+interface DateCalendarProps {
+  value: string;
+  onChange: (iso: string) => void;
+  onClose: () => void;
+  /** Tighter layout for dialogs; the report form keeps the roomier version. */
+  compact?: boolean;
+}
+
+/**
+ * Month calendar used by the report forms. Clicking the same date twice
+ * confirms it; Clear resets the value and closes the panel.
+ */
+export function DateCalendar({ value, onChange, onClose, compact = false }: DateCalendarProps) {
+  const today = new Date();
+  const todayIso = toISO(today);
+  const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const [offset, setOffset] = useState(() => {
+    if (!value) return 0;
+    const selected = new Date(`${value}T00:00:00`);
+    return (selected.getFullYear() - today.getFullYear()) * 12 + selected.getMonth() - today.getMonth();
+  });
+  const [draft, setDraft] = useState(value);
+  const [clicked, setClicked] = useState<string | null>(null);
+
+  const calendarMonth = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+  const canGoNextMonth = calendarMonth < currentMonthStart;
+
+  return (
+    <div
+      className={`${compact ? "w-[248px] p-3" : "w-[300px] p-4"} max-w-[calc(100vw-3rem)] rounded-2xl border bg-white shadow-xl`}
+      style={{ borderColor: c.border }}
+    >
+      <div className={`flex items-center justify-between ${compact ? "mb-2" : "mb-3"}`}>
+        <button type="button"
+          className={`${compact ? "w-6 h-6" : "w-7 h-7"} rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer`}
+          style={{ backgroundColor: c.fill, color: c.textMuted }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
+          onClick={() => setOffset(offset - 1)}>
+          <ChevronLeft size={compact ? 13 : 14} />
+        </button>
+        <span className={compact ? "text-[11px] font-semibold" : "text-xs font-medium"} style={{ color: c.primary }}>
+          {calendarMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+        </span>
+        <button type="button" disabled={!canGoNextMonth}
+          className={`${compact ? "w-6 h-6" : "w-7 h-7"} rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
+          style={{ backgroundColor: c.fill, color: c.textMuted }}
+          onMouseEnter={(e) => { if (canGoNextMonth) e.currentTarget.style.backgroundColor = c.borderLight; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
+          onClick={() => setOffset(offset + 1)}>
+          <ChevronRight size={compact ? 13 : 14} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
+          <span key={day} className={compact ? "text-[9px] font-semibold py-0.5" : "text-[10px] font-semibold py-1"} style={{ color: c.textMuted }}>{day}</span>
+        ))}
+        {monthGrid(calendarMonth.getFullYear(), calendarMonth.getMonth()).map((day, index) => {
+          if (!day) return <span key={index} />;
+          const iso = toISO(day);
+          const isSelected = draft === iso;
+          const isFuture = iso > todayIso;
+          return (
+            <button key={index} type="button" disabled={isFuture}
+              className={`${compact ? "h-7 w-7 text-[11px]" : "h-8 w-8 text-xs"} mx-auto rounded-full transition-all duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
+              style={{
+                backgroundColor: isSelected ? c.primary : "transparent",
+                color: isSelected ? "#fff" : c.text,
+                fontWeight: isSelected ? "700" : "400",
+              }}
+              onMouseEnter={(e) => { if (!isSelected && !isFuture) e.currentTarget.style.backgroundColor = c.fill; }}
+              onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "transparent"; }}
+              onClick={() => {
+                if (clicked === iso) {
+                  setDraft(iso);
+                  onChange(iso);
+                  onClose();
+                  return;
+                }
+                setDraft(iso);
+                setClicked(iso);
+              }}>
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={`flex items-center justify-between ${compact ? "mt-2 pt-2" : "mt-3 pt-3"} border-t`} style={{ borderColor: c.fill }}>
+        <button type="button"
+          className={`${compact ? "h-7 px-2.5 text-[11px]" : "h-8 px-3 text-xs"} rounded-lg font-medium transition-all duration-200 cursor-pointer`}
+          style={{ backgroundColor: c.fill, color: c.textMuted }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
+          onClick={() => { setDraft(""); setClicked(null); onChange(""); onClose(); }}>
+          Clear
+        </button>
+        <button type="button" disabled={!draft}
+          className={`${compact ? "h-7 px-3 text-[11px]" : "h-8 px-4 text-xs"} rounded-lg font-semibold transition-all duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
+          style={{ backgroundColor: c.primary, color: "#fff" }}
+          onMouseEnter={(e) => { if (draft) e.currentTarget.style.backgroundColor = c.primaryDark; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}
+          onClick={() => { onChange(draft); onClose(); }}>
+          Confirm
+        </button>
+      </div>
+    </div>
+  );
+}
