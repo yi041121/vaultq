@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const lockers = await prisma.locker.findMany({
       where,
       include: {
-        item: { select: { id: true, itemName: true, category: true, status: true } },
+        item: { select: { id: true, itemName: true, category: true, status: true, imageUrl: true } },
       },
       orderBy: { lockerNumber: "asc" },
     });

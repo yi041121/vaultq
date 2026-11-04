@@ -22,6 +22,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
           select: { id: true, status: true, userId: true, createdAt: true },
           orderBy: { createdAt: "desc" },
         },
+        ...(user.role === "ADMIN" ? { reports: { select: { imageUrls: true } } } : {}),
       },
     });
     if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });

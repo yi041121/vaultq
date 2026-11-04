@@ -110,6 +110,10 @@ export default function AdminReports() {
   const [rejectNote, setRejectNote] = useState("");
   const [rejecting, setRejecting] = useState(false);
 
+  const [assignLockerReport, setAssignLockerReport] = useState<UserReport | null>(null);
+  const [assignLockerId, setAssignLockerId] = useState("");
+  const [assigningLocker, setAssigningLocker] = useState(false);
+
   const [busyAction, setBusyAction] = useState(false);
 
   function authHeaders(): Record<string, string> {
@@ -373,6 +377,36 @@ export default function AdminReports() {
     }
   }
 
+  function openAssignLocker(report: UserReport) {
+    setAssignLockerReport(report);
+    setAssignLockerId("");
+  }
+
+  async function handleAssignLocker() {
+    const report = assignLockerReport;
+    if (!report?.item || !assignLockerId) return;
+    const lockerNumber = lockers.find((locker) => locker.id === assignLockerId)?.lockerNumber || "";
+    setAssigningLocker(true);
+    try {
+      const res = await fetch(`/api/items/${report.item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ lockerId: assignLockerId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to assign locker");
+      reportsCache = null;
+      setAssignLockerReport(null);
+      showCenteredMessage("success", lockerNumber ? `Locker ${lockerNumber} assigned` : "Locker assigned");
+      await Promise.all([fetchReports(), fetchSupporting()]);
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to assign locker");
+    } finally {
+      setAssigningLocker(false);
+    }
+  }
+
+  useEscapeKey(!!assignLockerReport, () => { if (!assigningLocker) setAssignLockerReport(null); }, !assigningLocker);
   useEscapeKey(!!matchTarget && !viewer, () => setMatchTarget(null));
   useEscapeKey(approvePhotoSourceOpen, () => setApprovePhotoSourceOpen(false));
   useEscapeKey(approveStage === "locker", () => { if (!verifying) setApproveStage("form"); }, !verifying);
@@ -534,7 +568,28 @@ export default function AdminReports() {
                       {report.category}
                     </span>
                     <span className="flex items-center gap-1"><MapPin size={12} /> {report.location || "—"}</span>
-                    <span className="flex items-center gap-1"><Clock size={12} /> {fmtDay(report.date)}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={12} /> {fmtDay(report.date)}</span>
+                      {report.status === "VERIFIED" && (
+                        report.item?.locker ? (
+                          <span className="flex items-center gap-1 whitespace-nowrap">
+                            <Lock size={12} /> Locker <b style={{ color: c.text }}>{report.item.locker}</b>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 whitespace-nowrap">
+                            <Lock size={12} /> No locker
+                            {report.item && (
+                              <button type="button" onClick={() => openAssignLocker(report)}
+                                className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full cursor-pointer"
+                                style={{ backgroundColor: c.primarySoft, color: c.primary }}
+                                title="Assign a locker" aria-label="Assign a locker">
+                                <Plus size={12} />
+                              </button>
+                            )}
+                          </span>
+                        )
+                      )}
+                    </span>
                   </div>
 
                   <p className="text-xs leading-relaxed mb-3 px-2.5 py-2 rounded-lg line-clamp-3"
@@ -542,7 +597,7 @@ export default function AdminReports() {
                     {report.description}
                   </p>
 
-                  {report.item && (
+                  {report.item && report.status !== "VERIFIED" && (
                     <p className="text-[11px] mb-3 px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: c.fill, color: c.textMuted }}>
                       {report.type === "LOST" ? "Matched" : "Logged"}: <b style={{ color: c.text }}>{report.item.name}</b>
                       {report.item.locker ? ` · Locker ${report.item.locker}` : ""}
@@ -971,6 +1026,66 @@ export default function AdminReports() {
               <VButton onClick={handleVerify} disabled={verifying}>
                 {verifying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                 {verifying ? "Approving..." : "Approve"}
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
+      {assignLockerReport && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
+          <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Assign a locker</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{assignLockerReport.item?.name || assignLockerReport.itemName}</p>
+              </div>
+              <button type="button" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs mb-3" style={{ color: c.textMuted }}>
+              Choose an available locker to store the item.
+            </p>
+
+            <div className="grid grid-cols-3 gap-2 max-h-64 overflow-auto pr-1">
+              {lockers.map((locker) => {
+                const selected = assignLockerId === locker.id;
+                return (
+                  <button key={locker.id} type="button"
+                    className="rounded-xl border p-3 flex flex-col items-center gap-1.5 cursor-pointer transition-colors duration-150"
+                    style={{
+                      borderColor: selected ? c.primary : c.borderLight,
+                      backgroundColor: selected ? c.primarySoft : "#fff",
+                    }}
+                    onClick={() => setAssignLockerId(locker.id)}>
+                    <div className="w-full h-14 rounded-lg flex items-center justify-center"
+                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+                      {selected
+                        ? <CheckCircle2 size={22} style={{ color: c.primary }} />
+                        : <Lock size={22} style={{ color: c.textMuted }} />}
+                    </div>
+                    <span className="text-xs font-bold" style={{ color: c.text }}>{locker.lockerNumber}</span>
+                    <span className="text-[10px]" style={{ color: c.textMuted }}>Available</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {lockers.length === 0 && (
+              <p className="text-[11px] mt-3 text-center" style={{ color: c.textLight }}>
+                No lockers are currently available.
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
+              <VButton variant="secondary" disabled={assigningLocker} onClick={() => setAssignLockerReport(null)}>Cancel</VButton>
+              <VButton onClick={handleAssignLocker} disabled={assigningLocker || !assignLockerId}>
+                <CheckCircle2 size={14} />
+                {assigningLocker ? "Assigning..." : "Assign"}
               </VButton>
             </div>
           </VCard>

@@ -6,7 +6,7 @@ import {
   PackageSearch, PackageCheck, Clock, X, CheckCircle2,
   Loader2, RefreshCw, Plus, ArrowRight, FileText, RotateCcw,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
-  ChevronDown, ZoomIn,
+  ChevronDown, ZoomIn, MapPin, Eye,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -29,6 +29,17 @@ interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
 type ReportPhoto = { file: File; preview: string; originalFile: File; originalPreview: string };
 type EditPhoto = { preview: string; originalPreview: string };
+type ItemDetail = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  location: string;
+  date: string;
+  imageUrl: string | null;
+  statusLabel: string;
+  color: string;
+};
 
 const categoryIcons: Record<string, any> = {
   Electronics: Monitor,
@@ -41,6 +52,15 @@ const categoryIcons: Record<string, any> = {
 };
 
 const typeColor: Record<ReportType, string> = { LOST: "#355C8A", FOUND: "#7FB8B5" };
+
+// Logged item statuses shown inside a report card. Once the report itself is
+// VERIFIED the card shows "Verified" instead, matching the badge at the top.
+const itemStatusLabel: Record<string, string> = {
+  FOUND: "Found",
+  CLAIMED: "Claimed",
+  RETRIEVED: "Retrieved",
+  EXPIRED: "Expired",
+};
 
 function fmtDay(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "—";
@@ -92,6 +112,7 @@ export default function StudentReport() {
   const [withdrawTarget, setWithdrawTarget] = useState<UserReport | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
+  const [itemDetail, setItemDetail] = useState<ItemDetail | null>(null);
   const [editTarget, setEditTarget] = useState<UserReport | null>(null);
   const [editForm, setEditForm] = useState({ itemName: "", category: "", description: "", location: "", date: "" });
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
@@ -449,6 +470,53 @@ export default function StudentReport() {
     }
   }
 
+  // Opens the logged item in a read-only details popup. The report data is
+  // shown instantly, then refreshed from the item record when it arrives.
+  async function openItemDetail(report: UserReport) {
+    const item = report.item;
+    if (!item) return;
+    const statusLabel = report.status === "VERIFIED"
+      ? report.statusLabel
+      : itemStatusLabel[item.status] || item.status;
+    const color = report.status === "VERIFIED" ? report.color : c.textMuted;
+
+    setItemDetail({
+      id: item.id,
+      name: item.name,
+      category: report.category,
+      description: report.description,
+      location: report.location,
+      date: report.date,
+      imageUrl: item.imageUrl || report.images[0] || null,
+      statusLabel,
+      color,
+    });
+
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      const fresh = data?.data;
+      if (!res.ok || !data?.success || !fresh) return;
+      setItemDetail((prev) => (prev && prev.id === item.id ? {
+        ...prev,
+        name: fresh.itemName || prev.name,
+        category: fresh.category || prev.category,
+        description: fresh.description || prev.description,
+        location: fresh.foundLocation || prev.location,
+        date: fresh.foundDate ? String(fresh.foundDate).slice(0, 10) : prev.date,
+        imageUrl: fresh.imageUrl || prev.imageUrl,
+      } : prev));
+    } catch {
+      // Keep the report-derived details if the item lookup fails.
+    }
+  }
+
+  useEscapeKey(!!itemDetail, () => setItemDetail(null));
   useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
   useEscapeKey(!!editTarget && !viewer && !photoSourceTarget && !cameraTarget && editingEditPhoto === null, () => {
     if (savingEdit) return;
@@ -504,9 +572,61 @@ export default function StudentReport() {
                   {reports.map((report) => {
                     const Icon = categoryIcons[report.category] || FileText;
                     const canClaim = report.type === "LOST" && report.status === "MATCHED" && report.item?.status === "FOUND";
+                    const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
+                    const itemBlock = report.item && (
+                          <div className="rounded-xl p-3.5 mb-3 flex flex-wrap items-center gap-3" style={{ backgroundColor: c.fill }}>
+                            <button
+                              type="button"
+                              aria-label={`View ${report.item.name} details`}
+                              className="group flex flex-1 min-w-[200px] items-center gap-3 text-left cursor-pointer"
+                              onClick={() => void openItemDetail(report)}>
+                              {report.item.imageUrl ? (
+                                <span className="relative rounded-lg overflow-hidden border shrink-0 block" style={{ borderColor: c.border }}>
+                                  <img src={report.item.imageUrl} alt={report.item.name} className="w-12 h-12 object-cover" />
+                                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 flex items-center justify-center">
+                                    <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white">
+                                      <ZoomIn size={14} />
+                                    </span>
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: c.borderLight }}>
+                                  <PackageCheck size={20} style={{ color: c.primary }} />
+                                </span>
+                              )}
+                              <span className="flex-1 min-w-0">
+                                <span className="block text-xs font-semibold" style={{ color: c.text }}>
+                                  {report.type === "LOST" ? "Matched item" : "Logged item"}: {report.item.name}
+                                </span>
+                                <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  {report.status === "VERIFIED" && (
+                                    <VBadge color={typeColor[report.type]}>{report.typeLabel}</VBadge>
+                                  )}
+                                  {report.status === "VERIFIED" ? (
+                                    <VBadge color={report.color}>{report.statusLabel}</VBadge>
+                                  ) : (
+                                    <span className="text-[11px]" style={{ color: c.textMuted }}>
+                                      {itemStatusLabel[report.item.status] || report.item.status}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </button>
+                            {canClaim && (
+                              <VButton size="sm" onClick={() => router.push(`/dashboard/student/search?item=${report.item!.id}`)}>
+                                View item &amp; claim <ArrowRight size={13} />
+                              </VButton>
+                            )}
+                            <VButton variant="secondary" size="sm" onClick={() => void openItemDetail(report)}>
+                              <Eye size={13} /> View
+                            </VButton>
+                          </div>
+                    );
                     return (
                       <VCard key={report.id} className="p-5 lg:p-6">
-                        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                        {verifiedWithItem && itemBlock}
+                        {!verifiedWithItem && (
+                          <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                           <div className="flex items-start gap-3 min-w-0">
                             <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 -mt-1"
                               style={{ backgroundColor: c.primary }}>
@@ -521,16 +641,23 @@ export default function StudentReport() {
                           </div>
                           <div className="flex items-center gap-2">
                             <VBadge color={typeColor[report.type]}>{report.typeLabel}</VBadge>
-                            <VBadge color={report.color}>{report.statusLabel}</VBadge>
+                            {/* A verified report shows its badge on the logged item below, so hide the duplicate here. */}
+                            {!(report.status === "VERIFIED" && report.item) && (
+                              <VBadge color={report.color}>{report.statusLabel}</VBadge>
+                            )}
                           </div>
                         </div>
+                        )}
+                        {/* The details popup already shows the description for verified reports. */}
+                        {!(report.status === "VERIFIED" && report.item) && (
+                          <div className="rounded-xl border p-3 mb-3" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
+                            <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: c.textLight }}>Description</p>
+                            <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{report.description}</p>
+                          </div>
+                        )}
 
-                        <div className="rounded-xl border p-3 mb-3" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
-                          <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: c.textLight }}>Description</p>
-                          <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{report.description}</p>
-                        </div>
-
-                        {report.images.length > 0 && (
+                        {/* Once verified, the logged item block below holds the only photo. */}
+                        {report.images.length > 0 && !(report.status === "VERIFIED" && report.item) && (
                           <div className={`grid gap-2 mb-3 ${report.images.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
                             {report.images.map((src, index) => (
                               <button key={`${report.id}-photo-${index}`} type="button"
@@ -556,35 +683,8 @@ export default function StudentReport() {
                           </div>
                         )}
 
-                        {report.item && (
-                          <div className="rounded-xl p-3.5 mb-3 flex flex-wrap items-center gap-3" style={{ backgroundColor: c.fill }}>
-                            {report.item.imageUrl ? (
-                              <button type="button"
-                                aria-label={`View ${report.item.name} photo`}
-                                className="cursor-pointer shrink-0"
-                                onClick={() => setViewer({ photos: [report.item!.imageUrl!], index: 0, title: report.item!.name })}>
-                                <img src={report.item.imageUrl} alt={report.item.name} className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: c.border }} />
-                              </button>
-                            ) : (
-                              <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.borderLight }}>
-                                <PackageCheck size={20} style={{ color: c.primary }} />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-[160px]">
-                              <p className="text-xs font-semibold" style={{ color: c.text }}>
-                                {report.type === "LOST" ? "Matched item" : "Logged item"}: {report.item.name}
-                              </p>
-                              <p className="text-[11px] mt-0.5 flex items-center gap-1" style={{ color: c.textMuted }}>
-                                {report.item.status}
-                              </p>
-                            </div>
-                            {canClaim && (
-                              <VButton size="sm" onClick={() => router.push(`/dashboard/student/search?item=${report.item!.id}`)}>
-                                View item &amp; claim <ArrowRight size={13} />
-                              </VButton>
-                            )}
-                          </div>
-                        )}
+                        {!verifiedWithItem && itemBlock}
+
 
                         {report.type === "FOUND" && report.status === "PENDING" && (
                           <div className="rounded-xl p-3.5 mb-3 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `${c.accent}12`, color: c.textMuted }}>
@@ -926,6 +1026,52 @@ export default function StudentReport() {
             setEditingEditPhoto(null);
           }}
         />
+      )}
+
+      {itemDetail && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setItemDetail(null)} />
+          <VCard className="relative w-full max-w-lg max-h-[90vh] overflow-auto">
+            <div className="w-full h-48 flex items-center justify-center relative overflow-hidden"
+              style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+              {itemDetail.imageUrl ? (
+                <img src={itemDetail.imageUrl} alt={itemDetail.name} className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <>
+                  <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                  {(() => { const Icon = categoryIcons[itemDetail.category] || PackageCheck; return <Icon size={48} style={{ color: c.primary, opacity: 0.6 }} />; })()}
+                </>
+              )}
+              <button type="button" onClick={() => setItemDetail(null)} aria-label="Close item details"
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer"
+                style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>{itemDetail.name}</h3>
+                <VBadge color={itemDetail.color}>{itemDetail.statusLabel}</VBadge>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
+                  {(() => { const Icon = categoryIcons[itemDetail.category] || PackageCheck; return <Icon size={12} style={{ color: c.primary }} />; })()}
+                  {itemDetail.category}
+                </span>
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
+                  <MapPin size={12} /> {itemDetail.location || "—"}
+                </span>
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
+                  <Clock size={12} /> {fmtReportDate(itemDetail.date)}
+                </span>
+              </div>
+              <div className="rounded-xl p-4" style={{ backgroundColor: c.fill }}>
+                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
+                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{itemDetail.description || "No description provided."}</p>
+              </div>
+            </div>
+          </VCard>
+        </div>
       )}
 
       {viewer && (

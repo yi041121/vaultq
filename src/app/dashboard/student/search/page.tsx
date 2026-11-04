@@ -517,7 +517,7 @@ export default function StudentSearch() {
                   const ownReport = item.reportedByMe;
                   const unavailable = claimed || ownReport || item.status !== "FOUND";
                   return (
-                    <VCard key={item.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                    <VCard key={item.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg cursor-pointer" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }} onClick={() => setViewItem(item)}>
                       <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}
                         onClick={() => setViewItem(item)}>
@@ -541,7 +541,7 @@ export default function StudentSearch() {
                       <p className="text-xs flex items-center gap-1 mt-1" style={{ color: c.textMuted }}>
                         <Clock size={12} style={{ color: c.textLight }} /> {fmtItemDate(item.date)}
                       </p>
-                      <div className="flex items-center gap-2 mt-4">
+                      <div className="flex items-center gap-2 mt-4" onClick={(e) => e.stopPropagation()}>
                         <button type="button"
                           className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                           style={{ borderColor: c.border, color: c.textMuted }}
@@ -600,8 +600,11 @@ export default function StudentSearch() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>{viewItem.name}</h3>
                 <VBadge color={viewItem.color}>{viewItem.statusLabel}</VBadge>
               </div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>{viewItem.category}</span>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
+                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
+                  {(() => { const Icon = filterIcons[viewItem.category] || Package; return <Icon size={12} style={{ color: c.primary }} />; })()}
+                  {viewItem.category}
+                </span>
                 <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {viewItem.location || "—"}</span>
                 <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {fmtItemDate(viewItem.date)}</span>
               </div>
@@ -609,11 +612,6 @@ export default function StudentSearch() {
                 <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
                 <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{viewItem.description || "No description provided."}</p>
               </div>
-              {viewItem.reportedByMe && (
-                <p className="text-[11px] mb-4 p-2.5 rounded-lg" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
-                  You handed this item in. Items you reported as found cannot be claimed by you.
-                </p>
-              )}
               <div className="flex items-center gap-3">
                 <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
                 <VButton
