@@ -7,6 +7,7 @@ import { StudentShell } from "@/components/student-shell";
 import { VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
+import { matchesSearch } from "@/lib/search";
 
 const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
@@ -133,7 +134,7 @@ export default function AdminAccounts() {
   if (!user || !mounted) return null;
 
   const filtered = students.filter((st) => {
-    if (query && !`${st.name} ${st.email} ${st.studentId} ${st.cardBarcode || ""}`.toLowerCase().includes(query.toLowerCase())) return false;
+    if (!matchesSearch(query, [st.name, st.email, st.studentId, st.cardBarcode, st.status, st.role])) return false;
     if (statusFilter === "HAS_CLAIMS" && st.claims === 0) return false;
     if (statusFilter === "NO_CLAIMS" && st.claims > 0) return false;
     if (statusFilter === "NO_BARCODE" && st.cardBarcode) return false;

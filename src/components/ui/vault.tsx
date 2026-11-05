@@ -111,7 +111,7 @@ export function VFilterButton({ children, style, active, onClick, className = ""
   children: React.ReactNode;
   style?: React.CSSProperties;
   active?: boolean;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
   className?: string;
 }) {
   return (
@@ -168,7 +168,7 @@ export function VDropdown({ trigger, children, open, onOpenChange, align = "left
         <>
           <div className="fixed inset-0 z-10" onClick={() => onOpenChange(false)} />
           <div
-            className={`absolute top-11 z-20 ${align === "right" ? "right-0" : "left-0"} ${width} bg-white ${radius.dropdown} border py-1.5 shadow-lg`}
+            className={`absolute top-11 z-20 ${align === "right" ? "right-0" : "left-0"} ${width} bg-white ${radius.dropdown} border py-1.5 shadow-lg max-h-[min(60vh,15rem)] overflow-y-auto overscroll-contain`}
             style={{ borderColor: colors.border }}
           >
             {children(() => onOpenChange(false))}

@@ -8,7 +8,9 @@ import {
   ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
+import { CalendarPopover } from "@/components/date-calendar";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
@@ -54,7 +56,16 @@ type Item = {
   date: string;
   status: typeof statusOptions[number];
   locker?: string;
+  description?: string;
+  imageUrl?: string | null;
 };
+
+function fmtDay(value: string) {
+  if (!value) return "";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
 function statusColor(s: string) {
   switch (s) {
@@ -92,6 +103,9 @@ export default function AdminItems() {
   const [formLocker, setFormLocker] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formCatOpen, setFormCatOpen] = useState(false);
+  const [formDateOpen, setFormDateOpen] = useState(false);
+  const [formDateAnchor, setFormDateAnchor] = useState<HTMLElement | null>(null);
+  const [formLockerOpen, setFormLockerOpen] = useState(false);
   const [formPhoto, setFormPhoto] = useState<File | null>(null);
   const [formPreview, setFormPreview] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
@@ -101,6 +115,7 @@ export default function AdminItems() {
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [loading, setLoading] = useState(itemsCache === null);
   const [lockerMap, setLockerMap] = useState<Record<string, string>>({});
+  const [lockerOptions, setLockerOptions] = useState<{ id: string; number: string; status: string }[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -118,6 +133,8 @@ export default function AdminItems() {
       date: (raw.foundDate || raw.createdAt || "").slice(0, 10),
       status: raw.status,
       locker: raw.locker?.lockerNumber,
+      description: raw.description || "",
+      imageUrl: raw.imageUrl || null,
     };
   }
 
@@ -145,8 +162,13 @@ export default function AdminItems() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return;
       const map: Record<string, string> = {};
-      for (const l of data.data || []) map[String(l.lockerNumber).toUpperCase()] = l.id;
+      const options: { id: string; number: string; status: string }[] = [];
+      for (const l of data.data || []) {
+        map[String(l.lockerNumber).toUpperCase()] = l.id;
+        options.push({ id: l.id, number: String(l.lockerNumber), status: l.status });
+      }
       setLockerMap(map);
+      setLockerOptions(options);
     } catch {
       // Locker lookup optional — save will warn if locker unknown
     }
@@ -165,7 +187,7 @@ export default function AdminItems() {
       const add = params.get("add");
       if (add === "1") {
         setEditing(null);
-        setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null);
+        setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null); setFormDateOpen(false); setFormLockerOpen(false);
         setShowModal(true);
         window.history.replaceState(null, "", window.location.pathname);
       }
@@ -173,7 +195,22 @@ export default function AdminItems() {
   }, []);
 
   function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
-  useEscapeKey(showModal, () => { if (!saving) setShowModal(false); }, !saving);
+
+  // Closes the Add/Edit form and every dropdown/calendar inside it so the
+  // next item opens with a clean form.
+  function closeItemModal() {
+    if (saving) return;
+    setShowModal(false);
+    setFormCatOpen(false);
+    setFormLockerOpen(false);
+    setFormDateOpen(false);
+    setFormDateAnchor(null);
+  }
+
+  useEscapeKey(formDateOpen, () => setFormDateOpen(false));
+  useEscapeKey(formCatOpen || formLockerOpen, () => { setFormCatOpen(false); setFormLockerOpen(false); });
+  useEscapeKey(categoryOpen || sortOpen, () => { setCategoryOpen(false); setSortOpen(false); });
+  useEscapeKey(showModal, closeItemModal, !saving && !formDateOpen && !formCatOpen && !formLockerOpen);
   useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
 
   if (!user || !mounted) return null;
@@ -182,7 +219,7 @@ export default function AdminItems() {
 
   const filtered = items
     .filter((it) => {
-      if (query && !it.name.toLowerCase().includes(query.toLowerCase())) return false;
+      if (!matchesSearch(query, [it.name, it.category, it.location, it.status, it.locker, it.locker ? `locker ${it.locker}` : "", ...dateSearchValues(it.date)])) return false;
       if (statusFilter !== "All" && it.status !== statusFilter) return false;
       if (categoryFilter && it.category !== categoryFilter) return false;
       return true;
@@ -196,12 +233,12 @@ export default function AdminItems() {
 
   function openAdd() {
     setEditing(null);
-    setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(today); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null);
+    setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(today); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
   }
   function openEdit(it: Item) {
     setEditing(it);
-    setFormName(it.name); setFormCategory(it.category); setFormLocation(it.location); setFormDate(it.date); setFormLocker(it.locker || ""); setFormDesc(""); setFormPhoto(null); setFormPreview(null);
+    setFormName(it.name); setFormCategory(it.category); setFormLocation(it.location); setFormDate(it.date); setFormLocker(it.locker || ""); setFormDesc(it.description || ""); setFormPhoto(null); setFormPreview(it.imageUrl || null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
   }
   function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -295,7 +332,7 @@ export default function AdminItems() {
         foundDate: formDate,
       };
       // Send photo preview as imageUrl (data URL) when a new photo was chosen
-      if (formPreview && formPreview.startsWith("data:")) payload.imageUrl = formPreview;
+      if (formPreview && formPreview.startsWith("data:") && (!editing || formPreview !== editing.imageUrl)) payload.imageUrl = formPreview;
       if (!editing) {
         if (lockerId) payload.lockerId = lockerId;
         const res = await fetch("/api/items", {
@@ -319,6 +356,9 @@ export default function AdminItems() {
         showCenteredMessage("success", "Item updated");
       }
       setShowModal(false);
+      setFormCatOpen(false);
+      setFormLockerOpen(false);
+      setFormDateOpen(false);
       await fetchItems();
       await fetchLockers();
     } catch (e: any) {
@@ -446,9 +486,14 @@ export default function AdminItems() {
                     <VCard key={it.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                       <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden shrink-0"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-                        <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                        <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
-                        <span className="absolute top-2 left-2 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white border" style={{ borderColor: c.border, color: c.textMuted }}>{it.id}</span>
+                        {it.imageUrl ? (
+                          <img src={it.imageUrl} alt={it.name} className="absolute inset-0 w-full h-full object-cover" />
+                        ) : (
+                          <>
+                            <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                            <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
+                          </>
+                        )}
                       </div>
                       <div className="flex items-start justify-between gap-2 mb-1 min-h-[20px]">
                         <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{it.name}</h3>
@@ -487,11 +532,11 @@ export default function AdminItems() {
       {/* Add/Edit modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowModal(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={closeItemModal} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>{editing ? "Edit Item" : "Add New Item"}</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={closeItemModal} aria-label="Close dialog" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="space-y-4">
               <div>
@@ -513,9 +558,20 @@ export default function AdminItems() {
                     {(close) => (<>{categories.map((cat) => (<VDropdownItem key={cat.label} active={formCategory === cat.label} onSelect={() => { setFormCategory(cat.label); close(); }}><cat.icon size={14} style={{ color: cat.color }} />{cat.label}</VDropdownItem>))}</>)}
                   </VDropdown>
                 </div>
-                <div>
+                <div className="relative">
                   <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Date <span style={{ color: c.danger }}>*</span></label>
-                  <VInput type="date" value={formDate} max={today} onChange={(e) => setFormDate(e.target.value)} />
+                  <VFilterButton className="w-full justify-between" style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                    onClick={(e) => { setFormDateAnchor(e.currentTarget); setFormDateOpen((open) => !open); }}>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Clock size={14} style={{ color: c.primary }} />
+                      <span className="truncate">{formDate ? fmtDay(formDate) : "Select date"}</span>
+                    </span>
+                    <ChevronDown size={13} style={{ color: c.textMuted }} />
+                  </VFilterButton>
+                  {formDateOpen && (
+                    <CalendarPopover anchor={formDateAnchor} compact value={formDate}
+                      onChange={setFormDate} onClose={() => setFormDateOpen(false)} />
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -525,7 +581,43 @@ export default function AdminItems() {
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Locker</label>
-                  <VInput value={formLocker} onChange={(e) => setFormLocker(e.target.value)} placeholder="e.g. A12 (optional)" />
+                  <VDropdown open={formLockerOpen} onOpenChange={setFormLockerOpen} width="w-full"
+                    trigger={
+                      <button type="button" className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm font-medium border bg-white text-left cursor-pointer relative"
+                        style={{ borderColor: c.border, color: formLocker ? c.text : c.textMuted }}
+                        onClick={() => setFormLockerOpen(!formLockerOpen)}>
+                        {formLocker ? (
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <Lock size={14} style={{ color: c.primary }} />
+                            <span className="truncate">{formLocker}</span>
+                          </span>
+                        ) : <>No locker</>}
+                        <ChevronDown size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
+                      </button>
+                    }>
+                    {(close) => {
+                      const current = formLocker.trim().toUpperCase();
+                      const available = lockerOptions.filter((l) =>
+                        l.status === "AVAILABLE" || l.number.toUpperCase() === current
+                      );
+                      return (
+                        <>
+                          <VDropdownItem active={!formLocker} onSelect={() => { setFormLocker(""); close(); }}>
+                            <X size={14} style={{ color: c.textMuted }} /> No locker
+                          </VDropdownItem>
+                          {available.map((l) => (
+                            <VDropdownItem key={l.id} active={formLocker.toUpperCase() === l.number.toUpperCase()}
+                              onSelect={() => { setFormLocker(l.number); close(); }}>
+                              <Lock size={14} style={{ color: c.primary }} /> {l.number}
+                            </VDropdownItem>
+                          ))}
+                          {available.length === 0 && (
+                            <div className="px-3 py-2 text-xs" style={{ color: c.textLight }}>No lockers available</div>
+                          )}
+                        </>
+                      );
+                    }}
+                  </VDropdown>
                 </div>
               </div>
               <div>
@@ -565,7 +657,7 @@ export default function AdminItems() {
                 )}
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
-                <VButton variant="secondary" onClick={() => setShowModal(false)}>Cancel</VButton>
+                <VButton variant="secondary" onClick={closeItemModal}>Cancel</VButton>
                 <VButton onClick={handleSave} disabled={saving}>{saving ? "Saving..." : editing ? "Save Changes" : "Add Item"}</VButton>
               </div>
             </div>

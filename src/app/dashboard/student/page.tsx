@@ -10,6 +10,7 @@ import {
   AlertCircle, Grid3X3, X, Eye, MapPin
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
+import { ItemDetailsModal } from "@/components/item-details-modal";
 import { VCard, VBadge, VButton, vcolors as c, font as f, iconSize } from "@/components/ui/vault";
 
 interface User { id: string; name: string; email: string; role: string; }
@@ -217,38 +218,21 @@ export default function StudentDashboard() {
         </div>
       </main>
 
-      {/* Item details modal */}
       {viewItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setViewItem(null)} />
-          <VCard className="relative w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="w-full h-48 rounded-t-2xl flex items-center justify-center relative overflow-hidden"
-              style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-              <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-              <Package size={48} style={{ color: c.primary, opacity: 0.6 }} />
-              <button type="button" onClick={() => setViewItem(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
-            </div>
-            <div className="p-6">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>{viewItem.name}</h3>
-                <VBadge color={viewItem.color}>{viewItem.status}</VBadge>
-              </div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>{viewItem.category}</span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {viewItem.location}</span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {viewItem.date}</span>
-              </div>
-              <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: c.fill }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{viewItem.description}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
-                <VButton className="flex-1" onClick={() => { setViewItem(null); router.push("/dashboard/student/search"); }}>Go to Claim</VButton>
-              </div>
-            </div>
-          </VCard>
-        </div>
+        <ItemDetailsModal
+          title={viewItem.name}
+          statusLabel={viewItem.status}
+          statusColor={viewItem.color}
+          category={viewItem.category}
+          location={viewItem.location}
+          date={viewItem.date}
+          description={viewItem.description}
+          onClose={() => setViewItem(null)}
+          footer={<>
+            <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
+            <VButton className="flex-1" onClick={() => { setViewItem(null); router.push("/dashboard/student/search"); }}>Go to Claim</VButton>
+          </>}
+        />
       )}
     </StudentShell>
   );

@@ -16,7 +16,13 @@ const CLAIM_INCLUDE = {
       foundDate: true,
       status: true,
       imageUrl: true,
+      createdAt: true,
       locker: { select: { lockerNumber: true } },
+      reports: {
+        where: { type: "FOUND", status: "VERIFIED" },
+        select: { imageUrls: true },
+        take: 1,
+      },
     },
   },
   user: { select: { name: true, studentId: true, email: true } },
@@ -36,14 +42,46 @@ export async function GET(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ success: false, error: "Not your claim" }, { status: 403 });
     }
 
+    // Matched claims have no uploaded evidence — use the lost report photos.
+    const hasOwnEvidence = claim.evidenceImageUrls?.length > 0 || !!claim.evidenceImageUrl;
+    let evidenceImageUrls: string[] = claim.evidenceImageUrls?.length
+      ? claim.evidenceImageUrls
+      : claim.evidenceImageUrl
+        ? [claim.evidenceImageUrl]
+        : [];
+    let evidenceUploadedAt = claim.createdAt ? new Date(claim.createdAt).toISOString() : "";
+    if (!evidenceImageUrls.length) {
+      const report = await prisma.report.findFirst({
+        where: { type: "LOST", userId: claim.userId, itemId: claim.itemId },
+        select: { imageUrl: true, imageUrls: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!hasOwnEvidence && report?.createdAt) {
+        evidenceUploadedAt = new Date(report.createdAt).toISOString();
+      }
+      evidenceImageUrls = (
+        report && Array.isArray(report.imageUrls) && report.imageUrls.length
+          ? report.imageUrls
+          : report?.imageUrl
+            ? [report.imageUrl]
+            : []
+      ).filter(Boolean).slice(0, 3);
+    }
+    const withEvidence = {
+      ...claim,
+      evidenceImageUrls,
+      evidenceImageUrl: claim.evidenceImageUrl || evidenceImageUrls[0] || null,
+      evidenceUploadedAt,
+    };
+
     if (user.role === "STUDENT" && claim.status !== "APPROVED") {
       return NextResponse.json({
         success: true,
-        data: { ...claim, item: { ...claim.item, locker: null } },
+        data: { ...withEvidence, item: { ...claim.item, locker: null } },
       });
     }
 
-    return NextResponse.json({ success: true, data: claim });
+    return NextResponse.json({ success: true, data: withEvidence });
   } catch (e) {
     console.error("Claim fetch failed", e);
     return NextResponse.json({ success: false, error: "Failed to fetch claim" }, { status: 500 });
@@ -162,7 +200,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       "Claim Approved",
       `Your claim for ${claim.item.itemName} has been approved.${
         assignedLockerNumber ? ` Locker ${assignedLockerNumber} is assigned.` : ""
-      } View your QR code in My Claims and show it at the Lost & Found counter to collect your item.`,
+      } View your QR code in My Claims. At the locker kiosk, scan your registered student ID barcode, then scan the QR code to open the locker and collect your item.`,
       { type: "CLAIM", link: "/dashboard/student/claims" },
     );
 

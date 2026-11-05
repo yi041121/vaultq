@@ -8,7 +8,10 @@ import {
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
+import { EvidenceSlider } from "@/components/evidence-slider";
+import { categoryIcon } from "@/lib/category-icons";
 import {
   VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c,
 } from "@/components/ui/vault";
@@ -34,6 +37,7 @@ type Claim = {
   reason: string;
   locker?: string;
   evidencePreview?: string | null;
+  evidenceImageUrls?: string[];
   itemImageUrl?: string | null;
 };
 
@@ -84,6 +88,7 @@ export default function AdminClaims() {
       reason: raw.claimReason || "",
       locker: raw.item?.locker?.lockerNumber,
       evidencePreview: raw.evidenceImageUrl || null,
+      evidenceImageUrls: Array.isArray(raw.evidenceImageUrls) ? raw.evidenceImageUrls : raw.evidenceImageUrl ? [raw.evidenceImageUrl] : [],
       itemImageUrl: raw.item?.imageUrl || null,
     };
   }
@@ -133,7 +138,7 @@ export default function AdminClaims() {
   if (!user || !mounted) return null;
 
   const filtered = claims.filter((cl) => {
-    if (query && !`${cl.itemName} ${cl.student} ${cl.id}`.toLowerCase().includes(query.toLowerCase())) return false;
+    if (!matchesSearch(query, [cl.itemName, cl.category, cl.student, cl.studentId, cl.location, cl.status, cl.locker, cl.id, cl.locker ? `locker ${cl.locker}` : "", ...dateSearchValues(cl.date)])) return false;
     if (statusFilter !== "All" && cl.status !== statusFilter) return false;
     return true;
   });
@@ -292,7 +297,9 @@ export default function AdminClaims() {
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                           <h3 className="text-sm font-semibold" style={{ color: c.text }}>{cl.itemName}</h3>
                           <VBadge color={statusColor(cl.status)}>{cl.status}</VBadge>
-                          <span className="text-xs" style={{ color: c.textLight }}>{cl.id} · {cl.category}</span>
+                          <span className="text-xs flex items-center gap-1" style={{ color: c.textLight }}>
+                            {cl.id} · {(() => { const CatIcon = categoryIcon(cl.category); return <CatIcon size={12} style={{ color: c.primary }} />; })()} {cl.category}
+                          </span>
                         </div>
                         <p className="text-xs" style={{ color: c.textMuted }}>{cl.student} ({cl.studentId}) · {cl.location}</p>
                         <p className="text-xs mt-1 flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {new Date(cl.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} {cl.locker && <>· <Lock size={12} /> Locker {cl.locker}</>}</p>
@@ -347,11 +354,12 @@ export default function AdminClaims() {
               </div>
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Student evidence photo</p>
-                {compareClaim.evidencePreview ? (
-                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                    <img src={compareClaim.evidencePreview} alt="Evidence" className="w-full h-64 object-cover bg-[#f8fafc]" />
-                    <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>Uploaded by {compareClaim.student}</p>
-                  </div>
+                {(compareClaim.evidenceImageUrls?.length || compareClaim.evidencePreview) ? (
+                  <EvidenceSlider
+                    photos={compareClaim.evidenceImageUrls?.length ? compareClaim.evidenceImageUrls : [compareClaim.evidencePreview!]}
+                    alt="Evidence"
+                    caption={`Uploaded by ${compareClaim.student}`}
+                  />
                 ) : (
                   <div className="w-full h-64 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2" style={{ borderColor: c.border, backgroundColor: c.fill, color: c.textLight }}>
                     <Camera size={22} />
@@ -384,7 +392,7 @@ export default function AdminClaims() {
               <div>
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Verify pickup QR</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-                  Scan or paste the QR shown in the student&apos;s My Claims. The item is marked collected and its locker released.
+                  Kiosk flow: the student scans their registered student barcode, then this QR. Verifying here also marks the item collected and releases the locker.
                 </p>
               </div>
               <button type="button" onClick={() => { if (!qrVerifying) setQrOpen(false); }}
@@ -396,7 +404,7 @@ export default function AdminClaims() {
             <div className="rounded-xl p-3 mb-4 flex items-start gap-2.5" style={{ backgroundColor: c.fill }}>
               <QrCode size={16} className="shrink-0 mt-0.5" style={{ color: c.primary }} />
               <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>
-                Students present this code at the counter or kiosk scanner. It is valid for 24 hours and can only be used once.
+                At the kiosk the student scans their registered student barcode first, then this QR opens the assigned locker. Valid for 24 hours and can only be used once.
               </p>
             </div>
 

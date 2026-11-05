@@ -39,7 +39,7 @@ export interface UserReport {
 
 const STATUS_LABEL: Record<ReportStatus, string> = {
   PENDING: "Pending",
-  MATCHED: "Item matched",
+  MATCHED: "Matched",
   VERIFIED: "Verified",
   REJECTED: "Rejected",
   CLOSED: "Closed",

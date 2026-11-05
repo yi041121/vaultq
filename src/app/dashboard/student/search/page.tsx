@@ -6,16 +6,22 @@ import {
   Search, Package,
   Briefcase, CreditCard, Key, BookText, CupSoda,
   ChevronDown, Monitor, Grid3X3, ArrowUpDown,
-  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye,
-  Loader2, RefreshCw, CheckCircle2,
+  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye, Crop,
+  Loader2, RefreshCw, CheckCircle2, Plus,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
+import { ItemDetailsModal } from "@/components/item-details-modal";
 import { StudentShell } from "@/components/student-shell";
+import { PhotoPicker } from "@/components/photo-picker";
+import { PhotoCropModal } from "@/components/photo-crop-modal";
+import { CameraCaptureModal } from "@/components/camera-capture-modal";
+import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import {
   VCard, VBadge, VFilterButton, VPagination, VDropdown, VDropdownItem, VSearchInput, VButton, VTextarea,
   vcolors as c,
 } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
+import { matchesSearch, dateSearchValues } from "@/lib/search";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -70,8 +76,11 @@ export default function StudentSearch() {
   // Claim modal state
   const [claimItem, setClaimItem] = useState<FoundItem | null>(null);
   const [claimReason, setClaimReason] = useState("");
-  const [claimPhoto, setClaimPhoto] = useState<File | null>(null);
-  const [claimPreview, setClaimPreview] = useState<string | null>(null);
+  const [claimPhotos, setClaimPhotos] = useState<{ file: File; preview: string }[]>([]);
+  const [claimCameraOpen, setClaimCameraOpen] = useState(false);
+  const [claimPhotoSourceOpen, setClaimPhotoSourceOpen] = useState(false);
+  const [claimEditPhoto, setClaimEditPhoto] = useState<number | null>(null);
+  const claimCameraRef = useRef<HTMLInputElement>(null);
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const deepLinkHandled = useRef(false);
@@ -149,7 +158,9 @@ export default function StudentSearch() {
 
   const filtered = items
     .filter((item) => {
-      if (query && !`${item.name} ${item.description}`.toLowerCase().includes(query.toLowerCase())) return false;
+      // Items this student handed in never appear in their own search results.
+      if (item.reportedByMe) return false;
+      if (!matchesSearch(query, [item.name, item.description, item.category, item.location, item.statusLabel, item.locker, item.locker ? `locker ${item.locker}` : "", ...dateSearchValues(item.date)])) return false;
       if (selectedCategory && item.category !== selectedCategory) return false;
       if (dateFrom && dateTo) {
         if (item.date < dateFrom) return false;
@@ -215,25 +226,54 @@ export default function StudentSearch() {
     setViewItem(null);
     setClaimItem(item);
     setClaimReason("");
-    setClaimPhoto(null);
-    setClaimPreview(null);
+    setClaimPhotos([]);
+    setClaimCameraOpen(false);
+    setClaimPhotoSourceOpen(false);
+    setClaimEditPhoto(null);
   }
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      showCenteredMessage("error", "Please upload an image file");
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    if (claimPhotos.length + files.length > 3) {
+      showCenteredMessage("error", "You can upload up to 3 photos");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      showCenteredMessage("error", "Image must be under 5MB");
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showCenteredMessage("error", "Please upload image files only");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showCenteredMessage("error", "Each image must be under 5MB");
+        return;
+      }
+    }
+    try {
+      const drafts = await Promise.all(
+        files.map(
+          (file) =>
+            new Promise<{ file: File; preview: string }>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve({ file, preview: reader.result as string });
+              reader.onerror = () => reject(new Error("Could not read image"));
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
+      setClaimPhotos((prev) => [...prev, ...drafts].slice(0, 3));
+    } catch {
+      showCenteredMessage("error", "Could not read one of the images");
+    }
+  }
+
+  function openClaimCamera() {
+    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") {
+      setClaimCameraOpen(true);
       return;
     }
-    setClaimPhoto(file);
-    const reader = new FileReader();
-    reader.onload = () => setClaimPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    claimCameraRef.current?.click();
   }
 
   async function handleSubmitClaim() {
@@ -242,7 +282,7 @@ export default function StudentSearch() {
       showCenteredMessage("error", "Please describe why this item is yours");
       return;
     }
-    if (!claimPhoto) {
+    if (!claimPhotos.length) {
       showCenteredMessage("error", "Please upload photo evidence");
       return;
     }
@@ -259,7 +299,7 @@ export default function StudentSearch() {
       const form = new FormData();
       form.append("itemId", item.id);
       form.append("claimReason", claimReason.trim());
-      form.append("evidence", claimPhoto);
+      claimPhotos.forEach((photo) => form.append("evidence", photo.file));
 
       const res = await fetch("/api/claims", {
         method: "POST",
@@ -275,9 +315,12 @@ export default function StudentSearch() {
       setClaimedItemIds((prev) => new Set(prev).add(item.id));
       setClaimItem(null);
       setClaimReason("");
-      setClaimPhoto(null);
-      setClaimPreview(null);
+      setClaimPhotos([]);
+      setClaimCameraOpen(false);
+      setClaimPhotoSourceOpen(false);
+      setClaimEditPhoto(null);
       if (fileRef.current) fileRef.current.value = "";
+      if (claimCameraRef.current) claimCameraRef.current.value = "";
       showCenteredMessage("success", "Claim submitted with evidence — awaiting verification");
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to submit claim");
@@ -578,56 +621,31 @@ export default function StudentSearch() {
         </div>
       </main>
 
-      {/* Item details modal — shows description before claim */}
       {viewItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setViewItem(null)} />
-          <VCard className="relative w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="w-full h-48 rounded-t-2xl flex items-center justify-center relative overflow-hidden"
-              style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-              {viewItem.imageUrl ? (
-                <img src={viewItem.imageUrl} alt={viewItem.name} className="absolute inset-0 w-full h-full object-cover" />
-              ) : (
-                <>
-                  <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                  {(() => { const Icon = filterIcons[viewItem.category] || Package; return <Icon size={48} style={{ color: c.primary, opacity: 0.6 }} />; })()}
-                </>
-              )}
-              <button type="button" onClick={() => setViewItem(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
-            </div>
-            <div className="p-6">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>{viewItem.name}</h3>
-                <VBadge color={viewItem.color}>{viewItem.statusLabel}</VBadge>
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
-                  {(() => { const Icon = filterIcons[viewItem.category] || Package; return <Icon size={12} style={{ color: c.primary }} />; })()}
-                  {viewItem.category}
-                </span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {viewItem.location || "—"}</span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {fmtItemDate(viewItem.date)}</span>
-              </div>
-              <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: c.fill }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{viewItem.description || "No description provided."}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
-                <VButton
-                  className="flex-1"
-                  onClick={() => openClaim(viewItem)}
-                  disabled={claimedItemIds.has(viewItem.id) || viewItem.reportedByMe || viewItem.status !== "FOUND"}>
-                  {claimedItemIds.has(viewItem.id)
-                    ? "Claim submitted"
-                    : viewItem.reportedByMe
-                      ? "You reported this"
-                      : "Claim this item"}
-                </VButton>
-              </div>
-            </div>
-          </VCard>
-        </div>
+        <ItemDetailsModal
+          title={viewItem.name}
+          statusLabel={viewItem.statusLabel}
+          statusColor={viewItem.color}
+          category={viewItem.category}
+          location={viewItem.location}
+          date={fmtItemDate(viewItem.date)}
+          description={viewItem.description}
+          photos={viewItem.imageUrl ? [viewItem.imageUrl] : []}
+          onClose={() => setViewItem(null)}
+          footer={<>
+            <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
+            <VButton
+              className="flex-1"
+              onClick={() => openClaim(viewItem)}
+              disabled={claimedItemIds.has(viewItem.id) || viewItem.reportedByMe || viewItem.status !== "FOUND"}>
+              {claimedItemIds.has(viewItem.id)
+                ? "Claim submitted"
+                : viewItem.reportedByMe
+                  ? "You reported this"
+                  : "Claim this item"}
+            </VButton>
+          </>}
+        />
       )}
 
       {/* Claim evidence modal */}
@@ -651,32 +669,56 @@ export default function StudentSearch() {
               </div>
 
               <div>
-                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Photo Evidence <span style={{ color: c.danger }}>*</span></label>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
-                {claimPreview ? (
-                  <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                    <img src={claimPreview} alt="Evidence preview" className="w-full h-48 object-cover" />
-                    <button type="button" onClick={() => { setClaimPhoto(null); setClaimPreview(null); if (fileRef.current) fileRef.current.value = ""; }}
-                      className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors duration-200 cursor-pointer">
-                      <X size={14} />
-                    </button>
+                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                  Photo Evidence <span style={{ color: c.danger }}>*</span>
+                  <span className="font-normal" style={{ color: c.textLight }}> (up to 3 photo)</span>
+                </label>
+                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoChange} />
+                <input ref={claimCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                {claimPhotos.length === 0 ? (
+                  <div>
+                    <PhotoPicker onUpload={() => fileRef.current?.click()} onTakePhoto={openClaimCamera} />
+                    <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => fileRef.current?.click()}
-                    className="w-full h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                    style={{ borderColor: c.border, color: c.textMuted, backgroundColor: c.fill }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = c.primary; e.currentTarget.style.color = c.primary; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.textMuted; }}>
-                    <Camera size={22} />
-                    <span className="text-xs font-medium">Upload photo evidence</span>
-                    <span className="text-[11px]" style={{ color: c.textLight }}>JPG, PNG up to 5MB — required</span>
-                  </button>
+                  <div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {claimPhotos.map((photo, index) => (
+                        <div key={`${index}-${photo.file.name}`} className="relative group rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                          <button type="button" onClick={() => setClaimEditPhoto(index)}
+                            className="block w-full cursor-pointer" aria-label={`View or crop evidence photo ${index + 1}`}>
+                            <img src={photo.preview} alt={`Evidence ${index + 1}`}
+                              className={`w-full object-cover ${claimPhotos.length === 1 ? "h-40" : "h-24"}`} />
+                            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+                              <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
+                                <Crop size={12} /> Crop
+                              </span>
+                            </span>
+                          </button>
+                          <button type="button" aria-label={`Remove evidence photo ${index + 1}`}
+                            onClick={() => setClaimPhotos((prev) => prev.filter((_, i) => i !== index))}
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors duration-200 cursor-pointer">
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-end mt-2">
+                      {claimPhotos.length < 3 && (
+                        <button type="button" onClick={() => setClaimPhotoSourceOpen(true)}
+                          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                          style={{ borderColor: c.border, color: c.primary }}>
+                          <Plus size={13} /> Add photo
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
                 <VButton variant="secondary" onClick={() => setClaimItem(null)}>Cancel</VButton>
-                <VButton onClick={handleSubmitClaim} disabled={claimSubmitting || !claimReason.trim() || !claimPhoto}>
+                <VButton onClick={handleSubmitClaim} disabled={claimSubmitting || !claimReason.trim() || claimPhotos.length === 0}>
                   <Upload size={14} /> {claimSubmitting ? "Submitting..." : "Submit Claim"}
                 </VButton>
               </div>
@@ -684,6 +726,42 @@ export default function StudentSearch() {
             </div>
           </VCard>
         </div>
+      )}
+
+      {claimPhotoSourceOpen && (
+        <PhotoSourceDialog
+          title="Add evidence photo"
+          description="Attach another photo for your claim (up to 3)."
+          onClose={() => setClaimPhotoSourceOpen(false)}
+          onTakePhoto={() => { setClaimPhotoSourceOpen(false); openClaimCamera(); }}
+          onUpload={() => { setClaimPhotoSourceOpen(false); fileRef.current?.click(); }}
+        />
+      )}
+
+      {claimCameraOpen && (
+        <CameraCaptureModal
+          onClose={() => setClaimCameraOpen(false)}
+          onUseUpload={() => { setClaimCameraOpen(false); fileRef.current?.click(); }}
+          onCapture={(photo) => {
+            setClaimPhotos((prev) => (prev.length >= 3 ? prev : [...prev, { file: photo.file, preview: photo.preview }]));
+            setClaimCameraOpen(false);
+          }}
+        />
+      )}
+
+      {claimEditPhoto !== null && claimPhotos[claimEditPhoto] && (
+        <PhotoCropModal
+          src={claimPhotos[claimEditPhoto].preview}
+          onClose={() => setClaimEditPhoto(null)}
+          onSave={(photo) => {
+            setClaimPhotos((prev) =>
+              prev.map((entry, index) =>
+                index === claimEditPhoto ? { file: photo.file, preview: photo.preview } : entry,
+              ),
+            );
+            setClaimEditPhoto(null);
+          }}
+        />
       )}
     </StudentShell>
   );

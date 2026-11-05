@@ -23,8 +23,12 @@ export interface UserClaim {
   locker: string | null;
   reason: string;
   evidenceImageUrl: string | null;
+  evidenceImageUrls: string[];
+  evidenceUploadedAt: string;
   itemImageUrl: string | null;
+  itemImageUrls: string[];
   itemStatus: string;
+  itemCreatedAt: string;
   hasValidQr: boolean;
 }
 
@@ -68,8 +72,21 @@ export function mapUserClaim(raw: any): UserClaim {
         : null,
     reason: raw?.claimReason || "",
     evidenceImageUrl: raw?.evidenceImageUrl || null,
+    evidenceImageUrls: Array.isArray(raw?.evidenceImageUrls) && raw.evidenceImageUrls.length
+      ? raw.evidenceImageUrls.filter((value: unknown): value is string => typeof value === "string")
+      : raw?.evidenceImageUrl
+        ? [raw.evidenceImageUrl]
+        : [],
+    evidenceUploadedAt: raw?.evidenceUploadedAt ? String(raw.evidenceUploadedAt) : raw?.createdAt ? String(raw.createdAt) : "",
     itemImageUrl: raw?.item?.imageUrl || null,
+    itemImageUrls: Array.from(new Set([
+      raw?.item?.imageUrl,
+      ...(Array.isArray(raw?.item?.reports)
+        ? raw.item.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
+        : []),
+    ].filter((value: unknown): value is string => typeof value === "string" && value.length > 0))),
     itemStatus: raw?.item?.status || "",
+    itemCreatedAt: raw?.item?.createdAt ? String(raw.item.createdAt) : "",
     hasValidQr,
   };
 }

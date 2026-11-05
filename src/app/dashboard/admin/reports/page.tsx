@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, PackageSearch, PackageCheck, FileText, Lock, Users, Search, Clock, MapPin,
-  CheckCircle2, XCircle, Eye, RotateCcw, X, Loader2, RefreshCw, Camera, Grid3X3,
-  Sparkles, ChevronDown, Plus,
+  CheckCircle2, XCircle, Eye, X, Loader2, RefreshCw, Camera, Grid3X3,
+  Sparkles, ChevronDown, Plus, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
@@ -16,9 +16,11 @@ import {
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport, type ReportStatus } from "@/lib/report-mapper";
 import { suggestMatches, suggestionLabel } from "@/lib/report-match";
+import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { categoryIcon } from "@/lib/category-icons";
-import { DateCalendar } from "@/components/date-calendar";
+import { ItemDetailsModal } from "@/components/item-details-modal";
+import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
@@ -39,6 +41,8 @@ type FoundItem = {
 
 type Locker = { id: string; lockerNumber: string; status: string };
 
+type MatchPreview = { item: FoundItem; images: string[]; index: number };
+
 const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
@@ -48,7 +52,7 @@ const adminNav = [
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
 
-const statusOptions: Array<ReportStatus | "ALL"> = ["ALL", "PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"];
+const statusOptions: Array<ReportStatus | "ALL"> = ["ALL", "PENDING", "MATCHED", "VERIFIED", "REJECTED"];
 const statusLabel: Record<string, string> = {
   ALL: "All",
   PENDING: "Pending",
@@ -85,6 +89,7 @@ export default function AdminReports() {
   const [query, setQuery] = useState("");
 
   const [matchTarget, setMatchTarget] = useState<UserReport | null>(null);
+  const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
   const [matchQuery, setMatchQuery] = useState("");
   const [showMatchSearch, setShowMatchSearch] = useState(false);
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
@@ -95,6 +100,7 @@ export default function AdminReports() {
   });
   const [verifyCategoryOpen, setVerifyCategoryOpen] = useState(false);
   const [verifyDateOpen, setVerifyDateOpen] = useState(false);
+  const [verifyDateAnchor, setVerifyDateAnchor] = useState<HTMLElement | null>(null);
   const [approveStage, setApproveStage] = useState<"form" | "locker">("form");
   const [approvePhotos, setApprovePhotos] = useState<{ preview: string; originalPreview: string }[]>([]);
   const [approvePhotoSourceOpen, setApprovePhotoSourceOpen] = useState(false);
@@ -322,7 +328,34 @@ export default function AdminReports() {
 
   async function handleMatch(itemId: string) {
     if (!matchTarget) return;
-    await runAction(matchTarget.id, { action: "match", itemId }, "Report matched — the student has been notified");
+    await runAction(matchTarget.id, { action: "match", itemId }, "Report matched — the student was notified and a pickup QR code was generated");
+  }
+
+  // Opens a read-only preview of a found item. The list photo is shown right
+  // away, then the item's report photos are fetched so the slider can page
+  // through everything that was handed in.
+  async function openMatchPreview(item: FoundItem) {
+    setMatchPreview({ item, images: item.imageUrl ? [item.imageUrl] : [], index: 0 });
+    try {
+      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      const fresh = data?.data;
+      if (!res.ok || !data?.success || !fresh) return;
+      const reportImages: string[] = Array.isArray(fresh.reports)
+        ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
+        : [];
+      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      setMatchPreview((prev) => {
+        if (!prev || prev.item.id !== item.id) return prev;
+        const merged = Array.from(new Set([...prev.images, ...images]));
+        return { ...prev, images: merged, index: Math.min(prev.index, Math.max(0, merged.length - 1)) };
+      });
+    } catch {
+      // Keep the list photo if the item lookup fails.
+    }
   }
 
   async function handleReject() {
@@ -407,7 +440,8 @@ export default function AdminReports() {
   }
 
   useEscapeKey(!!assignLockerReport, () => { if (!assigningLocker) setAssignLockerReport(null); }, !assigningLocker);
-  useEscapeKey(!!matchTarget && !viewer, () => setMatchTarget(null));
+  useEscapeKey(!!matchTarget && !viewer && !matchPreview, () => setMatchTarget(null));
+  useEscapeKey(!!matchPreview && !viewer, () => setMatchPreview(null));
   useEscapeKey(approvePhotoSourceOpen, () => setApprovePhotoSourceOpen(false));
   useEscapeKey(approveStage === "locker", () => { if (!verifying) setApproveStage("form"); }, !verifying);
   useEscapeKey(!!verifyReport, () => {
@@ -420,21 +454,37 @@ export default function AdminReports() {
   if (!user || !mounted) return null;
 
 
-  const baseFiltered = reports.filter((report) => {
-    if (query) {
-      const haystack = `${report.itemName} ${report.description} ${report.studentName} ${report.studentEmail} ${report.studentId}`.toLowerCase();
-      if (!haystack.includes(query.toLowerCase())) return false;
-    }
-    return true;
-  });
+  const baseFiltered = reports.filter((report) =>
+    matchesSearch(query, [
+      report.itemName,
+      report.description,
+      report.category,
+      report.location,
+      report.statusLabel,
+      report.typeLabel,
+      report.reference,
+      report.studentName,
+      report.studentEmail,
+      report.studentId,
+      ...dateSearchValues(report.date),
+      ...dateSearchValues(report.createdAt),
+      report.item?.name,
+      report.item?.locker,
+      report.item?.locker ? `locker ${report.item.locker}` : "",
+    ])
+  );
 
   const filtered = baseFiltered.filter((report) => filterStatus === "ALL" || report.status === filterStatus);
 
-  const matchResults = foundItems.filter((item) => {
-    if (!matchQuery.trim()) return true;
-    const q = matchQuery.toLowerCase();
-    return `${item.itemName} ${item.description || ""} ${item.foundLocation || ""} ${item.category || ""}`.toLowerCase().includes(q);
-  }).slice(0, 8);
+  const matchResults = foundItems.filter((item) =>
+    matchesSearch(matchQuery, [
+      item.itemName,
+      item.description,
+      item.foundLocation,
+      item.category,
+      item.locker?.lockerNumber ? `locker ${item.locker.lockerNumber}` : "",
+    ])
+  ).slice(0, 8);
   const suggestions =
     matchTarget && matchTarget.type === "LOST"
       ? suggestMatches(matchTarget, foundItems, { excludeItemId: matchTarget.item?.id ?? null, limit: 3 })
@@ -443,11 +493,6 @@ export default function AdminReports() {
     const item = foundItems.find((candidate) => candidate.id === suggestion.itemId);
     return item ? [{ ...suggestion, item }] : [];
   });
-
-  function clearFilters() {
-    setFilterStatus("PENDING");
-    setQuery("");
-  }
 
   return (
     <StudentShell active="Reports" userName={user.name} userRole={user.role} pageTitle="Lost & Found Reports" bottomNav={adminNav} logout={handleLogout}>
@@ -469,14 +514,6 @@ export default function AdminReports() {
                 </button>
               ))}
             </div>
-            {(query || filterStatus !== "PENDING") && (
-              <button type="button"
-                className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border bg-white transition-all duration-200 cursor-pointer"
-                style={{ borderColor: c.borderLight, color: c.primary, fontWeight: "600" }}
-                onClick={clearFilters}>
-                <RotateCcw size={13} /><span>Reset</span>
-              </button>
-            )}
           </div>
 
           {loading ? null : loadError ? (
@@ -493,18 +530,12 @@ export default function AdminReports() {
               <p className="text-sm mt-1" style={{ color: c.textLight }}>
                 {reports.length === 0
                   ? "Students have not submitted any reports yet."
-                  : filterStatus === "PENDING"
-                    ? "No reports are waiting for review."
-                    : "Try adjusting the filters."}
+                  : query
+                    ? "No reports match your search."
+                    : filterStatus === "PENDING"
+                      ? "No reports are waiting for review."
+                      : "Try another status filter."}
               </p>
-              {reports.length > 0 && (
-                <div className="flex flex-wrap items-center justify-center gap-2 mt-5">
-                  <VButton variant="secondary" onClick={clearFilters}><RotateCcw size={14} /> Clear filters</VButton>
-                  {filterStatus === "PENDING" && (
-                    <VButton onClick={() => setFilterStatus("ALL")}>View all reports</VButton>
-                  )}
-                </div>
-              )}
             </VCard>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
@@ -549,8 +580,7 @@ export default function AdminReports() {
 
                   <div className="flex items-center gap-2 mb-1 min-w-0">
                     <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
-                    <VBadge color={report.type === "LOST" ? c.primary : c.accent}
-                      style={{ border: `1px solid ${(report.type === "LOST" ? c.primary : c.accent)}40` }}>
+                    <VBadge color={c.textMuted} style={{ border: `1px solid ${c.border}` }}>
                       {report.typeLabel}
                     </VBadge>
                     <VBadge color={report.color} className="ml-auto"
@@ -570,7 +600,7 @@ export default function AdminReports() {
                     <span className="flex items-center gap-1"><MapPin size={12} /> {report.location || "—"}</span>
                     <span className="flex items-center gap-3">
                       <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={12} /> {fmtDay(report.date)}</span>
-                      {report.status === "VERIFIED" && (
+                      {(report.status === "VERIFIED" || report.status === "MATCHED") && (
                         report.item?.locker ? (
                           <span className="flex items-center gap-1 whitespace-nowrap">
                             <Lock size={12} /> Locker <b style={{ color: c.text }}>{report.item.locker}</b>
@@ -596,13 +626,6 @@ export default function AdminReports() {
                     style={{ backgroundColor: c.fill, color: c.textMuted }}>
                     {report.description}
                   </p>
-
-                  {report.item && report.status !== "VERIFIED" && (
-                    <p className="text-[11px] mb-3 px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                      {report.type === "LOST" ? "Matched" : "Logged"}: <b style={{ color: c.text }}>{report.item.name}</b>
-                      {report.item.locker ? ` · Locker ${report.item.locker}` : ""}
-                    </p>
-                  )}
 
                   {report.status === "PENDING" && (
                     <div className="mt-auto flex items-center gap-2 pt-4">
@@ -684,6 +707,9 @@ export default function AdminReports() {
                             {item.category || "Others"} · {fmtDay(item.foundDate)}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                           </p>
                         </div>
+                        <VButton variant="secondary" size="sm" onClick={() => void openMatchPreview(item)}>
+                          View
+                        </VButton>
                         <VButton size="sm" disabled={busyAction} onClick={() => void handleMatch(item.id)}>
                           Match
                         </VButton>
@@ -722,6 +748,9 @@ export default function AdminReports() {
                           {item.category || "Others"} · {item.foundLocation || "—"} · {fmtDay(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                         </p>
                       </div>
+                      <VButton variant="secondary" size="sm" onClick={() => void openMatchPreview(item)}>
+                        View
+                      </VButton>
                       <VButton size="sm" disabled={busyAction} onClick={() => void handleMatch(item.id)}>
                         Match
                       </VButton>
@@ -731,11 +760,27 @@ export default function AdminReports() {
               </>
             )}
 
-            <div className="flex items-center justify-end pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
-              <VButton variant="secondary" onClick={() => setMatchTarget(null)}>Close</VButton>
-            </div>
           </VCard>
         </div>
+      )}
+
+      {matchPreview && (
+        <ItemDetailsModal
+          zIndex="z-[70]"
+          title={matchPreview.item.itemName}
+          statusLabel="Found"
+          statusColor={c.primary}
+          category={matchPreview.item.category || "Others"}
+          location={matchPreview.item.foundLocation}
+          date={fmtDay(matchPreview.item.foundDate)}
+          description={matchPreview.item.description}
+          photos={matchPreview.images}
+          photoIndex={matchPreview.index}
+          onPhotoIndexChange={(index) => setMatchPreview((prev) => (prev ? { ...prev, index } : prev))}
+          onViewPhoto={() => setViewer({ photos: matchPreview.images, index: matchPreview.index, title: matchPreview.item.itemName })}
+          onClose={() => setMatchPreview(null)}
+          footer={<VButton variant="secondary" className="flex-1" onClick={() => setMatchPreview(null)}>Close</VButton>}
+        />
       )}
 
       {viewer && (
@@ -809,8 +854,8 @@ export default function AdminReports() {
                     <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
                       Found date <span style={{ color: c.danger }}>*</span>
                     </label>
-                    <VFilterButton active={!!verifyForm.date} className="w-full justify-between" style={{ height: 44 }}
-                      onClick={() => setVerifyDateOpen((open) => !open)}>
+                    <VFilterButton className="w-full justify-between" style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                      onClick={(e) => { setVerifyDateAnchor(e.currentTarget); setVerifyDateOpen((open) => !open); }}>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <Clock size={14} style={{ color: c.primary }} />
                         <span className="truncate">{verifyForm.date ? fmtDay(verifyForm.date) : "Select date"}</span>
@@ -819,14 +864,9 @@ export default function AdminReports() {
                     </VFilterButton>
 
                     {verifyDateOpen && (
-                      <>
-                        <div className="fixed inset-0 z-20" onClick={() => setVerifyDateOpen(false)} />
-                        <div className="absolute right-4 top-[70px] z-30">
-                          <DateCalendar value={verifyForm.date} compact
-                            onChange={(iso) => setVerifyForm((prev) => ({ ...prev, date: iso }))}
-                            onClose={() => setVerifyDateOpen(false)} />
-                        </div>
-                      </>
+                      <CalendarPopover anchor={verifyDateAnchor} compact value={verifyForm.date}
+                        onChange={(iso) => setVerifyForm((prev) => ({ ...prev, date: iso }))}
+                        onClose={() => setVerifyDateOpen(false)} />
                     )}
                   </div>
                 </div>
@@ -850,7 +890,7 @@ export default function AdminReports() {
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <label className="text-sm font-medium" style={{ color: c.text }}>
-                      Photos <span className="font-normal" style={{ color: c.textLight }}>({approvePhotos.length}/3)</span>
+                      Photos <span className="font-normal" style={{ color: c.textLight }}>({approvePhotos.length}/3 · max 3)</span>
                     </label>
                     {approvePhotos.length > 0 && approvePhotos.length < 3 && (
                       <button type="button" onClick={() => setApprovePhotoSourceOpen(true)}

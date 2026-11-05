@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { vcolors as c } from "@/components/ui/vault";
 
@@ -126,5 +127,80 @@ export function DateCalendar({ value, onChange, onClose, compact = false }: Date
         </button>
       </div>
     </div>
+  );
+}
+
+
+interface CalendarPopoverProps extends DateCalendarProps {
+  /** Trigger element the popover should sit next to. */
+  anchor: HTMLElement | null;
+}
+
+/**
+ * Portal-based wrapper so the calendar is never clipped by a scrolling modal.
+ * It opens below the trigger, flips above when there is no room, and is
+ * clamped inside the viewport on both axes.
+ */
+export function CalendarPopover({ anchor, compact = false, ...props }: CalendarPopoverProps) {
+  const [mounted, setMounted] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMounted(true), []);
+
+  useLayoutEffect(() => {
+    if (!mounted || !anchor) return;
+    const margin = 12;
+
+    function update() {
+      const rect = anchor!.getBoundingClientRect();
+      const box = boxRef.current;
+      const width = box?.offsetWidth || (compact ? 248 : 300);
+      const height = box?.offsetHeight || 340;
+      const viewportW = window.innerWidth;
+      const viewportH = window.innerHeight;
+
+      // Nudge the panel slightly left and up so it hugs the trigger and
+      // clears the field's helper text.
+      const offsetX = -10;
+      const offsetY = -6;
+      const left = Math.min(Math.max(margin, rect.left + offsetX), Math.max(margin, viewportW - width - margin));
+
+      let top = rect.bottom + offsetY;
+      if (top + height > viewportH - margin) {
+        const above = rect.top - height + offsetY;
+        top = above >= margin ? above : Math.max(margin, viewportH - height - margin);
+      }
+
+      setPos({ left, top });
+    }
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [mounted, anchor, compact]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[90]" onClick={props.onClose} />
+      <div
+        ref={boxRef}
+        className="fixed z-[95] max-h-[calc(100vh-1.5rem)] overflow-auto overscroll-contain"
+        style={{
+          left: pos?.left ?? 0,
+          top: pos?.top ?? 0,
+          maxWidth: "calc(100vw - 1.5rem)",
+          visibility: pos ? "visible" : "hidden",
+        }}>
+        <DateCalendar {...props} compact={compact} />
+      </div>
+    </>,
+    document.body,
   );
 }

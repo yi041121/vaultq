@@ -4,17 +4,19 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   PackageSearch, PackageCheck, Clock, X, CheckCircle2,
-  Loader2, RefreshCw, Plus, ArrowRight, FileText, RotateCcw,
+  Loader2, RefreshCw, Plus, FileText, RotateCcw,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
   ChevronDown, ZoomIn, MapPin, Eye,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
-import { DateCalendar } from "@/components/date-calendar";
+import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
+import { ItemDetailsModal } from "@/components/item-details-modal";
 import { PhotoPicker } from "@/components/photo-picker";
 import { StudentShell } from "@/components/student-shell";
 import {
@@ -37,6 +39,8 @@ type ItemDetail = {
   location: string;
   date: string;
   imageUrl: string | null;
+  images: string[];
+  imageIndex: number;
   statusLabel: string;
   color: string;
 };
@@ -51,7 +55,8 @@ const categoryIcons: Record<string, any> = {
   Others: Grid3X3,
 };
 
-const typeColor: Record<ReportType, string> = { LOST: "#355C8A", FOUND: "#7FB8B5" };
+// Lost and Found share one neutral tag colour so status tones stand out.
+const TYPE_TAG_COLOR = "#64748b";
 
 // Logged item statuses shown inside a report card. Once the report itself is
 // VERIFIED the card shows "Verified" instead, matching the badge at the top.
@@ -82,6 +87,15 @@ function fmtReportDate(date: string) {
   });
 }
 
+function fmtReportTime(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
 let studentReportsCache: UserReport[] | null = null;
 
 export default function StudentReport() {
@@ -103,6 +117,8 @@ export default function StudentReport() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+  const [dateAnchor, setDateAnchor] = useState<HTMLElement | null>(null);
+  const [editDateAnchor, setEditDateAnchor] = useState<HTMLElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<ReportType | null>(null);
 
@@ -476,9 +492,13 @@ export default function StudentReport() {
     const item = report.item;
     if (!item) return;
     const statusLabel = report.status === "VERIFIED"
-      ? report.statusLabel
+      ? "Found"
       : itemStatusLabel[item.status] || item.status;
     const color = report.status === "VERIFIED" ? report.color : c.textMuted;
+
+    // Item details only ever show the inventory item's own photos. The lost
+    // report photos stay in the separate report view.
+    const initialImages = item.imageUrl ? [item.imageUrl] : [];
 
     setItemDetail({
       id: item.id,
@@ -487,7 +507,9 @@ export default function StudentReport() {
       description: report.description,
       location: report.location,
       date: report.date,
-      imageUrl: item.imageUrl || report.images[0] || null,
+      imageUrl: initialImages[0] || null,
+      images: initialImages,
+      imageIndex: 0,
       statusLabel,
       color,
     });
@@ -502,21 +524,50 @@ export default function StudentReport() {
       const data = await res.json().catch(() => ({}));
       const fresh = data?.data;
       if (!res.ok || !data?.success || !fresh) return;
-      setItemDetail((prev) => (prev && prev.id === item.id ? {
-        ...prev,
-        name: fresh.itemName || prev.name,
-        category: fresh.category || prev.category,
-        description: fresh.description || prev.description,
-        location: fresh.foundLocation || prev.location,
-        date: fresh.foundDate ? String(fresh.foundDate).slice(0, 10) : prev.date,
-        imageUrl: fresh.imageUrl || prev.imageUrl,
-      } : prev));
+      const reportImages: string[] = Array.isArray(fresh.reports)
+        ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
+        : [];
+      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      setItemDetail((prev) => {
+        if (!prev || prev.id !== item.id) return prev;
+        // Keep the photos already shown and add any new item photos.
+        const merged = Array.from(new Set([...prev.images, ...images]));
+        return {
+          ...prev,
+          name: fresh.itemName || prev.name,
+          category: fresh.category || prev.category,
+          description: fresh.description || prev.description,
+          location: fresh.foundLocation || prev.location,
+          date: fresh.foundDate ? String(fresh.foundDate).slice(0, 10) : prev.date,
+          imageUrl: merged[0] || prev.imageUrl,
+          images: merged,
+          imageIndex: Math.min(prev.imageIndex, Math.max(0, merged.length - 1)),
+        };
+      });
     } catch {
       // Keep the report-derived details if the item lookup fails.
     }
   }
 
-  useEscapeKey(!!itemDetail, () => setItemDetail(null));
+  // Matched reports keep the lost-report photo and description; View shows
+  // what the student originally reported rather than the inventory record.
+  function openReportDetail(report: UserReport) {
+    setItemDetail({
+      id: report.id,
+      name: report.itemName,
+      category: report.category,
+      description: report.description,
+      location: report.location,
+      date: report.date,
+      imageUrl: report.images[0] || null,
+      images: report.images,
+      imageIndex: 0,
+      statusLabel: "Lost",
+      color: report.color,
+    });
+  }
+
+  useEscapeKey(!!itemDetail && !viewer, () => setItemDetail(null));
   useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
   useEscapeKey(!!editTarget && !viewer && !photoSourceTarget && !cameraTarget && editingEditPhoto === null, () => {
     if (savingEdit) return;
@@ -571,18 +622,34 @@ export default function StudentReport() {
                 <div className="space-y-4">
                   {reports.map((report) => {
                     const Icon = categoryIcons[report.category] || FileText;
-                    const canClaim = report.type === "LOST" && report.status === "MATCHED" && report.item?.status === "FOUND";
                     const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
+                    const matchedWithItem = report.status === "MATCHED" && !!report.item;
+                    // Verified and matched reports share the compact "item first"
+                    // layout; only the thumbnail source differs.
+                    const showsItemFirst = verifiedWithItem || matchedWithItem;
+                    // Matched cards show the student's uploaded lost-report photo;
+                    // the inventory photos remain in the Matched item view.
+                    const itemThumb = matchedWithItem
+                      ? report.images[0] || report.item?.imageUrl
+                      : report.item?.imageUrl;
                     const itemBlock = report.item && (
                           <div className="rounded-xl p-3.5 mb-3 flex flex-wrap items-center gap-3" style={{ backgroundColor: c.fill }}>
                             <button
                               type="button"
-                              aria-label={`View ${report.item.name} details`}
+                              aria-label={matchedWithItem ? `View your ${report.itemName} photos` : `View ${report.item.name} details`}
                               className="group flex flex-1 min-w-[200px] items-center gap-3 text-left cursor-pointer"
-                              onClick={() => void openItemDetail(report)}>
-                              {report.item.imageUrl ? (
+                              onClick={() => {
+                                if (matchedWithItem && report.images.length) {
+                                  setViewer({ photos: report.images, index: 0, title: report.itemName });
+                                } else if (matchedWithItem) {
+                                  openReportDetail(report);
+                                } else {
+                                  void openItemDetail(report);
+                                }
+                              }}>
+                              {itemThumb ? (
                                 <span className="relative rounded-lg overflow-hidden border shrink-0 block" style={{ borderColor: c.border }}>
-                                  <img src={report.item.imageUrl} alt={report.item.name} className="w-12 h-12 object-cover" />
+                                  <img src={itemThumb} alt={report.item.name} className="w-12 h-12 object-cover" />
                                   <span className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 flex items-center justify-center">
                                     <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white">
                                       <ZoomIn size={14} />
@@ -596,13 +663,15 @@ export default function StudentReport() {
                               )}
                               <span className="flex-1 min-w-0">
                                 <span className="block text-xs font-semibold" style={{ color: c.text }}>
-                                  {report.type === "LOST" ? "Matched item" : "Logged item"}: {report.item.name}
+                                  {matchedWithItem
+                                    ? `Lost reporting: ${report.itemName}`
+                                    : `${report.type === "LOST" ? "Matched item" : "Logged item"}: ${report.item.name}`}
                                 </span>
                                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                                  {report.status === "VERIFIED" && (
-                                    <VBadge color={typeColor[report.type]}>{report.typeLabel}</VBadge>
+                                  {(report.status === "VERIFIED" || report.status === "MATCHED") && (
+                                    <VBadge color={TYPE_TAG_COLOR}>{report.typeLabel}</VBadge>
                                   )}
-                                  {report.status === "VERIFIED" ? (
+                                  {report.status === "VERIFIED" || report.status === "MATCHED" ? (
                                     <VBadge color={report.color}>{report.statusLabel}</VBadge>
                                   ) : (
                                     <span className="text-[11px]" style={{ color: c.textMuted }}>
@@ -612,20 +681,20 @@ export default function StudentReport() {
                                 </span>
                               </span>
                             </button>
-                            {canClaim && (
-                              <VButton size="sm" onClick={() => router.push(`/dashboard/student/search?item=${report.item!.id}`)}>
-                                View item &amp; claim <ArrowRight size={13} />
+                            {matchedWithItem && (
+                              <VButton variant="secondary" size="sm" onClick={() => void openItemDetail(report)}>
+                                <PackageCheck size={13} /> Matched item
                               </VButton>
                             )}
-                            <VButton variant="secondary" size="sm" onClick={() => void openItemDetail(report)}>
+                            <VButton variant="secondary" size="sm" onClick={() => (matchedWithItem ? openReportDetail(report) : void openItemDetail(report))}>
                               <Eye size={13} /> View
                             </VButton>
                           </div>
                     );
                     return (
                       <VCard key={report.id} className="p-5 lg:p-6">
-                        {verifiedWithItem && itemBlock}
-                        {!verifiedWithItem && (
+                        {showsItemFirst && itemBlock}
+                        {!showsItemFirst && (
                           <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                           <div className="flex items-start gap-3 min-w-0">
                             <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 -mt-1"
@@ -640,16 +709,16 @@ export default function StudentReport() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <VBadge color={typeColor[report.type]}>{report.typeLabel}</VBadge>
+                            <VBadge color={TYPE_TAG_COLOR}>{report.typeLabel}</VBadge>
                             {/* A verified report shows its badge on the logged item below, so hide the duplicate here. */}
-                            {!(report.status === "VERIFIED" && report.item) && (
+                            {!showsItemFirst && (
                               <VBadge color={report.color}>{report.statusLabel}</VBadge>
                             )}
                           </div>
                         </div>
                         )}
                         {/* The details popup already shows the description for verified reports. */}
-                        {!(report.status === "VERIFIED" && report.item) && (
+                        {!showsItemFirst && (
                           <div className="rounded-xl border p-3 mb-3" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
                             <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: c.textLight }}>Description</p>
                             <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{report.description}</p>
@@ -657,7 +726,7 @@ export default function StudentReport() {
                         )}
 
                         {/* Once verified, the logged item block below holds the only photo. */}
-                        {report.images.length > 0 && !(report.status === "VERIFIED" && report.item) && (
+                        {report.images.length > 0 && !showsItemFirst && (
                           <div className={`grid gap-2 mb-3 ${report.images.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
                             {report.images.map((src, index) => (
                               <button key={`${report.id}-photo-${index}`} type="button"
@@ -683,7 +752,13 @@ export default function StudentReport() {
                           </div>
                         )}
 
-                        {!verifiedWithItem && itemBlock}
+                        {(showsItemFirst || matchedWithItem) && report.reviewedAt && (
+                          <p className="text-[11px] text-right mt-3" style={{ color: c.textLight }}>
+                            {report.status === "MATCHED" ? "Matched" : "Verified"} by admin · {fmtReportTime(report.reviewedAt)}
+                          </p>
+                        )}
+
+                        {!showsItemFirst && itemBlock}
 
 
                         {report.type === "FOUND" && report.status === "PENDING" && (
@@ -768,7 +843,7 @@ export default function StudentReport() {
                 <VCard className="p-8 lg:p-10 flex-1 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
                     <p className="text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
-                      Reporting: <span style={{ color: typeColor[type] }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
+                      Reporting: <span style={{ color: TYPE_TAG_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
                     <button type="button" className="text-xs font-semibold underline hover:opacity-70 cursor-pointer" style={{ color: c.primary }}
                       onClick={() => { setType(null); resetForm(); }}>
@@ -803,13 +878,13 @@ export default function StudentReport() {
                           <VDropdown open={categoryOpen} onOpenChange={setCategoryOpen} width="w-full"
                             trigger={
                               <button type="button"
-                                className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm font-medium border bg-white text-left cursor-pointer relative"
-                                style={{ borderColor: c.border, color: category ? c.text : c.textMuted }}
+                                className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm border bg-white text-left cursor-pointer relative"
+                                style={{ borderColor: c.border, color: category ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                                 onClick={() => setCategoryOpen(!categoryOpen)}>
                                 {category
                                   ? <>{(() => { const Icon = categoryIcons[category] || Grid3X3; return <Icon size={15} style={{ color: c.primary }} />; })()}<span>{category}</span></>
                                   : <span>Select a category</span>}
-                                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-xs" style={{ color: c.textMuted }}>▾</span>
+                                <ChevronDown size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
                               </button>
                             }>
                             {(close) => (
@@ -831,10 +906,9 @@ export default function StudentReport() {
                             {type === "LOST" ? "Date lost" : "Date found"} <span style={{ color: c.danger }}>*</span>
                           </label>
                           <VFilterButton
-                            active={!!date}
                             className="w-full justify-between"
-                            style={{ height: 44 }}
-                            onClick={toggleDateCalendar}>
+                            style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                            onClick={(e) => { setDateAnchor(e.currentTarget); toggleDateCalendar(); }}>
                             <span className="flex items-center gap-1.5 min-w-0">
                               <Clock size={14} style={{ color: c.primary }} />
                               <span className="truncate">{date ? fmtDay(date) : "Select date"}</span>
@@ -843,12 +917,8 @@ export default function StudentReport() {
                           </VFilterButton>
 
                           {dateOpen && (
-                            <>
-                              <div className="fixed inset-0 z-20" onClick={() => setDateOpen(false)} />
-                              <div className="absolute right-6 top-[72px] z-30">
-                                <DateCalendar value={date} onChange={setDate} onClose={() => setDateOpen(false)} />
-                              </div>
-                            </>
+                            <CalendarPopover anchor={dateAnchor} value={date}
+                              onChange={setDate} onClose={() => setDateOpen(false)} />
                           )}
                         </div>
                       </div>
@@ -882,7 +952,7 @@ export default function StudentReport() {
                   <div className="mb-5">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: c.textMuted }}>
-                        Photo <span className="font-normal normal-case tracking-normal" style={{ color: c.textLight }}>(optional)</span>
+                        Photo <span className="font-normal normal-case tracking-normal" style={{ color: c.textLight }}>(optional · up to 3 photos)</span>
                       </p>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px]" style={{ color: c.textLight }}>{photos.length}/3</span>
@@ -1029,49 +1099,21 @@ export default function StudentReport() {
       )}
 
       {itemDetail && (
-        <div className="fixed inset-0 z-[75] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setItemDetail(null)} />
-          <VCard className="relative w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="w-full h-48 flex items-center justify-center relative overflow-hidden"
-              style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-              {itemDetail.imageUrl ? (
-                <img src={itemDetail.imageUrl} alt={itemDetail.name} className="absolute inset-0 w-full h-full object-cover" />
-              ) : (
-                <>
-                  <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                  {(() => { const Icon = categoryIcons[itemDetail.category] || PackageCheck; return <Icon size={48} style={{ color: c.primary, opacity: 0.6 }} />; })()}
-                </>
-              )}
-              <button type="button" onClick={() => setItemDetail(null)} aria-label="Close item details"
-                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer"
-                style={{ color: c.textMuted }}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>{itemDetail.name}</h3>
-                <VBadge color={itemDetail.color}>{itemDetail.statusLabel}</VBadge>
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4">
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
-                  {(() => { const Icon = categoryIcons[itemDetail.category] || PackageCheck; return <Icon size={12} style={{ color: c.primary }} />; })()}
-                  {itemDetail.category}
-                </span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
-                  <MapPin size={12} /> {itemDetail.location || "—"}
-                </span>
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
-                  <Clock size={12} /> {fmtReportDate(itemDetail.date)}
-                </span>
-              </div>
-              <div className="rounded-xl p-4" style={{ backgroundColor: c.fill }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{itemDetail.description || "No description provided."}</p>
-              </div>
-            </div>
-          </VCard>
-        </div>
+        <ItemDetailsModal
+          title={itemDetail.name}
+          statusLabel={itemDetail.statusLabel}
+          statusColor={itemDetail.color}
+          category={itemDetail.category}
+          location={itemDetail.location}
+          date={fmtReportDate(itemDetail.date)}
+          description={itemDetail.description}
+          photos={itemDetail.images}
+          photoIndex={itemDetail.imageIndex}
+          onPhotoIndexChange={(index) => setItemDetail((prev) => (prev ? { ...prev, imageIndex: index } : prev))}
+          onViewPhoto={() => setViewer({ photos: itemDetail.images, index: itemDetail.imageIndex, title: itemDetail.name })}
+          onClose={() => setItemDetail(null)}
+          footer={<VButton variant="secondary" className="flex-1" onClick={() => setItemDetail(null)}>Close</VButton>}
+        />
       )}
 
       {viewer && (
@@ -1115,13 +1157,13 @@ export default function StudentReport() {
                   <VDropdown open={editCategoryOpen} onOpenChange={setEditCategoryOpen} width="w-full"
                     trigger={
                       <button type="button"
-                        className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm font-medium border bg-white text-left cursor-pointer relative"
-                        style={{ borderColor: c.border, color: editForm.category ? c.text : c.textMuted }}
+                        className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm border bg-white text-left cursor-pointer relative"
+                        style={{ borderColor: c.border, color: editForm.category ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                         onClick={() => setEditCategoryOpen(!editCategoryOpen)}>
                         {editForm.category
                           ? <>{(() => { const Icon = categoryIcons[editForm.category] || Grid3X3; return <Icon size={15} style={{ color: c.primary }} />; })()}<span>{editForm.category}</span></>
                           : <span>Select a category</span>}
-                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-xs" style={{ color: c.textMuted }}>▾</span>
+                        <ChevronDown size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
                       </button>
                     }>
                     {(close) => (
@@ -1142,8 +1184,8 @@ export default function StudentReport() {
 
                 <div className="relative">
                   <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Date</label>
-                  <VFilterButton active={!!editForm.date} className="w-full justify-between" style={{ height: 44 }}
-                    onClick={() => setEditDateOpen((open) => !open)}>
+                  <VFilterButton className="w-full justify-between" style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                    onClick={(e) => { setEditDateAnchor(e.currentTarget); setEditDateOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} style={{ color: c.primary }} />
                       <span className="truncate">{editForm.date ? fmtDay(editForm.date) : "Select date"}</span>
@@ -1152,14 +1194,9 @@ export default function StudentReport() {
                   </VFilterButton>
 
                   {editDateOpen && (
-                    <>
-                      <div className="fixed inset-0 z-20" onClick={() => setEditDateOpen(false)} />
-                      <div className="absolute right-[-8px] top-[66px] z-30">
-                        <DateCalendar value={editForm.date} compact
-                          onChange={(iso) => setEditForm((prev) => ({ ...prev, date: iso }))}
-                          onClose={() => setEditDateOpen(false)} />
-                      </div>
-                    </>
+                    <CalendarPopover anchor={editDateAnchor} compact value={editForm.date}
+                      onChange={(iso) => setEditForm((prev) => ({ ...prev, date: iso }))}
+                      onClose={() => setEditDateOpen(false)} />
                   )}
                 </div>
               </div>
@@ -1185,7 +1222,7 @@ export default function StudentReport() {
               <div>
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <label className="text-xs font-semibold" style={{ color: c.text }}>
-                    Photos <span className="font-normal" style={{ color: c.textLight }}>({editPhotos.length}/3)</span>
+                    Photos <span className="font-normal" style={{ color: c.textLight }}>({editPhotos.length}/3 · max 3)</span>
                   </label>
                   {editPhotos.length > 0 && editPhotos.length < 3 && (
                     <button type="button" onClick={() => setPhotoSourceTarget("edit")}

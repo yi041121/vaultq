@@ -11,6 +11,8 @@ import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { categoryIcon } from "@/lib/category-icons";
+import { ItemDetailsModal } from "@/components/item-details-modal";
+import { matchesSearch } from "@/lib/search";
 import {
   VCard, VButton, VInput, VSearchInput, vcolors as c, font as f,
 } from "@/components/ui/vault";
@@ -75,7 +77,7 @@ export default function AdminLockers() {
   const [filter, setFilter] = useState<"All" | Locker["status"]>("All");
   const [query, setQuery] = useState("");
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
-  const [itemDetail, setItemDetail] = useState<{ id: string; name: string; category: string; description: string; location: string; date: string; imageUrl: string | null; images: string[]; imageIndex: number } | null>(null);
+  const [itemDetail, setItemDetail] = useState<{ id: string; name: string; category: string; description: string; location: string; date: string; imageUrl: string | null; images: string[]; imageIndex: number; statusLabel: string; color: string } | null>(null);
   const [assignLocker, setAssignLocker] = useState<Locker | null>(null);
   const [assignItemId, setAssignItemId] = useState<string>("");
   const [changeLocker, setChangeLocker] = useState<Locker | null>(null);
@@ -156,7 +158,7 @@ export default function AdminLockers() {
 
   const filtered = lockers.filter((l) => {
     if (filter !== "All" && l.status !== filter) return false;
-    if (query && !l.number.toLowerCase().includes(query.toLowerCase()) && !l.item?.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (!matchesSearch(query, [l.number, l.status, l.item?.name, l.item?.category, l.number ? `locker ${l.number}` : ""])) return false;
     return true;
   });
 
@@ -267,7 +269,7 @@ export default function AdminLockers() {
   async function openItemDetails(locker: Locker) {
     const item = locker.item;
     if (!item) return;
-    setItemDetail({ id: item.id, name: item.name, category: item.category, description: "", location: "", date: "", imageUrl: item.imageUrl || null, images: item.imageUrl ? [item.imageUrl] : [], imageIndex: 0 });
+    setItemDetail({ id: item.id, name: item.name, category: item.category, description: "", location: "", date: "", imageUrl: item.imageUrl || null, images: item.imageUrl ? [item.imageUrl] : [], imageIndex: 0, statusLabel: "Found", color: "#7FB8B5" });
     try {
       const res = await fetch(`/api/items/${item.id}`, { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
@@ -287,6 +289,8 @@ export default function AdminLockers() {
         imageUrl: images[0] || prev.imageUrl,
         images: images.length ? images : prev.images,
         imageIndex: Math.min(prev.imageIndex, Math.max(0, (images.length || prev.images.length) - 1)),
+        statusLabel: fresh.status === "CLAIMED" ? "Claimed" : fresh.status === "RETRIEVED" ? "Retrieved" : fresh.status === "EXPIRED" ? "Expired" : "Found",
+        color: fresh.status === "CLAIMED" ? "#355C8A" : fresh.status === "RETRIEVED" ? "#16a34a" : fresh.status === "EXPIRED" ? "#64748b" : "#7FB8B5",
       } : prev));
     } catch {
       // Keep the values already shown from the locker card.
@@ -626,68 +630,21 @@ export default function AdminLockers() {
         </div>
       )}
       {itemDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setItemDetail(null)} />
-          <VCard className="relative w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="w-full h-48 relative overflow-hidden flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-              {itemDetail.images.length > 0 ? (
-                <>
-                  <button type="button"
-                    aria-label={`View ${itemDetail.name} photo`}
-                    className="absolute inset-0 group cursor-pointer"
-                    onClick={() => setViewer({ photos: itemDetail.images, index: itemDetail.imageIndex, title: itemDetail.name })}>
-                    <img src={itemDetail.images[itemDetail.imageIndex] || itemDetail.images[0]} alt={itemDetail.name} className="w-full h-full object-cover" />
-                    <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
-                        <Eye size={13} /> View photo
-                      </span>
-                    </span>
-                  </button>
-                  {itemDetail.images.length > 1 && (
-                    <>
-                      <button type="button" aria-label="Previous photo"
-                        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer disabled:opacity-40"
-                        style={{ color: c.textMuted }}
-                        disabled={itemDetail.imageIndex === 0}
-                        onClick={() => setItemDetail((prev) => (prev ? { ...prev, imageIndex: Math.max(0, prev.imageIndex - 1) } : prev))}>
-                        <ChevronLeft size={16} />
-                      </button>
-                      <button type="button" aria-label="Next photo"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer disabled:opacity-40"
-                        style={{ color: c.textMuted }}
-                        disabled={itemDetail.imageIndex >= itemDetail.images.length - 1}
-                        onClick={() => setItemDetail((prev) => (prev ? { ...prev, imageIndex: Math.min(prev.images.length - 1, prev.imageIndex + 1) } : prev))}>
-                        <ChevronRight size={16} />
-                      </button>
-                    </>
-                  )}
-                </>
-              ) : (
-                <Package size={46} style={{ color: c.primary, opacity: 0.6 }} />
-              )}
-              <button type="button" onClick={() => setItemDetail(null)} aria-label="Close item details"
-                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-transparent flex items-center justify-center hover:bg-black/25 transition-colors duration-200 cursor-pointer"
-                style={{ color: itemDetail.images.length ? "#fff" : c.textMuted, filter: itemDetail.images.length ? "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" : undefined }}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="p-6">
-              <h3 className="text-base font-semibold mb-3" style={{ color: c.text }}>{itemDetail.name}</h3>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-4 text-xs" style={{ color: c.textMuted }}>
-                {(() => { const CatIcon = categoryIcon(itemDetail.category); return (
-                  <span className="flex items-center gap-1"><CatIcon size={12} style={{ color: c.primary }} /> {itemDetail.category}</span>
-                ); })()}
-                <span className="flex items-center gap-1"><MapPin size={12} /> {itemDetail.location || "—"}</span>
-                <span className="flex items-center gap-1"><Clock size={12} /> {fmtItemDate(itemDetail.date)}</span>
-              </div>
-              <div className="rounded-xl p-4" style={{ backgroundColor: c.fill }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{itemDetail.description || "No description provided."}</p>
-              </div>
-            </div>
-          </VCard>
-        </div>
+        <ItemDetailsModal
+          title={itemDetail.name}
+          statusLabel={itemDetail.statusLabel}
+          statusColor={itemDetail.color}
+          category={itemDetail.category}
+          location={itemDetail.location}
+          date={fmtItemDate(itemDetail.date)}
+          description={itemDetail.description}
+          photos={itemDetail.images}
+          photoIndex={itemDetail.imageIndex}
+          onPhotoIndexChange={(index) => setItemDetail((prev) => (prev ? { ...prev, imageIndex: index } : prev))}
+          onViewPhoto={() => setViewer({ photos: itemDetail.images, index: itemDetail.imageIndex, title: itemDetail.name })}
+          onClose={() => setItemDetail(null)}
+          footer={<VButton variant="secondary" className="flex-1" onClick={() => setItemDetail(null)}>Close</VButton>}
+        />
       )}
 
       {viewer && (

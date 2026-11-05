@@ -21,7 +21,13 @@ export async function GET(request: NextRequest) {
             foundDate: true,
             status: true,
             imageUrl: true,
+            createdAt: true,
             locker: { select: { lockerNumber: true } },
+            reports: {
+              where: { type: "FOUND", status: "VERIFIED" },
+              select: { imageUrls: true },
+              take: 1,
+            },
           },
         },
         user: { select: { name: true, studentId: true, email: true } },
@@ -30,15 +36,73 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
+    // Claims created by matching a lost report have no uploaded evidence, so
+    // fall back to the photo the student attached to that lost report.
+    const missingEvidence = claims.filter(
+      (claim) => !claim.evidenceImageUrl && !(claim.evidenceImageUrls?.length > 0),
+    );
+    const reportPhotos = new Map<string, { photos: string[]; createdAt: string }>();
+    if (missingEvidence.length) {
+      const reports = await prisma.report.findMany({
+        where: {
+          type: "LOST",
+          itemId: { in: Array.from(new Set(missingEvidence.map((c) => c.itemId))) },
+          userId: { in: Array.from(new Set(missingEvidence.map((c) => c.userId))) },
+        },
+        select: { userId: true, itemId: true, imageUrl: true, imageUrls: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      });
+      for (const report of reports) {
+        if (!report.itemId) continue;
+        const photos = (
+          Array.isArray(report.imageUrls) && report.imageUrls.length
+            ? report.imageUrls
+            : report.imageUrl
+              ? [report.imageUrl]
+              : []
+        ).filter(Boolean).slice(0, 3);
+        if (!photos.length) continue;
+        const key = `${report.userId}:${report.itemId}`;
+        if (!reportPhotos.has(key)) {
+          reportPhotos.set(key, {
+            photos,
+            createdAt: report.createdAt ? new Date(report.createdAt).toISOString() : "",
+          });
+        }
+      }
+    }
+
+    const claimsWithEvidence = claims.map((claim) => {
+      const hasOwnEvidence = claim.evidenceImageUrls?.length > 0 || !!claim.evidenceImageUrl;
+      const fallback = reportPhotos.get(`${claim.userId}:${claim.itemId}`);
+      const photos = hasOwnEvidence
+        ? claim.evidenceImageUrls?.length
+          ? claim.evidenceImageUrls
+          : [claim.evidenceImageUrl!]
+        : fallback?.photos || [];
+      return {
+        ...claim,
+        evidenceImageUrls: photos,
+        evidenceImageUrl: claim.evidenceImageUrl || photos[0] || null,
+        // Uploaded evidence uses the claim time; matched claims use the
+        // moment the student submitted the original lost report.
+        evidenceUploadedAt: hasOwnEvidence
+          ? claim.createdAt
+            ? new Date(claim.createdAt).toISOString()
+            : ""
+          : fallback?.createdAt || (claim.createdAt ? new Date(claim.createdAt).toISOString() : ""),
+      };
+    });
+
     // Locker numbers are only revealed once the claim is approved.
     const data =
       user.role === "STUDENT"
-        ? claims.map((claim) =>
+        ? claimsWithEvidence.map((claim) =>
             claim.status === "APPROVED"
               ? claim
               : { ...claim, item: { ...claim.item, locker: null } },
           )
-        : claims;
+        : claimsWithEvidence;
 
     return NextResponse.json({ success: true, data });
   } catch (e) {
@@ -56,35 +120,45 @@ export async function POST(request: NextRequest) {
   try {
     let itemId: string | null = null;
     let claimReason: string | null = null;
-    let evidenceImageUrl: string | null = null;
+    const evidenceImageUrls: string[] = [];
 
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       itemId = form.get("itemId") as string | null;
       claimReason = form.get("claimReason") as string | null;
-      const file = form.get("evidence") as File | null;
-      if (file) {
+      const files = form.getAll("evidence").filter((entry): entry is File => entry instanceof File);
+      if (files.length > 3) {
+        return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
+      }
+      for (const file of files) {
         if (!file.type.startsWith("image/")) {
           return NextResponse.json({ success: false, error: "Evidence must be an image" }, { status: 400 });
         }
         if (file.size > 5 * 1024 * 1024) {
-          return NextResponse.json({ success: false, error: "Image must be under 5MB" }, { status: 400 });
+          return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
         }
         // For demo: store as data URL (in production, upload to S3/R2)
         const buf = Buffer.from(await file.arrayBuffer());
-        evidenceImageUrl = `data:${file.type};base64,${buf.toString("base64")}`;
+        evidenceImageUrls.push(`data:${file.type};base64,${buf.toString("base64")}`);
       }
     } else {
       const body = await request.json();
       itemId = body.itemId;
       claimReason = body.claimReason;
-      evidenceImageUrl = body.evidenceImageUrl || null;
+      const incoming = Array.isArray(body.evidenceImageUrls)
+        ? body.evidenceImageUrls
+        : body.evidenceImageUrl
+          ? [body.evidenceImageUrl]
+          : [];
+      for (const value of incoming.slice(0, 3)) {
+        if (typeof value === "string" && value.startsWith("data:image/")) evidenceImageUrls.push(value);
+      }
     }
 
     if (!itemId) return NextResponse.json({ success: false, error: "itemId required" }, { status: 400 });
     if (!claimReason?.trim()) return NextResponse.json({ success: false, error: "claimReason required" }, { status: 400 });
-    if (!evidenceImageUrl) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
+    if (!evidenceImageUrls.length) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
 
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
@@ -114,7 +188,8 @@ export async function POST(request: NextRequest) {
         itemId,
         userId: user.id,
         claimReason: claimReason.trim(),
-        evidenceImageUrl,
+        evidenceImageUrl: evidenceImageUrls[0],
+        evidenceImageUrls,
       },
     });
 

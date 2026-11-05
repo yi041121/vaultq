@@ -10,6 +10,7 @@ import {
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentShell } from "@/components/student-shell";
+import { EvidenceSlider } from "@/components/evidence-slider";
 import { VCard, VBadge, VPagination, VButton, vcolors as c } from "@/components/ui/vault";
 import {
   mapUserClaim, CLAIM_STATUS_COLOR,
@@ -43,11 +44,25 @@ function fmtDay(value: string) {
   return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function fmtDate(value: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtClock(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 function fmtTimestamp(value: string) {
   if (!value) return "—";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 type QrModal = {
@@ -266,7 +281,9 @@ export default function StudentClaims() {
                         <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{cl.itemName}</h3>
                         <VBadge color={statusColor}>{cl.displayStatus}</VBadge>
                       </div>
-                      <p className="text-[11px] font-medium mb-3" style={{ color: c.textLight }}>{cl.reference} · {cl.category}</p>
+                      <p className="text-[11px] font-medium mb-3 flex items-center gap-1" style={{ color: c.textLight }}>
+                        <Icon size={12} style={{ color: c.primary }} /> {cl.category}
+                      </p>
                       <div className="space-y-1.5 mb-4 text-xs" style={{ color: c.textMuted }}>
                         <p className="flex items-center gap-1.5">
                           <MapPin size={12} style={{ color: c.textMuted }} /> {cl.location || "—"}
@@ -280,15 +297,12 @@ export default function StudentClaims() {
                           </p>
                         )}
                         {cl.reason && (
-                          <p className="text-xs p-2 rounded-lg mt-2 line-clamp-3" style={{ backgroundColor: c.fill, color: c.textMuted }}>&quot;{cl.reason}&quot;</p>
+                          <p className="text-xs p-2 rounded-lg mt-2 line-clamp-3" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                            <span className="font-semibold" style={{ color: c.text }}>Claim reason: </span>
+                            &quot;{cl.reason}&quot;
+                          </p>
                         )}
-                        {cl.evidenceImageUrl && (
-                          <button type="button" onClick={() => setDetailsClaim(cl)}
-                            className="text-xs font-medium mt-2 flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer"
-                            style={{ color: c.primary }}>
-                            <Camera size={12} /> Compare photos
-                          </button>
-                        )}
+
                       </div>
                       <div className="flex items-center gap-2 mt-auto">
                         {canShowQr && (
@@ -354,41 +368,44 @@ export default function StudentClaims() {
           <VCard className="relative w-full max-w-3xl max-h-[90vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim details</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{detailsClaim.itemName} · {detailsClaim.reference}</p>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Details</h3>
               </div>
               <button type="button" onClick={() => setDetailsClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              <VBadge color={CLAIM_STATUS_COLOR[detailsClaim.displayStatus]}>{detailsClaim.displayStatus}</VBadge>
-              <span className="text-xs px-2.5 py-1 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>{detailsClaim.category}</span>
-              {detailsClaim.locker && (
-                <span className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Lock size={12} /> Locker {detailsClaim.locker}</span>
-              )}
-            </div>
+
 
             <div className="grid sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
-                <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                  {detailsClaim.itemImageUrl ? (
-                    <img src={detailsClaim.itemImageUrl} alt="Found item" className="w-full h-64 object-cover bg-[#f8fafc]" />
-                  ) : (
+                {detailsClaim.itemImageUrls?.length ? (
+                  <EvidenceSlider
+                    photos={detailsClaim.itemImageUrls}
+                    alt="Found item"
+                    caption={`${fmtDay(detailsClaim.foundDate)}${detailsClaim.itemCreatedAt ? ` · ${fmtClock(detailsClaim.itemCreatedAt)}` : ""}`}
+                    label="found item"
+                  />
+                ) : (
+                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
                     <div className="w-full h-64 flex items-center justify-center" style={{ backgroundColor: c.fill, color: c.textLight }}>
                       {(() => { const Icon = filterIcons[detailsClaim.category] || Package; return <Icon size={40} />; })()}
                     </div>
-                  )}
-                  <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>{detailsClaim.location || "—"}</p>
-                </div>
+                    <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                      {fmtDay(detailsClaim.foundDate)}
+                      {detailsClaim.itemCreatedAt && ` · ${fmtClock(detailsClaim.itemCreatedAt)}`}
+                    </p>
+                  </div>
+                )}
               </div>
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Your evidence photo</p>
-                {detailsClaim.evidenceImageUrl ? (
-                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                    <img src={detailsClaim.evidenceImageUrl} alt="Evidence" className="w-full h-64 object-cover bg-[#f8fafc]" />
-                    <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>Uploaded by you</p>
-                  </div>
+                {(detailsClaim.evidenceImageUrls?.length || detailsClaim.evidenceImageUrl) ? (
+                  <EvidenceSlider
+                    photos={detailsClaim.evidenceImageUrls?.length ? detailsClaim.evidenceImageUrls : [detailsClaim.evidenceImageUrl!]}
+                    alt="Evidence"
+                    caption={fmtTimestamp(detailsClaim.evidenceUploadedAt)}
+                    label="evidence"
+                  />
                 ) : (
                   <div className="w-full h-64 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2" style={{ borderColor: c.border, backgroundColor: c.fill, color: c.textLight }}>
                     <Camera size={22} />
@@ -398,19 +415,12 @@ export default function StudentClaims() {
               </div>
             </div>
 
-            <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
-              <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Your claim reason</p>
-              <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{detailsClaim.reason || "—"}</p>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-xs mb-5" style={{ color: c.textMuted }}>
-              <p><span className="font-medium" style={{ color: c.text }}>Found date:</span> {fmtDay(detailsClaim.foundDate)}</p>
-              <p><span className="font-medium" style={{ color: c.text }}>Claimed on:</span> {fmtTimestamp(detailsClaim.claimedAt)}</p>
-              <p><span className="font-medium" style={{ color: c.text }}>Reviewed on:</span> {fmtTimestamp(detailsClaim.approvedAt || "")}</p>
-              <p><span className="font-medium" style={{ color: c.text }}>Locker:</span> {detailsClaim.locker || "Pending assignment"}</p>
-            </div>
-
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {detailsClaim.approvedAt && (
+                <p className="text-xs mr-auto" style={{ color: c.textMuted }}>
+                  Approved by admin on {fmtTimestamp(detailsClaim.approvedAt)}
+                </p>
+              )}
               <VButton variant="secondary" onClick={() => setDetailsClaim(null)}>Close</VButton>
               {detailsClaim.displayStatus === "Pending" && (
                 <VButton variant="danger" onClick={() => { const target = detailsClaim; setDetailsClaim(null); setCancelTarget(target); }}>
@@ -443,16 +453,16 @@ export default function StudentClaims() {
               <Lock size={14} style={{ color: c.primary }} />
               {qrModal.locker ? `Locker ${qrModal.locker}` : "Locker pending assignment"}
             </p>
-            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Claim {qrModal.reference} · Expires {fmtTimestamp(qrModal.expiresAt)}</p>
+            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Expires {fmtTimestamp(qrModal.expiresAt)}</p>
             <p className="text-xs mt-3 p-3 rounded-lg leading-relaxed" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
-              Show this QR code at the Lost &amp; Found counter or kiosk scanner. Staff will verify it and hand over your item.
+              At the locker kiosk, scan your registered student ID barcode first, then scan this QR code to unlock the locker and collect your item.
             </p>
             <p className="text-[11px] mt-3 p-2.5 rounded-lg font-mono break-all" style={{ backgroundColor: c.fill, color: c.textMuted }}>{qrModal.token}</p>
             <div className="flex items-center gap-2 mt-4">
               <VButton variant="secondary" className="flex-1" onClick={() => setQrModal(null)}>Close</VButton>
               <VButton className="flex-1" onClick={() => { navigator.clipboard?.writeText(qrModal.token); showCenteredMessage("success", "Token copied"); }}>Copy Token</VButton>
             </div>
-            <p className="text-[11px] mt-3 flex items-center justify-center gap-1" style={{ color: c.textLight }}><Timer size={12} /> Valid 24h · One-time use · Staff-scanned</p>
+            <p className="text-[11px] mt-3 flex items-center justify-center gap-1" style={{ color: c.textLight }}><Timer size={12} /> Valid 24h · One-time use · Self-service locker</p>
           </VCard>
         </div>
       )}
@@ -460,7 +470,7 @@ export default function StudentClaims() {
       <ConfirmDialog
         open={!!cancelTarget}
         title="Cancel this claim?"
-        subtitle={cancelTarget ? `${cancelTarget.itemName} · ${cancelTarget.reference}` : undefined}
+        subtitle={cancelTarget ? cancelTarget.itemName : undefined}
         cancelLabel="Keep claim"
         confirmLabel={cancelling ? "Cancelling..." : "Cancel claim"}
         onCancel={() => { if (!cancelling) setCancelTarget(null); }}
