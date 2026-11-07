@@ -67,11 +67,21 @@ export async function GET(request: NextRequest, { params }: Ctx) {
             : []
       ).filter(Boolean).slice(0, 3);
     }
+    let matchedReportDescription: string | null = null;
+    if (claim.matchedReportId) {
+      const matchedReport = await prisma.report.findUnique({
+        where: { id: claim.matchedReportId },
+        select: { description: true },
+      });
+      matchedReportDescription = matchedReport?.description || null;
+    }
+
     const withEvidence = {
       ...claim,
       evidenceImageUrls,
       evidenceImageUrl: claim.evidenceImageUrl || evidenceImageUrls[0] || null,
       evidenceUploadedAt,
+      matchedReportDescription,
     };
 
     if (user.role === "STUDENT" && claim.status !== "APPROVED") {
@@ -99,6 +109,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   try {
     const body = await request.json();
     const { action, lockerNumber } = body;
+    const adminNote = typeof body.adminNote === "string" ? body.adminNote.trim().slice(0, 500) : null;
     if (action !== "approve" && action !== "reject") {
       return NextResponse.json({ success: false, error: "action must be approve or reject" }, { status: 400 });
     }
@@ -123,11 +134,22 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     }
 
     if (action === "reject") {
-      const updated = await prisma.claim.update({ where: { id }, data: { status: "REJECTED" } });
+      const adminNote = typeof body.adminNote === "string" ? body.adminNote.trim().slice(0, 500) : null;
+      const updated = await prisma.claim.update({
+        where: { id },
+        data: { status: "REJECTED", adminNote: adminNote || null, approvedAt: new Date() },
+      });
+      // A rejected match releases its lost report so the student can claim again.
+      if (claim.matchedReportId) {
+        await prisma.report.update({
+          where: { id: claim.matchedReportId },
+          data: { status: "PENDING", itemId: null, reviewedAt: null, reviewedById: null },
+        }).catch(() => {});
+      }
       await notifyUser(
         claim.userId,
         "Claim Rejected",
-        `Your claim for ${claim.item.itemName} was rejected. Contact the Lost & Found office for details.`,
+        `Your claim for ${claim.item.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
         { type: "CLAIM", link: "/dashboard/student/claims" },
       );
       return NextResponse.json({ success: true, data: updated });
@@ -189,7 +211,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
       return tx.claim.update({
         where: { id },
-        data: { status: "APPROVED", approvedAt: new Date() },
+        data: { status: "APPROVED", approvedAt: new Date(), adminNote: adminNote || null },
       });
     });
 

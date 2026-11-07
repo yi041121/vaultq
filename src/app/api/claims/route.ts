@@ -72,6 +72,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const matchedReportIds = claims
+      .map((claim) => claim.matchedReportId)
+      .filter((id): id is string => !!id);
+    const matchedReportDescriptions = new Map<string, string>();
+    if (matchedReportIds.length) {
+      const matchedReports = await prisma.report.findMany({
+        where: { id: { in: matchedReportIds } },
+        select: { id: true, description: true },
+      });
+      for (const report of matchedReports) {
+        if (report.description) matchedReportDescriptions.set(report.id, report.description);
+      }
+    }
+
     const claimsWithEvidence = claims.map((claim) => {
       const hasOwnEvidence = claim.evidenceImageUrls?.length > 0 || !!claim.evidenceImageUrl;
       const fallback = reportPhotos.get(`${claim.userId}:${claim.itemId}`);
@@ -91,6 +105,9 @@ export async function GET(request: NextRequest) {
             ? new Date(claim.createdAt).toISOString()
             : ""
           : fallback?.createdAt || (claim.createdAt ? new Date(claim.createdAt).toISOString() : ""),
+        matchedReportDescription: claim.matchedReportId
+          ? matchedReportDescriptions.get(claim.matchedReportId) || null
+          : null,
       };
     });
 
@@ -120,6 +137,7 @@ export async function POST(request: NextRequest) {
   try {
     let itemId: string | null = null;
     let claimReason: string | null = null;
+    let reportId: string | null = null;
     const evidenceImageUrls: string[] = [];
 
     const contentType = request.headers.get("content-type") || "";
@@ -127,6 +145,7 @@ export async function POST(request: NextRequest) {
       const form = await request.formData();
       itemId = form.get("itemId") as string | null;
       claimReason = form.get("claimReason") as string | null;
+      reportId = (form.get("reportId") as string | null) || null;
       const files = form.getAll("evidence").filter((entry): entry is File => entry instanceof File);
       if (files.length > 3) {
         return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
@@ -146,6 +165,7 @@ export async function POST(request: NextRequest) {
       const body = await request.json();
       itemId = body.itemId;
       claimReason = body.claimReason;
+      reportId = typeof body.reportId === "string" ? body.reportId : null;
       const incoming = Array.isArray(body.evidenceImageUrls)
         ? body.evidenceImageUrls
         : body.evidenceImageUrl
@@ -183,14 +203,37 @@ export async function POST(request: NextRequest) {
     const existing = await prisma.claim.findFirst({ where: { itemId, userId: user.id, status: "PENDING" } });
     if (existing) return NextResponse.json({ success: false, error: "You already have a pending claim for this item" }, { status: 409 });
 
-    const claim = await prisma.claim.create({
-      data: {
-        itemId,
-        userId: user.id,
-        claimReason: claimReason.trim(),
-        evidenceImageUrl: evidenceImageUrls[0],
-        evidenceImageUrls,
-      },
+    // Linking is explicit: the student is asked which lost report to link
+    // before the claim form opens. If they skip it, no report is attached.
+    let linkedReport: { id: string } | null = null;
+    if (reportId) {
+      const report = await prisma.report.findUnique({ where: { id: reportId } });
+      if (!report || report.userId !== user.id || report.type !== "LOST" || report.status !== "PENDING") {
+        return NextResponse.json({ success: false, error: "Invalid lost report to link" }, { status: 400 });
+      }
+      linkedReport = { id: report.id };
+    }
+
+    const claim = await prisma.$transaction(async (tx) => {
+      const created = await tx.claim.create({
+        data: {
+          itemId,
+          userId: user.id,
+          claimReason: claimReason.trim(),
+          evidenceImageUrl: evidenceImageUrls[0],
+          evidenceImageUrls,
+          matchedReportId: linkedReport?.id || null,
+        },
+      });
+      if (linkedReport) {
+        // Linking moves the lost report out of the lost queue; the claim it
+        // created still needs admin approval before the report is closed.
+        await tx.report.update({
+          where: { id: linkedReport.id },
+          data: { status: "MATCHED", itemId, reviewedAt: null, reviewedById: null },
+        });
+      }
+      return created;
     });
 
     // Notify the student that the claim was received.

@@ -25,6 +25,7 @@ import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -47,12 +48,12 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
+  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
 
-const statusOptions: Array<ReportStatus | "ALL"> = ["ALL", "PENDING", "MATCHED", "VERIFIED", "REJECTED"];
+const statusOptions: Array<ReportStatus | "ALL"> = ["ALL", "PENDING", "VERIFIED", "REJECTED"];
 const statusLabel: Record<string, string> = {
   ALL: "All",
   PENDING: "Pending",
@@ -90,6 +91,7 @@ export default function AdminReports() {
 
   const [matchTarget, setMatchTarget] = useState<UserReport | null>(null);
   const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
+  const [confirmMatchItem, setConfirmMatchItem] = useState<FoundItem | null>(null);
   const [matchQuery, setMatchQuery] = useState("");
   const [showMatchSearch, setShowMatchSearch] = useState(false);
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
@@ -327,8 +329,24 @@ export default function AdminReports() {
   }
 
   async function handleMatch(itemId: string) {
-    if (!matchTarget) return;
-    await runAction(matchTarget.id, { action: "match", itemId }, "Report matched — the student was notified and a pickup QR code was generated");
+    if (!matchTarget || busyAction) return;
+    setBusyAction(true);
+    try {
+      const res = await fetch("/api/claims/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ reportId: matchTarget.id, itemId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data.error || "Failed to match report");
+      showCenteredMessage("success", "Report matched — pending claim created for review");
+      setMatchTarget(null);
+      await fetchReports();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Failed to match report");
+    } finally {
+      setBusyAction(false);
+    }
   }
 
   // Opens a read-only preview of a found item. The list photo is shown right
@@ -454,8 +472,7 @@ export default function AdminReports() {
   if (!user || !mounted) return null;
 
 
-  const baseFiltered = reports.filter((report) =>
-    matchesSearch(query, [
+  const baseFiltered = reports.filter((report) => report.type === "FOUND" && matchesSearch(query, [
       report.itemName,
       report.description,
       report.category,
@@ -495,7 +512,7 @@ export default function AdminReports() {
   });
 
   return (
-    <StudentShell active="Reports" userName={user.name} userRole={user.role} pageTitle="Lost & Found Reports" bottomNav={adminNav} logout={handleLogout}>
+    <StudentShell active="Intake" userName={user.name} userRole={user.role} pageTitle="Item Intake" bottomNav={adminNav} logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
         <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
           {/* Search + status */}
@@ -580,7 +597,9 @@ export default function AdminReports() {
 
                   <div className="flex items-center gap-2 mb-1 min-w-0">
                     <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
-                    <VBadge color={c.textMuted} style={{ border: `1px solid ${c.border}` }}>
+                    <VBadge
+                      color={report.type === "FOUND" ? "#16a34a" : c.textMuted}
+                      style={{ border: `1px solid ${report.type === "FOUND" ? "#86efac" : c.border}` }}>
                       {report.typeLabel}
                     </VBadge>
                     <VBadge color={report.color} className="ml-auto"
@@ -673,7 +692,7 @@ export default function AdminReports() {
               The student is notified and can submit a claim with evidence.
             </p>
 
-            {suggestionRows.length > 0 && (
+            {!showMatchSearch && suggestionRows.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-semibold flex items-center gap-1.5 mb-2" style={{ color: c.text }}>
                   <Sparkles size={13} style={{ color: c.primary }} /> Suggested matches
@@ -687,8 +706,9 @@ export default function AdminReports() {
                           ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
                           : { backgroundColor: c.fill, color: c.textMuted };
                     return (
-                      <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border"
-                        style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}>
+                      <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
+                        style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}
+                        onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
                           <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
                         ) : (
@@ -707,10 +727,10 @@ export default function AdminReports() {
                             {item.category || "Others"} · {fmtDay(item.foundDate)}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                           </p>
                         </div>
-                        <VButton variant="secondary" size="sm" onClick={() => void openMatchPreview(item)}>
+                        <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
                           View
                         </VButton>
-                        <VButton size="sm" disabled={busyAction} onClick={() => void handleMatch(item.id)}>
+                        <VButton size="sm" disabled={busyAction} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
                           Match
                         </VButton>
                       </div>
@@ -734,7 +754,8 @@ export default function AdminReports() {
                   {matchResults.length === 0 ? (
                     <p className="text-xs py-3 text-center" style={{ color: c.textLight }}>No found items match your search.</p>
                   ) : matchResults.map((item) => (
-                    <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border" style={{ borderColor: c.borderLight }}>
+                    <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
+                      onClick={() => void openMatchPreview(item)}>
                       {item.imageUrl ? (
                         <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
                       ) : (
@@ -748,10 +769,10 @@ export default function AdminReports() {
                           {item.category || "Others"} · {item.foundLocation || "—"} · {fmtDay(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                         </p>
                       </div>
-                      <VButton variant="secondary" size="sm" onClick={() => void openMatchPreview(item)}>
+                      <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
                         View
                       </VButton>
-                      <VButton size="sm" disabled={busyAction} onClick={() => void handleMatch(item.id)}>
+                      <VButton size="sm" disabled={busyAction} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
                         Match
                       </VButton>
                     </div>
@@ -763,6 +784,19 @@ export default function AdminReports() {
           </VCard>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmMatchItem}
+        title="Match this item?"
+        tone="primary"
+        confirmLabel="Match"
+        onCancel={() => setConfirmMatchItem(null)}
+        onConfirm={() => {
+          const item = confirmMatchItem;
+          setConfirmMatchItem(null);
+          if (item) void handleMatch(item.id);
+        }}
+      />
 
       {matchPreview && (
         <ItemDetailsModal
@@ -854,7 +888,7 @@ export default function AdminReports() {
                     <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
                       Found date <span style={{ color: c.danger }}>*</span>
                     </label>
-                    <VFilterButton className="w-full justify-between" style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                    <VFilterButton className="w-full justify-between" style={{ height: 44, fontWeight: 400, color: verifyForm.date ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                       onClick={(e) => { setVerifyDateAnchor(e.currentTarget); setVerifyDateOpen((open) => !open); }}>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <Clock size={14} style={{ color: c.primary }} />
@@ -890,24 +924,29 @@ export default function AdminReports() {
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <label className="text-sm font-medium" style={{ color: c.text }}>
-                      Photos <span className="font-normal" style={{ color: c.textLight }}>({approvePhotos.length}/3 · max 3)</span>
+                      Photo Evidence <span className="font-normal" style={{ color: c.textLight }}>(optional)</span>
                     </label>
-                    {approvePhotos.length > 0 && approvePhotos.length < 3 && (
-                      <button type="button" onClick={() => setApprovePhotoSourceOpen(true)}
-                        className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
-                        style={{ borderColor: c.border, color: c.primary }}>
-                        <Plus size={13} /> Add photo
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px]" style={{ color: c.textLight }}>{approvePhotos.length}/3</span>
+                      {approvePhotos.length > 0 && approvePhotos.length < 3 && (
+                        <button type="button" onClick={() => setApprovePhotoSourceOpen(true)}
+                          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                          style={{ borderColor: c.border, color: c.primary }}>
+                          <Plus size={13} /> Add photo
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <input ref={approveUploadRef} type="file" accept="image/*" multiple className="hidden" onChange={handleApprovePhotoChange} />
                   <input ref={approveCameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleApprovePhotoChange} />
 
                   {approvePhotos.length === 0 ? (
-                    <PhotoPicker
-                      onUpload={() => approveUploadRef.current?.click()}
-                      onTakePhoto={openApproveCamera}
-                    />
+                    <div>
+                      <PhotoPicker
+                        onUpload={() => approveUploadRef.current?.click()}
+                        onTakePhoto={openApproveCamera}
+                      />
+                    </div>
                   ) : (
                     <div className={`grid gap-2 ${approvePhotos.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
                       {approvePhotos.map((photo, index) => (
@@ -941,7 +980,7 @@ export default function AdminReports() {
                       ))}
                     </div>
                   )}
-                  <p className="text-[11px] mt-1" style={{ color: c.textLight }}>JPG or PNG · up to 5MB each</p>
+                  <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
                 </div>
                 <p className="text-[11px]" style={{ color: c.textLight }}>
                   Only approve after the item has been physically handed in. The item will appear in Search immediately.

@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   Package, Grid3X3, Lock, FileText, Users, Plus, Search, MapPin, Clock,
   Briefcase, CreditCard, Key, BookText, CupSoda, Monitor, ChevronDown,
-  ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch,
+  ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch, Eye,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { CalendarPopover } from "@/components/date-calendar";
+import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
@@ -21,7 +22,7 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
+  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -118,6 +119,7 @@ export default function AdminItems() {
   const [lockerOptions, setLockerOptions] = useState<{ id: string; number: string; status: string }[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
 
   function authHeaders(): Record<string, string> {
     const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -262,6 +264,29 @@ export default function AdminItems() {
     setFormPreview(null);
     if (uploadRef.current) uploadRef.current.value = "";
   }
+
+  async function openItemPhotos(item: Item) {
+    if (!item.imageUrl) return;
+    setViewer({ photos: [item.imageUrl], index: 0, title: item.name });
+    try {
+      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      const fresh = data?.data;
+      if (!res.ok || !data?.success || !fresh) return;
+      const reportImages: string[] = Array.isArray(fresh.reports)
+        ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
+        : [];
+      const photos = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      if (photos.length) {
+        setViewer((prev) => (prev ? { ...prev, photos } : prev));
+      }
+    } catch {
+      // Keep the single card photo.
+    }
+  }
   async function openLiveCamera() {
     setShowCamera(true);
     try {
@@ -302,7 +327,10 @@ export default function AdminItems() {
       if (!blob) return;
       const file = new File([blob], `item-${Date.now()}.jpg`, { type: "image/jpeg" });
       setFormPhoto(file);
-      setFormPreview(URL.createObjectURL(blob));
+      // Keep the preview as a data URL so it is included when saving the item.
+      const reader = new FileReader();
+      reader.onload = () => setFormPreview(reader.result as string);
+      reader.readAsDataURL(blob);
       showCenteredMessage("success", "Photo captured");
       closeLiveCamera();
     }, "image/jpeg", 0.9);
@@ -393,8 +421,8 @@ export default function AdminItems() {
 
   return (
     <StudentShell active="Items" userName={user.name} userRole={user.role} pageTitle="Item Inventory" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
+        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" placeholder="Search items..." />
@@ -479,7 +507,7 @@ export default function AdminItems() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1 content-start">
                 {paginated.map((it) => {
                   const Icon = filterIcons[it.category] || Package;
                   return (
@@ -487,7 +515,16 @@ export default function AdminItems() {
                       <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden shrink-0"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
                         {it.imageUrl ? (
-                          <img src={it.imageUrl} alt={it.name} className="absolute inset-0 w-full h-full object-cover" />
+                          <button type="button" aria-label={`View ${it.name} photo`}
+                            className="absolute inset-0 group cursor-pointer"
+                            onClick={() => void openItemPhotos(it)}>
+                            <img src={it.imageUrl} alt={it.name} className="w-full h-full object-cover" />
+                            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
+                              <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
+                                <Eye size={13} /> View photo
+                              </span>
+                            </span>
+                          </button>
                         ) : (
                           <>
                             <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
@@ -500,8 +537,19 @@ export default function AdminItems() {
                         <VBadge color={statusColor(it.status)}>{it.status}</VBadge>
                       </div>
                       <p className="text-xs flex items-center gap-1 truncate" style={{ color: c.textMuted }}><MapPin size={12} className="shrink-0" /> <span className="truncate">{it.location}</span></p>
-                      <p className="text-xs flex items-center gap-1 mt-1" style={{ color: c.textMuted }}><Clock size={12} className="shrink-0" style={{ color: c.textLight }} /> {new Date(it.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} · {it.category}</p>
-                      <p className="text-xs flex items-center gap-1 mt-1 min-h-[16px]" style={{ color: c.primary, visibility: it.locker ? "visible" : "hidden" }}><Lock size={12} /> {it.locker ? `Locker ${it.locker}` : "placeholder"}</p>
+                      <p className="text-xs flex flex-wrap items-center gap-1 mt-1" style={{ color: c.textMuted }}>
+                        <Clock size={12} className="shrink-0" style={{ color: c.textLight }} /> {new Date(it.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        <span className="mx-0.5">·</span> <Icon size={12} style={{ color: c.primary }} /> {it.category}
+                        {it.locker && (
+                          <>
+                            <span className="mx-0.5">·</span>
+                            <Lock size={12} style={{ color: c.primary }} /> Locker {it.locker}
+                          </>
+                        )}
+                      </p>
+                      {it.description && (
+                        <p className="text-xs mt-2 line-clamp-2" style={{ color: c.textMuted }}>{it.description}</p>
+                      )}
                       <div className="flex items-center gap-2 mt-auto pt-4">
                         <button type="button" onClick={() => openEdit(it)}
                           className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
@@ -518,7 +566,7 @@ export default function AdminItems() {
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
                 </span>
@@ -560,7 +608,7 @@ export default function AdminItems() {
                 </div>
                 <div className="relative">
                   <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Date <span style={{ color: c.danger }}>*</span></label>
-                  <VFilterButton className="w-full justify-between" style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                  <VFilterButton className="w-full justify-between" style={{ height: 44, fontWeight: 400, color: formDate ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                     onClick={(e) => { setFormDateAnchor(e.currentTarget); setFormDateOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} style={{ color: c.primary }} />
@@ -686,6 +734,16 @@ export default function AdminItems() {
         </div>
       )}
 
+      {viewer && (
+        <PhotoViewerModal
+          photos={viewer.photos}
+          index={viewer.index}
+          title={viewer.title}
+          onIndexChange={(index) => setViewer((prev) => (prev ? { ...prev, index } : prev))}
+          onClose={() => setViewer(null)}
+        />
+      )}
+
       {/* Single-confirm delete dialog */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -695,10 +753,9 @@ export default function AdminItems() {
               <Trash2 size={22} style={{ color: c.danger }} />
             </div>
             <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Delete this item?</h3>
-            <p className="text-sm mb-1" style={{ color: c.textMuted }}>
-              <span className="font-semibold" style={{ color: c.text }}>{deleteTarget.name}</span> ({deleteTarget.id})
+            <p className="text-sm mb-5" style={{ color: c.textMuted }}>
+              <span className="font-semibold" style={{ color: c.text }}>{deleteTarget.name}</span>
             </p>
-            <p className="text-xs mb-5" style={{ color: c.textLight }}>This will remove it from inventory. This action cannot be undone.</p>
             <div className="flex items-center gap-2">
               <VButton variant="secondary" className="flex-1" onClick={closeDelete}>Cancel</VButton>
               <VButton variant="danger" className="flex-1" onClick={confirmDeleteFinal}>Delete</VButton>

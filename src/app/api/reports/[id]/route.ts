@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
-import { notifyUser, notifyUsers } from "@/lib/notification-service";
+import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { validateReportDetails } from "@/lib/report-validation";
 
@@ -160,115 +160,29 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         select: { id: true, itemName: true, status: true },
       });
       if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
-
-      // Re-matching an already matched report is only allowed for the same
-      // item, otherwise the previous claim and QR would be orphaned.
-      if (report.status === "MATCHED" && report.itemId && report.itemId !== item.id) {
-        return NextResponse.json(
-          { success: false, error: "Report is already matched to another item" },
-          { status: 409 },
-        );
-      }
-      if (item.status !== "FOUND" && report.itemId !== item.id) {
+      if (item.status !== "FOUND") {
         return NextResponse.json({ success: false, error: "Item is no longer available" }, { status: 400 });
       }
 
-      // Matching approves the student's pickup immediately: the admin has
-      // verified ownership, so a claim and a 24h pickup QR are created.
-      const otherPending = await prisma.claim.findMany({
-        where: { itemId: item.id, status: "PENDING", NOT: { userId: report.userId } },
-        select: { id: true, userId: true },
-      });
-      const otherMatchedReports = await prisma.report.findMany({
-        where: { itemId: item.id, type: "LOST", status: "MATCHED", NOT: { id } },
-        select: { id: true, userId: true },
-      });
-
-      const { updated, claim } = await prisma.$transaction(async (tx) => {
-        const existingClaim = await tx.claim.findFirst({
-          where: { itemId: item.id, userId: report.userId },
-          orderBy: { createdAt: "desc" },
-        });
-
-        const claim = existingClaim
-          ? await tx.claim.update({
-              where: { id: existingClaim.id },
-              data: { status: "APPROVED", approvedAt: existingClaim.approvedAt ?? new Date() },
-            })
-          : await tx.claim.create({
-              data: {
-                itemId: item.id,
-                userId: report.userId,
-                status: "APPROVED",
-                approvedAt: new Date(),
-                claimReason: "Matched by admin from lost report",
-              },
-            });
-
-        // Everyone else waiting on this item loses automatically.
-        await tx.claim.updateMany({
-          where: { itemId: item.id, status: "PENDING", NOT: { id: claim.id } },
-          data: { status: "REJECTED" },
-        });
-
-        if (otherMatchedReports.length) {
-          await tx.report.updateMany({
-            where: { id: { in: otherMatchedReports.map((r) => r.id) } },
-            data: { status: "CLOSED", reviewedAt: new Date() },
-          });
-        }
-
-        await tx.item.update({ where: { id: item.id }, data: { status: "CLAIMED" } });
-
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await tx.qrCode.upsert({
-          where: { claimId: claim.id },
-          create: { claimId: claim.id, expiresAt },
-          update: { isUsed: false, expiresAt },
-        });
-
-        const updated = await tx.report.update({
-          where: { id },
-          data: {
-            status: "MATCHED",
-            itemId: item.id,
-            reviewedById: user.id,
-            reviewedAt: new Date(),
-            adminNote: null,
-          },
-          include: REPORT_INCLUDE,
-        });
-
-        return { updated, claim };
+      // A lightweight notice link only: the student is told an item matches,
+      // but the claim still goes through the normal review/approval flow.
+      const updated = await prisma.report.update({
+        where: { id },
+        data: {
+          status: "MATCHED",
+          itemId: item.id,
+          reviewedById: user.id,
+          reviewedAt: new Date(),
+          adminNote: null,
+        },
+        include: REPORT_INCLUDE,
       });
 
       await notifyUser(
         report.userId,
         "Lost Item Match Found",
-        `A found item matching your report for ${report.itemName} is ready. Your pickup QR code is in My Claims — scan your registered student ID barcode at the locker kiosk, then the QR code, to open the locker and collect the item.`,
-        { type: "CLAIM", link: "/dashboard/student/claims" },
-      );
-
-      await notifyUsers(
-        otherPending.map((c) => ({
-          userId: c.userId,
-          title: "Claim Rejected",
-          message: `Your claim for ${item.itemName} was rejected because the item was matched to another student.`,
-          type: "CLAIM" as const,
-          link: "/dashboard/student/claims",
-        })),
-      );
-
-      await notifyUsers(
-        otherMatchedReports
-          .filter((r) => r.userId !== report.userId)
-          .map((r) => ({
-            userId: r.userId,
-            title: "Lost Report Closed",
-            message: `The item you reported lost (${item.itemName}) has been matched to another student, so your report was closed.`,
-            type: "REPORT" as const,
-            link: "/dashboard/student/report?tab=reports",
-          })),
+        `A found item matching your report for ${report.itemName} is available. Search for "${item.itemName}" and submit a claim with photo evidence.`,
+        { type: "REPORT", link: `/dashboard/student/search?item=${item.id}` },
       );
 
       return NextResponse.json({ success: true, data: updated });

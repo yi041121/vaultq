@@ -43,6 +43,8 @@ type ItemDetail = {
   imageIndex: number;
   statusLabel: string;
   color: string;
+  reviewedAt?: string | null;
+  isRejected?: boolean;
 };
 
 const categoryIcons: Record<string, any> = {
@@ -55,8 +57,9 @@ const categoryIcons: Record<string, any> = {
   Others: Grid3X3,
 };
 
-// Lost and Found share one neutral tag colour so status tones stand out.
-const TYPE_TAG_COLOR = "#64748b";
+// Report type tags use their own colour and an outline style so they never
+// look like the status pill beside them (e.g. "Lost" vs "Pending").
+const reportTypeColor = (type: ReportType) => (type === "LOST" ? "#355C8A" : "#15803d");
 
 // Logged item statuses shown inside a report card. Once the report itself is
 // VERIFIED the card shows "Verified" instead, matching the badge at the top.
@@ -564,6 +567,8 @@ export default function StudentReport() {
       imageIndex: 0,
       statusLabel: "Lost",
       color: report.color,
+      reviewedAt: report.reviewedAt,
+      isRejected: report.status === "REJECTED",
     });
   }
 
@@ -624,24 +629,26 @@ export default function StudentReport() {
                     const Icon = categoryIcons[report.category] || FileText;
                     const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
                     const matchedWithItem = report.status === "MATCHED" && !!report.item;
-                    // Verified and matched reports share the compact "item first"
-                    // layout; only the thumbnail source differs.
-                    const showsItemFirst = verifiedWithItem || matchedWithItem;
-                    // Matched cards show the student's uploaded lost-report photo;
-                    // the inventory photos remain in the Matched item view.
-                    const itemThumb = matchedWithItem
+                    const linkedWithItem = matchedWithItem;
+                    const rejected = report.status === "REJECTED";
+                    // Verified, linked and rejected reports share the compact
+                    // "item first" layout; only the thumbnail source differs.
+                    const showsItemFirst = verifiedWithItem || linkedWithItem || rejected;
+                    const itemName = report.item?.name || report.itemName;
+                    // Linked/rejected cards show the student's uploaded photo.
+                    const itemThumb = linkedWithItem || rejected
                       ? report.images[0] || report.item?.imageUrl
                       : report.item?.imageUrl;
-                    const itemBlock = report.item && (
+                    const itemBlock = (report.item || rejected) && (
                           <div className="rounded-xl p-3.5 mb-3 flex flex-wrap items-center gap-3" style={{ backgroundColor: c.fill }}>
                             <button
                               type="button"
-                              aria-label={matchedWithItem ? `View your ${report.itemName} photos` : `View ${report.item.name} details`}
+                              aria-label={linkedWithItem || rejected ? `View your ${report.itemName} photos` : `View ${itemName} details`}
                               className="group flex flex-1 min-w-[200px] items-center gap-3 text-left cursor-pointer"
                               onClick={() => {
-                                if (matchedWithItem && report.images.length) {
+                                if ((linkedWithItem || rejected) && report.images.length) {
                                   setViewer({ photos: report.images, index: 0, title: report.itemName });
-                                } else if (matchedWithItem) {
+                                } else if (linkedWithItem || rejected) {
                                   openReportDetail(report);
                                 } else {
                                   void openItemDetail(report);
@@ -649,7 +656,7 @@ export default function StudentReport() {
                               }}>
                               {itemThumb ? (
                                 <span className="relative rounded-lg overflow-hidden border shrink-0 block" style={{ borderColor: c.border }}>
-                                  <img src={itemThumb} alt={report.item.name} className="w-12 h-12 object-cover" />
+                                  <img src={itemThumb} alt={itemName} className="w-12 h-12 object-cover" />
                                   <span className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 flex items-center justify-center">
                                     <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white">
                                       <ZoomIn size={14} />
@@ -663,30 +670,35 @@ export default function StudentReport() {
                               )}
                               <span className="flex-1 min-w-0">
                                 <span className="block text-xs font-semibold" style={{ color: c.text }}>
-                                  {matchedWithItem
+                                  {linkedWithItem
                                     ? `Lost reporting: ${report.itemName}`
-                                    : `${report.type === "LOST" ? "Matched item" : "Logged item"}: ${report.item.name}`}
+                                    : rejected
+                                      ? `${report.type === "LOST" ? "Lost" : "Found"} report: ${report.itemName}`
+                                      : `${report.type === "LOST" ? "Matched item" : "Logged item"}: ${report.item?.name}`}
                                 </span>
                                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                                  {(report.status === "VERIFIED" || report.status === "MATCHED") && (
-                                    <VBadge color={TYPE_TAG_COLOR}>{report.typeLabel}</VBadge>
+                                  {(report.status === "VERIFIED" || report.status === "MATCHED" || rejected) && (
+                                    <VBadge color={reportTypeColor(report.type)}
+                                      style={{ backgroundColor: "transparent", border: `1px solid ${reportTypeColor(report.type)}55` }}>
+                                      {report.typeLabel}
+                                    </VBadge>
                                   )}
-                                  {report.status === "VERIFIED" || report.status === "MATCHED" ? (
+                                  {report.status === "VERIFIED" || report.status === "MATCHED" || rejected ? (
                                     <VBadge color={report.color}>{report.statusLabel}</VBadge>
                                   ) : (
                                     <span className="text-[11px]" style={{ color: c.textMuted }}>
-                                      {itemStatusLabel[report.item.status] || report.item.status}
+                                      {report.item ? itemStatusLabel[report.item.status] || report.item.status : ""}
                                     </span>
                                   )}
                                 </span>
                               </span>
                             </button>
-                            {matchedWithItem && (
+                            {linkedWithItem && (
                               <VButton variant="secondary" size="sm" onClick={() => void openItemDetail(report)}>
-                                <PackageCheck size={13} /> Matched item
+                                <PackageCheck size={13} /> {matchedWithItem ? "Matched item" : "Item details"}
                               </VButton>
                             )}
-                            <VButton variant="secondary" size="sm" onClick={() => (matchedWithItem ? openReportDetail(report) : void openItemDetail(report))}>
+                            <VButton variant="secondary" size="sm" onClick={() => (linkedWithItem || rejected ? openReportDetail(report) : void openItemDetail(report))}>
                               <Eye size={13} /> View
                             </VButton>
                           </div>
@@ -709,7 +721,10 @@ export default function StudentReport() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <VBadge color={TYPE_TAG_COLOR}>{report.typeLabel}</VBadge>
+                            <VBadge color={reportTypeColor(report.type)}
+                              style={{ backgroundColor: "transparent", border: `1px solid ${reportTypeColor(report.type)}55` }}>
+                              {report.typeLabel}
+                            </VBadge>
                             {/* A verified report shows its badge on the logged item below, so hide the duplicate here. */}
                             {!showsItemFirst && (
                               <VBadge color={report.color}>{report.statusLabel}</VBadge>
@@ -752,9 +767,9 @@ export default function StudentReport() {
                           </div>
                         )}
 
-                        {(showsItemFirst || matchedWithItem) && report.reviewedAt && (
+                        {(showsItemFirst || linkedWithItem) && report.reviewedAt && (
                           <p className="text-[11px] text-right mt-3" style={{ color: c.textLight }}>
-                            {report.status === "MATCHED" ? "Matched" : "Verified"} by admin · {fmtReportTime(report.reviewedAt)}
+                            {report.status === "MATCHED" ? "Matched" : report.status === "REJECTED" ? "Rejected" : "Verified"} by admin · {fmtReportTime(report.reviewedAt)}
                           </p>
                         )}
 
@@ -843,7 +858,7 @@ export default function StudentReport() {
                 <VCard className="p-8 lg:p-10 flex-1 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
                     <p className="text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
-                      Reporting: <span style={{ color: TYPE_TAG_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
+                      Reporting: <span style={{ color: c.textMuted }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
                     <button type="button" className="text-xs font-semibold underline hover:opacity-70 cursor-pointer" style={{ color: c.primary }}
                       onClick={() => { setType(null); resetForm(); }}>
@@ -882,7 +897,12 @@ export default function StudentReport() {
                                 style={{ borderColor: c.border, color: category ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                                 onClick={() => setCategoryOpen(!categoryOpen)}>
                                 {category
-                                  ? <>{(() => { const Icon = categoryIcons[category] || Grid3X3; return <Icon size={15} style={{ color: c.primary }} />; })()}<span>{category}</span></>
+                                  ? (
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                      {(() => { const Icon = categoryIcons[category] || Grid3X3; return <Icon size={14} className="shrink-0" style={{ color: c.primary }} />; })()}
+                                      <span className="truncate">{category}</span>
+                                    </span>
+                                  )
                                   : <span>Select a category</span>}
                                 <ChevronDown size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
                               </button>
@@ -907,7 +927,7 @@ export default function StudentReport() {
                           </label>
                           <VFilterButton
                             className="w-full justify-between"
-                            style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                            style={{ height: 44, fontWeight: 400, color: date ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                             onClick={(e) => { setDateAnchor(e.currentTarget); toggleDateCalendar(); }}>
                             <span className="flex items-center gap-1.5 min-w-0">
                               <Clock size={14} style={{ color: c.primary }} />
@@ -952,7 +972,7 @@ export default function StudentReport() {
                   <div className="mb-5">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: c.textMuted }}>
-                        Photo <span className="font-normal normal-case tracking-normal" style={{ color: c.textLight }}>(optional · up to 3 photos)</span>
+                        Photo Evidence <span className="font-normal normal-case tracking-normal" style={{ color: c.textLight }}>(optional)</span>
                       </p>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px]" style={{ color: c.textLight }}>{photos.length}/3</span>
@@ -1010,7 +1030,7 @@ export default function StudentReport() {
                         ))}
                       </div>
                     )}
-                    <p className="text-[11px] mt-2" style={{ color: c.textLight }}>JPG or PNG · up to 5MB each</p>
+                    <p className="text-[11px] mt-2 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
@@ -1161,7 +1181,12 @@ export default function StudentReport() {
                         style={{ borderColor: c.border, color: editForm.category ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                         onClick={() => setEditCategoryOpen(!editCategoryOpen)}>
                         {editForm.category
-                          ? <>{(() => { const Icon = categoryIcons[editForm.category] || Grid3X3; return <Icon size={15} style={{ color: c.primary }} />; })()}<span>{editForm.category}</span></>
+                          ? (
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              {(() => { const Icon = categoryIcons[editForm.category] || Grid3X3; return <Icon size={14} className="shrink-0" style={{ color: c.primary }} />; })()}
+                              <span className="truncate">{editForm.category}</span>
+                            </span>
+                          )
                           : <span>Select a category</span>}
                         <ChevronDown size={15} className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
                       </button>
@@ -1184,7 +1209,7 @@ export default function StudentReport() {
 
                 <div className="relative">
                   <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Date</label>
-                  <VFilterButton className="w-full justify-between" style={{ height: 44, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                  <VFilterButton className="w-full justify-between" style={{ height: 44, fontWeight: 400, color: editForm.date ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                     onClick={(e) => { setEditDateAnchor(e.currentTarget); setEditDateOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} style={{ color: c.primary }} />
@@ -1222,15 +1247,18 @@ export default function StudentReport() {
               <div>
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <label className="text-xs font-semibold" style={{ color: c.text }}>
-                    Photos <span className="font-normal" style={{ color: c.textLight }}>({editPhotos.length}/3 · max 3)</span>
+                    Photo Evidence <span className="font-normal" style={{ color: c.textLight }}>(optional)</span>
                   </label>
-                  {editPhotos.length > 0 && editPhotos.length < 3 && (
-                    <button type="button" onClick={() => setPhotoSourceTarget("edit")}
-                      className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
-                      style={{ borderColor: c.border, color: c.primary }}>
-                      <Plus size={13} /> Add photo
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px]" style={{ color: c.textLight }}>{editPhotos.length}/3</span>
+                    {editPhotos.length > 0 && editPhotos.length < 3 && (
+                      <button type="button" onClick={() => setPhotoSourceTarget("edit")}
+                        className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                        style={{ borderColor: c.border, color: c.primary }}>
+                        <Plus size={13} /> Add photo
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <input ref={editPhotoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleEditPhotoChange} />
                 <input ref={editCameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleEditPhotoChange} />
@@ -1272,7 +1300,7 @@ export default function StudentReport() {
                     ))}
                   </div>
                 )}
-                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>JPG or PNG · up to 5MB each</p>
+                <p className="text-[11px] mt-1 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
               </div>
             </div>
 

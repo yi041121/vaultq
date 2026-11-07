@@ -13,7 +13,7 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
+  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -317,8 +317,8 @@ export default function AdminAccounts() {
 
   return (
     <StudentShell active="Accounts" userName={user.name} userRole={user.role} pageTitle="Account Management" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full h-full flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
+        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" placeholder="Search name, email, ID or barcode..." />
             <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
@@ -387,7 +387,7 @@ export default function AdminAccounts() {
                   </VCard>
                 ))}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
                 </span>

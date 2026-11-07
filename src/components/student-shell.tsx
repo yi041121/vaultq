@@ -7,6 +7,7 @@ import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NotificationBell } from "@/components/notification-bell";
+import { useAdminNavCounts } from "@/lib/use-admin-nav-counts";
 
 interface NavItem {
   label: string;
@@ -38,6 +39,15 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const adminCounts = useAdminNavCounts(userRole);
+
+  function navBadge(label: string) {
+    return label === "Claims" ? adminCounts.claims : label === "Intake" ? adminCounts.intake : 0;
+  }
+
+  function badgeText(value: number) {
+    return value > 99 ? "99+" : String(value);
+  }
 
   function requestLogout() {
     setSidebarOpen(false);
@@ -55,22 +65,31 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
           <img src="/vaultQ-removebg-preview.png" alt="" className="w-8 h-8 object-contain" />
           <span className="text-lg font-bold text-white">VaultQ</span>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1.5">
           {navItems.map((item) => (
             <button
               key={item.label}
               type="button"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer"
+              className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer ${item.active ? "font-semibold" : "font-medium"}`}
               style={{
-                backgroundColor: item.active ? "rgba(127,184,181,0.1)" : "transparent",
-                color: item.active ? colors.accent : colors.sidebarText,
+                backgroundColor: item.active ? "rgba(127,184,181,0.14)" : "transparent",
+                color: item.active ? "#fff" : colors.sidebarText,
               }}
               onClick={() => item.path && router.push(item.path)}
-              onMouseEnter={(e) => { if (!item.active) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = colors.sidebarTextHover; } }}
+              onMouseEnter={(e) => { if (!item.active) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = colors.sidebarTextHover; } }}
               onMouseLeave={(e) => { if (!item.active) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = colors.sidebarText; } }}
             >
-              <item.icon size={iconSize.nav} />
+              {item.active && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full" style={{ backgroundColor: colors.accent }} />
+              )}
+              <item.icon size={iconSize.nav} style={{ color: item.active ? colors.accent : undefined, flexShrink: 0, opacity: item.active ? 1 : 0.9 }} />
               <span>{item.label}</span>
+              {navBadge(item.label) > 0 && (
+                <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums"
+                  style={{ backgroundColor: "rgba(220,38,38,0.18)", color: "#fecaca", boxShadow: "inset 0 0 0 1px rgba(248,113,113,0.35)" }}>
+                  {badgeText(navBadge(item.label))}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -106,7 +125,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
             </div>
           </div>
           {pageTitle && (
-            <h1 className="text-base lg:text-lg font-bold absolute left-1/2 -translate-x-1/2" style={{ color: colors.text }}>{pageTitle}</h1>
+            <h1 className="hidden lg:block text-lg font-bold absolute left-1/2 -translate-x-1/2" style={{ color: colors.text }}>{pageTitle}</h1>
           )}
           <div className="flex items-center gap-3">
             {bell ?? <NotificationBell role={userRole} />}
@@ -132,15 +151,24 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
                   <button
                     key={item.label}
                     type="button"
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer"
+              className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-200 cursor-pointer ${item.active ? "font-semibold" : "font-medium"}`}
                     style={{
-                      backgroundColor: item.active ? "rgba(127,184,181,0.1)" : "transparent",
-                      color: item.active ? colors.accent : colors.sidebarText,
+                      backgroundColor: item.active ? "rgba(127,184,181,0.14)" : "transparent",
+                      color: item.active ? "#fff" : colors.sidebarText,
                     }}
                     onClick={() => { setSidebarOpen(false); if (item.path) router.push(item.path); }}
                   >
-                    <item.icon size={iconSize.nav} />
+                    {item.active && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full" style={{ backgroundColor: colors.accent }} />
+                    )}
+                    <item.icon size={iconSize.nav} style={{ color: item.active ? colors.accent : undefined, flexShrink: 0 }} />
                     <span>{item.label}</span>
+                    {navBadge(item.label) > 0 && (
+                      <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums"
+                        style={{ backgroundColor: "rgba(220,38,38,0.18)", color: "#fecaca", boxShadow: "inset 0 0 0 1px rgba(248,113,113,0.35)" }}>
+                        {badgeText(navBadge(item.label))}
+                      </span>
+                    )}
                   </button>
                 ))}
               </nav>
@@ -166,10 +194,18 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
             key={item.label}
             type="button"
             className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors duration-200 cursor-pointer"
-            style={{ color: item.active ? colors.primary : colors.textLight }}
+            style={{ color: item.active ? colors.primary : colors.textLight, backgroundColor: item.active ? `${colors.primary}12` : "transparent" }}
             onClick={() => item.path && router.push(item.path)}
           >
-            <item.icon size={20} />
+            <span className="relative">
+              <item.icon size={20} />
+              {navBadge(item.label) > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center tabular-nums"
+                  style={{ backgroundColor: colors.danger, color: "#fff", boxShadow: "0 0 0 2px #fff" }}>
+                  {badgeText(navBadge(item.label))}
+                </span>
+              )}
+            </span>
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>
         ))}

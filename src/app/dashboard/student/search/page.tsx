@@ -6,7 +6,7 @@ import {
   Search, Package,
   Briefcase, CreditCard, Key, BookText, CupSoda,
   ChevronDown, Monitor, Grid3X3, ArrowUpDown,
-  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye, Crop,
+  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye, Crop, FileText,
   Loader2, RefreshCw, CheckCircle2, Plus,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
@@ -21,6 +21,7 @@ import {
   vcolors as c,
 } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
+import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 
 interface User { id: string; name: string; email: string; role: string; }
@@ -45,7 +46,18 @@ const filterIcons: Record<string, any> = {
   Others: Grid3X3,
 };
 
+type LostReportOption = {
+  id: string;
+  itemName: string;
+  category: string;
+  date: string;
+  description: string;
+  location: string;
+  images: string[];
+};
+
 let searchItemsCache: FoundItem[] | null = null;
+let claimedItemIdsCache: Set<string> | null = null;
 
 export default function StudentSearch() {
   const router = useRouter();
@@ -55,7 +67,7 @@ export default function StudentSearch() {
   const [items, setItems] = useState<FoundItem[]>(searchItemsCache ?? []);
   const [loading, setLoading] = useState(searchItemsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [claimedItemIds, setClaimedItemIds] = useState<Set<string>>(new Set());
+  const [claimedItemIds, setClaimedItemIds] = useState<Set<string>>(claimedItemIdsCache ?? new Set());
 
   const [query, setQuery] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -82,8 +94,53 @@ export default function StudentSearch() {
   const [claimEditPhoto, setClaimEditPhoto] = useState<number | null>(null);
   const claimCameraRef = useRef<HTMLInputElement>(null);
   const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const [claimReportId, setClaimReportId] = useState<string | null>(null);
+
+  // Lost reports are offered explicitly before opening the claim form.
+  const [lostReports, setLostReports] = useState<LostReportOption[]>([]);
+  const [lostReportsLoaded, setLostReportsLoaded] = useState(false);
+  const [linkPromptItem, setLinkPromptItem] = useState<FoundItem | null>(null);
+  const [linkChoice, setLinkChoice] = useState<string | null>(null);
+  const [lostReportPreview, setLostReportPreview] = useState<{ report: LostReportOption; index: number } | null>(null);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const deepLinkHandled = useRef(false);
+
+  function openLostReportPreview(report: LostReportOption) {
+    setLostReportPreview({ report, index: 0 });
+  }
+
+  async function loadLostReports(token: string): Promise<LostReportOption[]> {
+    try {
+      const res = await fetch("/api/reports?type=LOST", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !Array.isArray(data.data)) return [];
+      const list: LostReportOption[] = (data.data as any[])
+        .filter((report) => report.type === "LOST" && report.status === "PENDING")
+        .map((report) => ({
+          id: report.id,
+          itemName: report.itemName || "Untitled report",
+          category: report.category || "Others",
+          date: String(report.date || report.createdAt || "").slice(0, 10),
+          description: report.description || "",
+          location: report.location || "",
+          images: Array.isArray(report.imageUrls) && report.imageUrls.length
+            ? report.imageUrls.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+            : report.imageUrl
+              ? [report.imageUrl]
+              : [],
+        }));
+      setLostReports(list);
+      return list;
+    } catch {
+      return [];
+    } finally {
+      setLostReportsLoaded(true);
+    }
+  }
 
   async function loadData(token: string) {
     if (!searchItemsCache) setLoading(true);
@@ -98,6 +155,16 @@ export default function StudentSearch() {
         throw new Error(itemsJson?.error || "Failed to load items");
       }
       const mapped = (itemsJson.data as any[]).map(mapApiItem);
+
+      const claimsJson = claimsRes.ok ? await claimsRes.json().catch(() => null) : null;
+      const claimedIds = claimsJson?.success && Array.isArray(claimsJson.data)
+        ? (claimsJson.data as any[]).map((cl) => cl.itemId as string)
+        : [];
+      const claimedSet = new Set(claimedIds);
+
+      // Apply everything together so claimed items never flash into view.
+      setClaimedItemIds(claimedSet);
+      claimedItemIdsCache = claimedSet;
       setItems(mapped);
       searchItemsCache = mapped;
 
@@ -109,22 +176,11 @@ export default function StudentSearch() {
         if (targetId) {
           window.history.replaceState(null, "", "/dashboard/student/search");
           const target = mapped.find((item) => item.id === targetId);
-          if (target) {
+          if (target && !claimedSet.has(target.id)) {
             setViewItem(target);
           } else {
             showCenteredMessage("error", "That item is no longer available");
           }
-        }
-      }
-
-      // Items this student already has a pending/approved claim for.
-      if (claimsRes.ok) {
-        const claimsJson = await claimsRes.json().catch(() => null);
-        if (claimsJson?.success && Array.isArray(claimsJson.data)) {
-          const ids = (claimsJson.data as any[])
-            .filter((cl) => cl.status === "PENDING" || cl.status === "APPROVED")
-            .map((cl) => cl.itemId as string);
-          setClaimedItemIds(new Set(ids));
         }
       }
     } catch (e) {
@@ -147,10 +203,12 @@ export default function StudentSearch() {
     }
     setUser(JSON.parse(stored));
     void loadData(token);
+    void loadLostReports(token);
   }, []);
 
   function handleLogout() {
     searchItemsCache = null;
+    claimedItemIdsCache = null;
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -158,8 +216,10 @@ export default function StudentSearch() {
 
   const filtered = items
     .filter((item) => {
-      // Items this student handed in never appear in their own search results.
+      // Items this student handed in or already claimed (pending, approved or
+      // rejected) never appear in their own search results.
       if (item.reportedByMe) return false;
+      if (claimedItemIds.has(item.id)) return false;
       if (!matchesSearch(query, [item.name, item.description, item.category, item.location, item.statusLabel, item.locker, item.locker ? `locker ${item.locker}` : "", ...dateSearchValues(item.date)])) return false;
       if (selectedCategory && item.category !== selectedCategory) return false;
       if (dateFrom && dateTo) {
@@ -202,15 +262,35 @@ export default function StudentSearch() {
   }
 
   const today = new Date();
+  const todayIso = toISO(today);
   const baseMonth = new Date(today.getFullYear(), today.getMonth() + calOffset, 1);
   const months = [baseMonth, new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1)];
+
+  function monthOffsetFor(iso: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 0;
+    const d = new Date(`${iso}T00:00:00`);
+    return (d.getFullYear() - today.getFullYear()) * 12 + (d.getMonth() - today.getMonth());
+  }
+
+  function closeDateCalendar() {
+    setDateRangeOpen(false);
+    setCalOffset(0);
+  }
+
+  function openDateCalendar() {
+    setTempFrom(dateFrom);
+    setTempTo(dateTo);
+    // Reopen on the month of the applied date, or the current month if empty.
+    setCalOffset(dateFrom ? monthOffsetFor(dateFrom) : 0);
+    setDateRangeOpen(true);
+  }
 
   function isInRange(d: Date) {
     if (!tempFrom || !tempTo) return false;
     return d > parseDate(tempFrom) && d < parseDate(tempTo);
   }
 
-  function openClaim(item: FoundItem) {
+  async function openClaim(item: FoundItem) {
     if (item.reportedByMe) {
       showCenteredMessage("error", "You cannot claim an item you reported as found");
       return;
@@ -224,7 +304,23 @@ export default function StudentSearch() {
       return;
     }
     setViewItem(null);
+
+    // Always ask which lost report to link when the student has any pending.
+    let reports = lostReports;
+    const token = localStorage.getItem("token");
+    if (!lostReportsLoaded && token) reports = await loadLostReports(token);
+
+    if (reports.length > 0) {
+      setLinkPromptItem(item);
+      setLinkChoice(null);
+      return;
+    }
+    startClaim(item, null);
+  }
+
+  function startClaim(item: FoundItem, reportId: string | null) {
     setClaimItem(item);
+    setClaimReportId(reportId);
     setClaimReason("");
     setClaimPhotos([]);
     setClaimCameraOpen(false);
@@ -299,6 +395,7 @@ export default function StudentSearch() {
       const form = new FormData();
       form.append("itemId", item.id);
       form.append("claimReason", claimReason.trim());
+      if (claimReportId) form.append("reportId", claimReportId);
       claimPhotos.forEach((photo) => form.append("evidence", photo.file));
 
       const res = await fetch("/api/claims", {
@@ -313,7 +410,11 @@ export default function StudentSearch() {
       }
 
       setClaimedItemIds((prev) => new Set(prev).add(item.id));
+      if (claimReportId) {
+        setLostReports((prev) => prev.filter((report) => report.id !== claimReportId));
+      }
       setClaimItem(null);
+      setClaimReportId(null);
       setClaimReason("");
       setClaimPhotos([]);
       setClaimCameraOpen(false);
@@ -328,6 +429,8 @@ export default function StudentSearch() {
       setClaimSubmitting(false);
     }
   }
+
+  useEscapeKey(!!lostReportPreview, () => setLostReportPreview(null));
 
   if (!user || !mounted) return null;
 
@@ -348,8 +451,8 @@ export default function StudentSearch() {
 
   return (
     <StudentShell active="Search" userName={user.name} userRole={user.role} pageTitle="Search Items" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6 flex flex-col">
+        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           {/* Search + filters */}
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" />
@@ -384,9 +487,32 @@ export default function StudentSearch() {
                 </>
               )}
             </VDropdown>
+            <VDropdown
+              open={sortOpen}
+              onOpenChange={setSortOpen}
+              width="w-32"
+              trigger={
+                <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
+                  <ArrowUpDown size={13} style={{ color: c.textMuted }} />
+                  <span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
+                  <ChevronDown size={12} className="text-[#64748b]" />
+                </VFilterButton>
+              }
+            >
+              {(close) => (
+                <>
+                  {["newest", "oldest"].map((opt) => (
+                    <VDropdownItem key={opt} active={sortOrder === opt}
+                      onSelect={() => { setSortOrder(opt); close(); setPage(1); }}>
+                      {opt === "newest" ? "Newest" : "Oldest"}
+                    </VDropdownItem>
+                  ))}
+                </>
+              )}
+            </VDropdown>
             <div className="relative shrink-0">
               <VFilterButton active={!!dateFrom}
-                onClick={() => { setTempFrom(dateFrom); setTempTo(dateTo); setDateRangeOpen(!dateRangeOpen); }}>
+                onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
                 <Clock size={14} style={{ color: c.primary }} />
                 <span className="whitespace-nowrap">
                   {dateFrom && dateTo && dateFrom !== dateTo
@@ -401,7 +527,7 @@ export default function StudentSearch() {
               </VFilterButton>
               {dateRangeOpen && (
                 <>
-                  <div className="fixed inset-0 z-20" onClick={() => setDateRangeOpen(false)} />
+                  <div className="fixed inset-0 z-20" onClick={closeDateCalendar} />
                   <div className="absolute left-0 top-12 z-30 w-[300px] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
                     <div className="flex items-center justify-between mb-3">
                       <button type="button"
@@ -416,11 +542,12 @@ export default function StudentSearch() {
                         {months[0].toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
                       </span>
                       <button type="button"
-                        className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
+                        disabled={calOffset >= 0}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 ${calOffset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
                         style={{ backgroundColor: c.fill, color: c.textMuted }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
+                        onMouseEnter={(e) => { if (calOffset < 0) e.currentTarget.style.backgroundColor = c.borderLight; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                        onClick={() => setCalOffset(calOffset + 1)}>
+                        onClick={() => { if (calOffset < 0) setCalOffset(calOffset + 1); }}>
                         <ChevronRight size={14} />
                       </button>
                     </div>
@@ -434,17 +561,20 @@ export default function StudentSearch() {
                         const isStart = tempFrom === iso;
                         const isEnd = tempTo === iso && tempTo !== tempFrom;
                         const inRange = isInRange(d);
+                        const isFuture = iso > todayIso;
                         return (
                           <button key={i} type="button"
-                            className="h-8 w-8 mx-auto rounded-full text-xs transition-all duration-150 cursor-pointer"
+                            disabled={isFuture}
+                            className={`h-8 w-8 mx-auto rounded-full text-xs transition-all duration-150 ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
                             style={{
-                              backgroundColor: isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
-                              color: isStart || isEnd ? "#fff" : c.text,
+                              backgroundColor: isFuture ? "transparent" : isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
+                              color: isFuture ? c.textLight : isStart || isEnd ? "#fff" : c.text,
                               fontWeight: isStart || isEnd ? "700" : "400",
                             }}
-                            onMouseEnter={(e) => { if (!isStart && !isEnd) e.currentTarget.style.backgroundColor = c.fill; }}
-                            onMouseLeave={(e) => { if (!isStart && !isEnd) e.currentTarget.style.backgroundColor = inRange ? c.primarySoft : "transparent"; }}
+                            onMouseEnter={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = c.fill; }}
+                            onMouseLeave={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = inRange ? c.primarySoft : "transparent"; }}
                             onClick={() => {
+                              if (isFuture) return;
                               if (tempFrom && tempTo && tempFrom !== tempTo) {
                                 setTempFrom(iso);
                                 setTempTo(iso);
@@ -477,7 +607,7 @@ export default function StudentSearch() {
                         style={{ backgroundColor: c.fill, color: c.textMuted }}
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                        onClick={() => { setTempFrom(""); setTempTo(""); setDateFrom(""); setDateTo(""); setPage(1); }}>
+                        onClick={() => { setTempFrom(""); setTempTo(""); }}>
                         Clear
                       </button>
                       <button type="button"
@@ -486,11 +616,17 @@ export default function StudentSearch() {
                         onMouseEnter={(e) => { if (tempFrom) e.currentTarget.style.backgroundColor = c.primaryDark; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}
                         onClick={() => {
-                          if (!tempFrom) return;
+                          if (!tempFrom) {
+                            setDateFrom("");
+                            setDateTo("");
+                            setPage(1);
+                            closeDateCalendar();
+                            return;
+                          }
                           setDateFrom(tempFrom);
                           setDateTo(tempTo || tempFrom);
                           setPage(1);
-                          setDateRangeOpen(false);
+                          closeDateCalendar();
                         }}>
                         Confirm
                       </button>
@@ -499,29 +635,6 @@ export default function StudentSearch() {
                 </>
               )}
             </div>
-            <VDropdown
-              open={sortOpen}
-              onOpenChange={setSortOpen}
-              width="w-32"
-              trigger={
-                <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
-                  <ArrowUpDown size={13} style={{ color: c.textMuted }} />
-                  <span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
-                  <ChevronDown size={12} className="text-[#64748b]" />
-                </VFilterButton>
-              }
-            >
-              {(close) => (
-                <>
-                  {["newest", "oldest"].map((opt) => (
-                    <VDropdownItem key={opt} active={sortOrder === opt}
-                      onSelect={() => { setSortOrder(opt); close(); setPage(1); }}>
-                      {opt === "newest" ? "Newest" : "Oldest"}
-                    </VDropdownItem>
-                  ))}
-                </>
-              )}
-            </VDropdown>
             {hasFilters && (
               <button type="button"
                 className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border bg-white transition-all duration-200 cursor-pointer"
@@ -553,7 +666,7 @@ export default function StudentSearch() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1 content-start">
                 {paginated.map((item) => {
                   const Icon = filterIcons[item.category] || Package;
                   const claimed = claimedItemIds.has(item.id);
@@ -610,7 +723,7 @@ export default function StudentSearch() {
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
                 </span>
@@ -648,6 +761,92 @@ export default function StudentSearch() {
         />
       )}
 
+      {lostReportPreview && (
+        <ItemDetailsModal
+          zIndex="z-[70]"
+          title={lostReportPreview.report.itemName}
+          statusLabel="Lost report"
+          statusColor="#355C8A"
+          category={lostReportPreview.report.category}
+          location={lostReportPreview.report.location || "—"}
+          date={lostReportPreview.report.date ? fmtItemDate(lostReportPreview.report.date) : "—"}
+          description={lostReportPreview.report.description}
+          photos={lostReportPreview.report.images}
+          photoIndex={lostReportPreview.index}
+          onPhotoIndexChange={(index) => setLostReportPreview((prev) => (prev ? { ...prev, index } : prev))}
+          onClose={() => setLostReportPreview(null)}
+          footer={<VButton variant="secondary" className="flex-1" onClick={() => setLostReportPreview(null)}>Close</VButton>}
+        />
+      )}
+
+      {/* Always offer the student's pending lost reports before claiming */}
+      {linkPromptItem && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setLinkPromptItem(null)} />
+          <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
+            <div className="flex items-start justify-between mb-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Link a lost report?</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>
+                  You reported these items lost. Link the matching report so the admin can verify this claim faster.
+                </p>
+              </div>
+              <button type="button" onClick={() => setLinkPromptItem(null)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0 ml-3"
+                style={{ color: c.textMuted }} aria-label="Close link lost report dialog">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-64 overflow-auto mb-4">
+              {lostReports.map((report) => {
+                const selected = linkChoice === report.id;
+                return (
+                  <div key={report.id}
+                    className="w-full flex items-center gap-2 rounded-xl border transition-colors duration-150"
+                    style={{ borderColor: selected ? c.primary : c.borderLight, backgroundColor: selected ? `${c.primary}0d` : "#fff" }}>
+                    <button type="button" onClick={() => setLinkChoice(selected ? null : report.id)}
+                      className="flex-1 min-w-0 flex items-start gap-3 p-3 text-left cursor-pointer">
+                      <span className="mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0"
+                        style={{ borderColor: selected ? c.primary : c.border }}>
+                        {selected && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.primary }} />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium truncate" style={{ color: c.text }}>{report.itemName}</span>
+                        <span className="block text-[11px] mt-0.5" style={{ color: c.textMuted }}>
+                          {report.category}{report.date ? ` · ${fmtItemDate(report.date)}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                    <button type="button" onClick={() => openLostReportPreview(report)}
+                      className="mr-2 h-8 px-2.5 rounded-lg border bg-white text-[11px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer"
+                      style={{ borderColor: c.border, color: c.primary }}>
+                      <Eye size={12} /> View
+                    </button>
+                  </div>
+                );
+              })}
+              <button type="button" onClick={() => setLinkChoice(null)}
+                className="w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-colors duration-150 cursor-pointer"
+                style={{ borderColor: linkChoice === null ? c.primary : c.borderLight, backgroundColor: linkChoice === null ? `${c.primary}0d` : "#fff" }}>
+                <span className="mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0"
+                  style={{ borderColor: linkChoice === null ? c.primary : c.border }}>
+                  {linkChoice === null && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.primary }} />}
+                </span>
+                <span className="text-sm" style={{ color: c.text }}>Don&apos;t link a lost report</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <VButton variant="secondary" onClick={() => setLinkPromptItem(null)}>Cancel</VButton>
+              <VButton onClick={() => { const item = linkPromptItem; const reportId = linkChoice; setLinkPromptItem(null); startClaim(item, reportId); }}>
+                Continue
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
       {/* Claim evidence modal */}
       {claimItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -662,6 +861,27 @@ export default function StudentSearch() {
             </div>
 
             <div className="space-y-4">
+              {claimReportId && (() => {
+                const linked = lostReports.find((report) => report.id === claimReportId);
+                if (!linked) return null;
+                return (
+                  <div className="rounded-xl border p-3 flex items-center gap-3"
+                    style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
+                    <FileText size={16} className="shrink-0" style={{ color: c.primary }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold truncate" style={{ color: c.text }}>Linked lost report: {linked.itemName}</p>
+                      <p className="text-[11px]" style={{ color: c.textMuted }}>
+                        {linked.category}{linked.date ? ` · ${fmtItemDate(linked.date)}` : ""}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => openLostReportPreview(linked)}
+                      className="h-8 px-2.5 rounded-lg border bg-white text-[11px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer"
+                      style={{ borderColor: c.border, color: c.primary }}>
+                      <Eye size={12} /> View
+                    </button>
+                  </div>
+                );
+              })()}
               <div>
                 <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Why is this yours? <span style={{ color: c.danger }}>*</span></label>
                 <VTextarea value={claimReason} onChange={(e) => setClaimReason(e.target.value)} rows={3}
@@ -669,16 +889,17 @@ export default function StudentSearch() {
               </div>
 
               <div>
-                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                  Photo Evidence <span style={{ color: c.danger }}>*</span>
-                  <span className="font-normal" style={{ color: c.textLight }}> (up to 3 photo)</span>
-                </label>
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <label className="text-sm font-medium" style={{ color: c.text }}>
+                    Photo Evidence <span style={{ color: c.danger }}>*</span>
+                  </label>
+                  <span className="text-[11px]" style={{ color: c.textLight }}>{claimPhotos.length}/3</span>
+                </div>
                 <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoChange} />
                 <input ref={claimCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
                 {claimPhotos.length === 0 ? (
                   <div>
                     <PhotoPicker onUpload={() => fileRef.current?.click()} onTakePhoto={openClaimCamera} />
-                    <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
                   </div>
                 ) : (
                   <div>
@@ -714,6 +935,7 @@ export default function StudentSearch() {
                     </div>
                   </div>
                 )}
+                <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">

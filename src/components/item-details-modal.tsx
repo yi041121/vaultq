@@ -20,6 +20,7 @@ export interface ItemDetailsModalProps {
   onClose: () => void;
   extra?: ReactNode;
   footer?: ReactNode;
+  footerNote?: ReactNode;
   maxWidth?: string;
   zIndex?: string;
 }
@@ -44,6 +45,7 @@ export function ItemDetailsModal({
   onClose,
   extra,
   footer,
+  footerNote,
   maxWidth = "max-w-lg",
   zIndex = "z-50",
 }: ItemDetailsModalProps) {
@@ -126,7 +128,14 @@ export function ItemDetailsModal({
             <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{description || "No description provided."}</p>
           </div>
 
-          {footer && <div className="flex items-center gap-3">{footer}</div>}
+          {(footer || footerNote) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {footerNote && (
+                <p className="text-[11px] mr-auto" style={{ color: c.textLight }}>{footerNote}</p>
+              )}
+              {footer}
+            </div>
+          )}
         </div>
       </VCard>
     </div>

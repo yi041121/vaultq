@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, FileText, Clock, QrCode, CheckCircle2,
@@ -10,8 +10,12 @@ import {
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentShell } from "@/components/student-shell";
+import { useEscapeKey } from "@/lib/use-escape-key";
 import { EvidenceSlider } from "@/components/evidence-slider";
-import { VCard, VBadge, VPagination, VButton, vcolors as c } from "@/components/ui/vault";
+import { PhotoPicker } from "@/components/photo-picker";
+import { PhotoSourceDialog } from "@/components/photo-source-dialog";
+import { CameraCaptureModal } from "@/components/camera-capture-modal";
+import { VCard, VBadge, VPagination, VButton, VTextarea, vcolors as c } from "@/components/ui/vault";
 import {
   mapUserClaim, CLAIM_STATUS_COLOR,
   type UserClaim, type ClaimDisplayStatus,
@@ -89,6 +93,14 @@ export default function StudentClaims() {
   const [qrLoadingId, setQrLoadingId] = useState<string | null>(null);
   const [detailsClaim, setDetailsClaim] = useState<UserClaim | null>(null);
   const [cancelTarget, setCancelTarget] = useState<UserClaim | null>(null);
+  const [resubmitClaim, setResubmitClaim] = useState<UserClaim | null>(null);
+  const [resubmitReason, setResubmitReason] = useState("");
+  const [resubmitPhotos, setResubmitPhotos] = useState<{ file?: File; preview: string; existing?: boolean }[]>([]);
+  const [resubmitting, setResubmitting] = useState(false);
+  const resubmitInputRef = useRef<HTMLInputElement>(null);
+  const resubmitCameraRef = useRef<HTMLInputElement>(null);
+  const [resubmitSourceOpen, setResubmitSourceOpen] = useState(false);
+  const [resubmitCameraOpen, setResubmitCameraOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pageSize = 6;
 
@@ -204,6 +216,89 @@ export default function StudentClaims() {
     }
   }
 
+  function openResubmit(cl: UserClaim) {
+    setResubmitClaim(cl);
+    setResubmitReason(cl.reason || "");
+    setResubmitPhotos((cl.evidenceImageUrls || []).map((preview) => ({ preview, existing: true })));
+    if (resubmitInputRef.current) resubmitInputRef.current.value = "";
+  }
+
+  function openResubmitCamera() {
+    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") {
+      setResubmitCameraOpen(true);
+      return;
+    }
+    resubmitCameraRef.current?.click();
+  }
+
+  async function handleResubmitFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    if (resubmitPhotos.length + files.length > 3) {
+      showCenteredMessage("error", "You can upload up to 3 photos");
+      return;
+    }
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        showCenteredMessage("error", "Please upload image files only");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showCenteredMessage("error", "Each image must be under 5MB");
+        return;
+      }
+    }
+    const drafts = await Promise.all(
+      files.map((file) => new Promise<{ file: File; preview: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ file, preview: reader.result as string });
+        reader.onerror = () => reject(new Error("Could not read image"));
+        reader.readAsDataURL(file);
+      })),
+    );
+    setResubmitPhotos((prev) => [...prev, ...drafts].slice(0, 3));
+  }
+
+  async function handleResubmit() {
+    if (!resubmitClaim || resubmitting) return;
+    if (!resubmitReason.trim()) {
+      showCenteredMessage("error", "Please describe why this item is yours");
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    setResubmitting(true);
+    try {
+      const keepImages = resubmitPhotos.filter((photo) => photo.existing).map((photo) => photo.preview);
+      if (!resubmitPhotos.length) {
+        showCenteredMessage("error", "Please keep or add at least one photo");
+        return;
+      }
+      const form = new FormData();
+      form.append("claimReason", resubmitReason.trim());
+      form.append("keepImages", JSON.stringify(keepImages));
+      resubmitPhotos.forEach((photo) => { if (photo.file) form.append("evidence", photo.file); });
+      const res = await fetch(`/api/claims/${resubmitClaim.id}/resubmit`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data.error || "Failed to resubmit claim");
+      showCenteredMessage("success", "Claim resubmitted — awaiting verification");
+      setResubmitClaim(null);
+      setResubmitPhotos([]);
+      await loadClaims(token);
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Failed to resubmit claim");
+    } finally {
+      setResubmitting(false);
+    }
+  }
+
+  useEscapeKey(!!detailsClaim, () => setDetailsClaim(null));
+
   if (!user || !mounted) return null;
 
   const filtered = filter === "All" ? claims : claims.filter((cl) => cl.displayStatus === filter);
@@ -218,8 +313,8 @@ export default function StudentClaims() {
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="My Claims" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
+        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <div className="flex flex-wrap rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
               {filters.map((f) => (
@@ -259,52 +354,44 @@ export default function StudentClaims() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 flex-1">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 content-start flex-1">
                 {paginated.map((cl) => {
                   const Icon = filterIcons[cl.category] || Package;
                   const statusColor = CLAIM_STATUS_COLOR[cl.displayStatus];
                   const canShowQr = cl.displayStatus === "Approved" || cl.displayStatus === "QR Ready";
                   return (
-                    <VCard key={cl.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-                      <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden"
-                        style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
-                        {cl.itemImageUrl ? (
-                          <img src={cl.itemImageUrl} alt={cl.itemName} className="absolute inset-0 w-full h-full object-cover" />
-                        ) : (
-                          <>
-                            <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                            <Icon size={40} style={{ color: c.primary, opacity: 0.6 }} />
-                          </>
-                        )}
-                      </div>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{cl.itemName}</h3>
-                        <VBadge color={statusColor}>{cl.displayStatus}</VBadge>
-                      </div>
-                      <p className="text-[11px] font-medium mb-3 flex items-center gap-1" style={{ color: c.textLight }}>
-                        <Icon size={12} style={{ color: c.primary }} /> {cl.category}
-                      </p>
-                      <div className="space-y-1.5 mb-4 text-xs" style={{ color: c.textMuted }}>
-                        <p className="flex items-center gap-1.5">
-                          <MapPin size={12} style={{ color: c.textMuted }} /> {cl.location || "—"}
-                        </p>
-                        <p className="flex items-center gap-1.5">
-                          <Clock size={12} style={{ color: c.textLight }} /> Found {fmtDay(cl.foundDate)}
-                        </p>
-                        {cl.locker && (
-                          <p className="flex items-center gap-1.5">
-                            <Package size={12} style={{ color: c.primary }} /> Locker {cl.locker}
+                    <VCard key={cl.id} className="p-4 flex flex-col gap-3 transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                      <div className="flex items-start gap-3">
+                        <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 flex items-center justify-center relative"
+                          style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+                          {cl.itemImageUrl ? (
+                            <img src={cl.itemImageUrl} alt={cl.itemName} className="w-full h-full object-cover" />
+                          ) : (
+                            <Icon size={28} style={{ color: c.primary, opacity: 0.75 }} />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="text-sm font-semibold leading-snug truncate" style={{ color: c.text }}>{cl.itemName}</h3>
+                            <VBadge color={statusColor} style={{ flexShrink: 0 }}>{cl.displayStatus}</VBadge>
+                          </div>
+                          <p className="text-[11px] mt-1 flex flex-wrap items-center gap-1.5" style={{ color: c.textMuted }}>
+                            <Icon size={11} style={{ color: c.primary }} /> {cl.category}
+                            <span className="mx-0.5">·</span>
+                            <MapPin size={11} /> <span className="truncate">{cl.location || "—"}</span>
                           </p>
-                        )}
-                        {cl.reason && (
-                          <p className="text-xs p-2 rounded-lg mt-2 line-clamp-3" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                            <span className="font-semibold" style={{ color: c.text }}>Claim reason: </span>
-                            &quot;{cl.reason}&quot;
+                          <p className="text-[11px] mt-1 flex flex-wrap items-center gap-1.5" style={{ color: c.textMuted }}>
+                            <Clock size={11} /> Found {fmtDay(cl.foundDate)}
+                            {cl.locker && <><span className="mx-0.5">·</span><Package size={11} style={{ color: c.primary }} /> {cl.locker}</>}
                           </p>
-                        )}
+                        </div>
+                      </div>
 
-                      </div>
-                      <div className="flex items-center gap-2 mt-auto">
+                      {cl.description && (
+                        <p className="text-xs line-clamp-2" style={{ color: c.textMuted }}>{cl.description}</p>
+                      )}
+
+                      <div className="mt-auto flex items-center gap-2 pt-1">
                         {canShowQr && (
                           <>
                             <button type="button" onClick={() => setDetailsClaim(cl)}
@@ -330,27 +417,39 @@ export default function StudentClaims() {
                               <Eye size={13} className="inline mr-1" /> Details
                             </button>
                             <button type="button" onClick={() => setCancelTarget(cl)}
-                              className="px-4 h-9 rounded-xl text-xs font-medium transition-colors duration-200 cursor-pointer"
-                              style={{ backgroundColor: c.borderLight, color: c.textMuted }}
-                              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.border; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}>
+                              className="flex-1 h-9 rounded-xl text-xs font-semibold border cursor-pointer"
+                              style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", color: c.danger }}>
                               Cancel
                             </button>
                           </>
                         )}
-                        {(cl.displayStatus === "Rejected" || cl.displayStatus === "Collected") && (
+                        {cl.displayStatus === "Collected" && (
                           <button type="button" onClick={() => setDetailsClaim(cl)}
                             className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                             style={{ borderColor: c.border, color: c.textMuted }}>
                             <Eye size={13} /> View Details
                           </button>
                         )}
+                        {cl.displayStatus === "Rejected" && (
+                          <>
+                            <button type="button" onClick={() => setDetailsClaim(cl)}
+                              className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
+                              style={{ borderColor: c.border, color: c.textMuted }}>
+                              <Eye size={13} /> Details
+                            </button>
+                            <button type="button" onClick={() => openResubmit(cl)}
+                              className="flex-1 h-9 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-200"
+                              style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" }}>
+                              <RefreshCw size={13} className="inline mr-1" /> Resubmit
+                            </button>
+                          </>
+                        )}
                       </div>
                     </VCard>
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length} results
                 </span>
@@ -403,7 +502,7 @@ export default function StudentClaims() {
                   <EvidenceSlider
                     photos={detailsClaim.evidenceImageUrls?.length ? detailsClaim.evidenceImageUrls : [detailsClaim.evidenceImageUrl!]}
                     alt="Evidence"
-                    caption={fmtTimestamp(detailsClaim.evidenceUploadedAt)}
+                    caption={fmtTimestamp(detailsClaim.evidenceUploadedAt || detailsClaim.claimedAt)}
                     label="evidence"
                   />
                 ) : (
@@ -415,13 +514,43 @@ export default function StudentClaims() {
               </div>
             </div>
 
+            {(detailsClaim.lostReportDescription || detailsClaim.reason) && (
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
+                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Claim reason</p>
+                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
+                  {detailsClaim.lostReportDescription || detailsClaim.reason}
+                </p>
+              </div>
+            )}
+
+            {(detailsClaim.displayStatus === "Approved" || detailsClaim.displayStatus === "QR Ready" || detailsClaim.displayStatus === "Collected") && detailsClaim.adminNote && (
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: "#15803d" }}>Approved reason</p>
+                <p className="text-sm leading-relaxed" style={{ color: "#15803d" }}>{detailsClaim.adminNote}</p>
+              </div>
+            )}
+
+            {detailsClaim.displayStatus === "Rejected" && (
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#fef2f2", border: `1px solid ${c.danger}30` }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: c.danger }}>Rejected reason</p>
+                <p className="text-sm leading-relaxed" style={{ color: c.danger }}>
+                  {detailsClaim.adminNote || "No reason was provided by the admin."}
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {detailsClaim.approvedAt && (
+              {detailsClaim.approvedAt && detailsClaim.displayStatus !== "Rejected" && (
                 <p className="text-xs mr-auto" style={{ color: c.textMuted }}>
                   Approved by admin on {fmtTimestamp(detailsClaim.approvedAt)}
                 </p>
               )}
               <VButton variant="secondary" onClick={() => setDetailsClaim(null)}>Close</VButton>
+              {detailsClaim.displayStatus === "Rejected" && (
+                <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); openResubmit(target); }}>
+                  <RefreshCw size={14} /> Resubmit
+                </VButton>
+              )}
               {detailsClaim.displayStatus === "Pending" && (
                 <VButton variant="danger" onClick={() => { const target = detailsClaim; setDetailsClaim(null); setCancelTarget(target); }}>
                   Cancel claim
@@ -435,6 +564,93 @@ export default function StudentClaims() {
             </div>
           </VCard>
         </div>
+      )}
+
+      {resubmitClaim && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!resubmitting) setResubmitClaim(null); }} />
+          <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5 lg:p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Edit &amp; resubmit claim</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{resubmitClaim.itemName}</p>
+              </div>
+              <button type="button" onClick={() => { if (!resubmitting) setResubmitClaim(null); }} aria-label="Close resubmit dialog"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Claim reason</label>
+            <VTextarea value={resubmitReason} onChange={(e) => setResubmitReason(e.target.value)} rows={3}
+              placeholder="Describe distinctive details, proof of ownership..." />
+
+            <div className="mt-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <p className="text-xs font-semibold" style={{ color: c.text }}>Photo Evidence</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px]" style={{ color: c.textLight }}>{resubmitPhotos.length}/3</span>
+                  {resubmitPhotos.length < 3 && resubmitPhotos.length > 0 && (
+                    <button type="button" onClick={() => setResubmitSourceOpen(true)}
+                      className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                      style={{ borderColor: c.border, color: c.primary }}>
+                      <Camera size={13} /> Add photo
+                    </button>
+                  )}
+                </div>
+              </div>
+              <input ref={resubmitInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleResubmitFiles} />
+              <input ref={resubmitCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleResubmitFiles} />
+              {resubmitPhotos.length === 0 ? (
+                <div>
+                  <PhotoPicker onUpload={() => resubmitInputRef.current?.click()} onTakePhoto={openResubmitCamera} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {resubmitPhotos.map((photo, index) => (
+                    <div key={`${index}-${photo.preview.slice(-12)}`} className="relative rounded-lg overflow-hidden border" style={{ borderColor: c.border }}>
+                      <img src={photo.preview} alt={`Evidence ${index + 1}`} className={`w-full object-cover ${resubmitPhotos.length === 1 ? "h-40" : "h-24"}`} />
+                      <button type="button" aria-label={`Remove evidence photo ${index + 1}`}
+                        onClick={() => setResubmitPhotos((prev) => prev.filter((_, i) => i !== index))}
+                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center cursor-pointer">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <VButton variant="secondary" onClick={() => { if (!resubmitting) setResubmitClaim(null); }}>Cancel</VButton>
+              <VButton onClick={handleResubmit} disabled={resubmitting || !resubmitReason.trim()}>
+                {resubmitting ? "Resubmitting..." : "Resubmit claim"}
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
+      {resubmitSourceOpen && (
+        <PhotoSourceDialog
+          title="Add evidence photo"
+          description="Attach another photo for your claim (up to 3)."
+          onClose={() => setResubmitSourceOpen(false)}
+          onTakePhoto={() => { setResubmitSourceOpen(false); openResubmitCamera(); }}
+          onUpload={() => { setResubmitSourceOpen(false); resubmitInputRef.current?.click(); }}
+        />
+      )}
+
+      {resubmitCameraOpen && (
+        <CameraCaptureModal
+          onClose={() => setResubmitCameraOpen(false)}
+          onUseUpload={() => { setResubmitCameraOpen(false); resubmitInputRef.current?.click(); }}
+          onCapture={(photo) => {
+            setResubmitPhotos((prev) => (prev.length >= 3 ? prev : [...prev, { file: photo.file, preview: photo.preview }]));
+            setResubmitCameraOpen(false);
+          }}
+        />
       )}
 
       {/* Locker QR */}

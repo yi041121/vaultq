@@ -25,6 +25,8 @@ export interface UserClaim {
   evidenceImageUrl: string | null;
   evidenceImageUrls: string[];
   evidenceUploadedAt: string;
+  adminNote: string | null;
+  lostReportDescription: string | null;
   itemImageUrl: string | null;
   itemImageUrls: string[];
   itemStatus: string;
@@ -78,6 +80,8 @@ export function mapUserClaim(raw: any): UserClaim {
         ? [raw.evidenceImageUrl]
         : [],
     evidenceUploadedAt: raw?.evidenceUploadedAt ? String(raw.evidenceUploadedAt) : raw?.createdAt ? String(raw.createdAt) : "",
+    adminNote: raw?.adminNote || null,
+    lostReportDescription: raw?.matchedReportDescription || null,
     itemImageUrl: raw?.item?.imageUrl || null,
     itemImageUrls: Array.from(new Set([
       raw?.item?.imageUrl,

@@ -7,7 +7,7 @@ import { colors, radius, size, font, iconSize } from "@/lib/design";
 /* ---------------------------------- Button --------------------------------- */
 
 interface VButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "outline" | "danger" | "ghost";
+  variant?: "primary" | "secondary" | "outline" | "danger" | "ghost" | "success";
   size?: "sm" | "md" | "lg";
 }
 
@@ -19,6 +19,7 @@ export function VButton({ variant = "primary", size: btnSize = "md", className =
     secondary: { backgroundColor: colors.borderLight, color: colors.textMuted },
     outline: { backgroundColor: colors.card, color: colors.textMuted, border: `1px solid ${colors.border}` },
     danger: { backgroundColor: "#fef2f2", color: colors.danger, border: `1px solid #fecaca` },
+    success: { backgroundColor: "#16a34a", color: "#fff", boxShadow: "0 2px 6px rgba(22,163,74,0.25)" },
     ghost: { backgroundColor: "transparent", color: colors.textMuted },
   };
   const hovers: Record<string, React.CSSProperties> = {
@@ -26,6 +27,7 @@ export function VButton({ variant = "primary", size: btnSize = "md", className =
     secondary: { backgroundColor: "#cbd5e1" },
     outline: { backgroundColor: colors.primarySoft, borderColor: colors.primary, color: colors.primary },
     danger: { backgroundColor: "#fee2e2" },
+    success: { backgroundColor: "#15803d", boxShadow: "0 3px 10px rgba(21,128,61,0.3)" },
     ghost: { backgroundColor: colors.borderLight },
   };
   const disabled = props.disabled;

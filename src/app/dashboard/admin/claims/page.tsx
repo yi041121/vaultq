@@ -3,24 +3,30 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Package, Grid3X3, Lock, FileText, Users, Search, Clock, MapPin,
-  CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, QrCode,
+  Package, Grid3X3, Lock, FileText, Users, Search, Clock,
+  CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, Sparkles,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
 import { EvidenceSlider } from "@/components/evidence-slider";
+import { PhotoViewerModal } from "@/components/photo-viewer-modal";
+import { ItemDetailsModal } from "@/components/item-details-modal";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { suggestMatches, suggestionLabel } from "@/lib/report-match";
 import { categoryIcon } from "@/lib/category-icons";
 import {
-  VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c,
+  VCard, VBadge, VButton, VInput, VTextarea, VSearchInput, VPagination,
+  VDropdown, VDropdownItem, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 
 const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
+  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
@@ -31,6 +37,7 @@ type Claim = {
   category: string;
   student: string;
   studentId: string;
+  studentEmail?: string;
   location: string;
   date: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
@@ -39,18 +46,114 @@ type Claim = {
   evidencePreview?: string | null;
   evidenceImageUrls?: string[];
   itemImageUrl?: string | null;
+  itemImageUrls?: string[];
+  itemDescription?: string;
+  itemStatus?: string;
+  itemFoundDate?: string;
+  itemCreatedAt?: string;
+  source?: "STUDENT" | "MATCH";
+  matchedReportId?: string | null;
+  adminNote?: string | null;
+  matchedReportDescription?: string | null;
+  evidenceUploadedAt?: string;
+  createdAt?: string;
+  approvedAt?: string | null;
 };
 
+type LostReport = {
+  id: string;
+  itemName: string;
+  category: string;
+  description: string;
+  location: string;
+  date: string;
+  status: string;
+  images: string[];
+  student: string;
+  studentId: string;
+  studentEmail?: string;
+};
+
+function fmtDateValue(value?: string) {
+  if (!value) return "—";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtClockValue(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 const statusOptions = ["All", "PENDING", "APPROVED", "REJECTED"] as const;
+
+const CLAIM_REJECT_REASONS = [
+  "Evidence doesn't match",
+  "Item already claimed",
+  "Insufficient proof",
+  "Owner could not verify",
+];
+const LOST_REJECT_REASONS = [
+  "Item not found",
+  "Duplicate report",
+  "Incorrect details",
+  "Reported by mistake",
+];
+
+type VerificationRow = {
+  kind: "CLAIM" | "LOST";
+  id: string;
+  itemName: string;
+  category: string;
+  student: string;
+  studentEmail: string;
+  studentId: string;
+  location: string;
+  date: string;
+  status: string;
+  searchFields: string[];
+  claim?: Claim;
+  report?: LostReport;
+};
 
 function statusColor(s: string) {
   switch (s) {
     case "PENDING": return "#64748b";
     case "APPROVED": return "#16a34a";
     case "REJECTED": return "#dc2626";
+    case "MATCHED": return "#7FB8B5";
+    case "CLOSED": return "#355C8A";
     default: return "#64748b";
   }
 }
+
+function reportStatusLabel(s: string) {
+  switch (s) {
+    case "PENDING": return "Pending";
+    case "MATCHED": return "Matched";
+    case "APPROVED": return "Approved";
+    case "VERIFIED": return "Verified";
+    case "REJECTED": return "Rejected";
+    case "CLOSED": return "Closed";
+    default: return s;
+  }
+}
+
+type FoundItem = {
+  id: string;
+  itemName: string;
+  category: string | null;
+  description: string | null;
+  foundLocation: string | null;
+  foundDate: string | null;
+  imageUrl: string | null;
+  locker: { lockerNumber: string } | null;
+};
+
+type MatchPreview = { item: FoundItem; images: string[]; index: number };
 
 let claimsCache: Claim[] | null = null;
 
@@ -60,12 +163,30 @@ export default function AdminClaims() {
   const [mounted, setMounted] = useState(false);
   const [claims, setClaims] = useState<Claim[]>(claimsCache ?? []);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
+  const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("PENDING");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [compareClaim, setCompareClaim] = useState<Claim | null>(null);
-  const [qrOpen, setQrOpen] = useState(false);
-  const [qrToken, setQrToken] = useState("");
-  const [qrVerifying, setQrVerifying] = useState(false);
+  const [claimItemDetail, setClaimItemDetail] = useState<Claim | null>(null);
+  const [photoIndices, setPhotoIndices] = useState<Record<string, number>>({});
+  const [lostLoaded, setLostLoaded] = useState(false);
+  const [matchTarget, setMatchTarget] = useState<LostReport | null>(null);
+  const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
+  const [matchQuery, setMatchQuery] = useState("");
+  const [showMatchSearch, setShowMatchSearch] = useState(false);
+  const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
+  const [confirmMatchItem, setConfirmMatchItem] = useState<FoundItem | null>(null);
+  const [matching, setMatching] = useState(false);
+  const [lostReports, setLostReports] = useState<LostReport[]>([]);
+  const [photoViewer, setPhotoViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
+  const [lostDetail, setLostDetail] = useState<LostReport | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<{ kind: "CLAIM" | "LOST"; id: string; itemName: string } | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<{ id: string; itemName: string } | null>(null);
+  const [approveNote, setApproveNote] = useState("");
+  const [approving, setApproving] = useState(false);
   const [loading, setLoading] = useState(claimsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const pageSize = 6;
@@ -82,6 +203,7 @@ export default function AdminClaims() {
       category: raw.item?.category || "Others",
       student: raw.user?.name || "Unknown",
       studentId: raw.user?.studentId || "—",
+      studentEmail: raw.user?.email || "",
       location: raw.item?.foundLocation || "",
       date: String(raw.createdAt || "").slice(0, 10),
       status: raw.status,
@@ -90,7 +212,58 @@ export default function AdminClaims() {
       evidencePreview: raw.evidenceImageUrl || null,
       evidenceImageUrls: Array.isArray(raw.evidenceImageUrls) ? raw.evidenceImageUrls : raw.evidenceImageUrl ? [raw.evidenceImageUrl] : [],
       itemImageUrl: raw.item?.imageUrl || null,
+      itemImageUrls: Array.from(new Set([
+        raw.item?.imageUrl,
+        ...(Array.isArray(raw.item?.reports?.[0]?.imageUrls) ? raw.item.reports[0].imageUrls : []),
+      ].filter((value): value is string => typeof value === "string" && value.length > 0))),
+      itemDescription: raw.item?.description || "",
+      itemStatus: raw.item?.status || "FOUND",
+      itemFoundDate: raw.item?.foundDate ? String(raw.item.foundDate).slice(0, 10) : "",
+      itemCreatedAt: raw.item?.createdAt ? String(raw.item.createdAt) : "",
+      source: raw.source === "MATCH" ? "MATCH" : "STUDENT",
+      matchedReportId: raw.matchedReportId || null,
+      adminNote: raw.adminNote || null,
+      matchedReportDescription: raw.matchedReportDescription || null,
+      evidenceUploadedAt: raw.evidenceUploadedAt ? String(raw.evidenceUploadedAt) : "",
+      createdAt: raw.createdAt ? String(raw.createdAt) : "",
+      approvedAt: raw.approvedAt ? String(raw.approvedAt) : null,
     };
+  }
+
+  async function fetchLostReports() {
+    try {
+      const res = await fetch("/api/reports", { headers: authHeaders(), cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) return;
+      setLostReports(
+        (data.data as any[])
+          .filter((r) => r.type === "LOST")
+          .map((r) => {
+            const images: string[] = Array.isArray(r.imageUrls) && r.imageUrls.length
+              ? r.imageUrls
+              : r.imageUrl
+                ? [r.imageUrl]
+                : [];
+            return {
+              id: r.id,
+              itemName: r.itemName || "Unknown item",
+              category: r.category || "Others",
+              description: r.description || "",
+              location: r.location || "",
+              date: String(r.date || r.createdAt || "").slice(0, 10),
+              status: r.status || "PENDING",
+              images,
+              student: r.user?.name || "Unknown",
+              studentId: r.user?.studentId || "—",
+              studentEmail: r.user?.email || "",
+            };
+          }),
+      );
+    } catch {
+      // Lost list stays as-is; claims can still be reviewed.
+    } finally {
+      setLostLoaded(true);
+    }
   }
 
   async function fetchClaims(openId?: string | null) {
@@ -129,31 +302,84 @@ export default function AdminClaims() {
       if (openId) window.history.replaceState(null, "", window.location.pathname);
     }
     fetchClaims(openId);
+    void fetchLostReports();
   }, []);
 
   function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
   useEscapeKey(!!compareClaim, () => setCompareClaim(null));
-  useEscapeKey(qrOpen, () => { if (!qrVerifying) setQrOpen(false); }, !qrVerifying);
+  useEscapeKey(!!claimItemDetail, () => setClaimItemDetail(null));
+  useEscapeKey(!!matchTarget && !photoViewer && !matchPreview, () => { if (!matching) setMatchTarget(null); }, !matching);
+  useEscapeKey(!!matchPreview && !photoViewer, () => setMatchPreview(null));
+  useEscapeKey(!!lostDetail && !photoViewer, () => setLostDetail(null));
 
   if (!user || !mounted) return null;
 
-  const filtered = claims.filter((cl) => {
-    if (!matchesSearch(query, [cl.itemName, cl.category, cl.student, cl.studentId, cl.location, cl.status, cl.locker, cl.id, cl.locker ? `locker ${cl.locker}` : "", ...dateSearchValues(cl.date)])) return false;
-    if (statusFilter !== "All" && cl.status !== statusFilter) return false;
-    return true;
+  // Claims and lost reports share one verification queue.
+  const rows: VerificationRow[] = [
+    ...claims.map((cl) => ({
+      kind: "CLAIM" as const,
+      id: cl.id,
+      itemName: cl.itemName,
+      category: cl.category,
+      student: cl.student,
+      studentEmail: cl.studentEmail || "",
+      studentId: cl.studentId,
+      location: cl.location,
+      date: cl.date,
+      status: cl.status,
+      searchFields: [
+        cl.itemName, cl.category, cl.student, cl.studentEmail || "", cl.studentId,
+        cl.location, cl.status, cl.locker || "", cl.id,
+        cl.locker ? `locker ${cl.locker}` : "", ...dateSearchValues(cl.date),
+      ],
+      claim: cl,
+    })),
+    ...lostReports
+      .filter((report) => report.status !== "CLOSED")
+      .map((report) => ({
+        kind: "LOST" as const,
+        id: report.id,
+        itemName: report.itemName,
+        category: report.category,
+        student: report.student,
+        studentEmail: report.studentEmail || "",
+        studentId: report.studentId,
+        location: report.location,
+        date: report.date,
+        status: report.status,
+        searchFields: [
+          report.itemName, report.category, report.description, report.location,
+          report.student, report.studentEmail || "", report.studentId,
+          report.id, ...dateSearchValues(report.date),
+        ],
+        report,
+      })),
+  ];
+
+  const filteredRows = rows.filter((row) => {
+    if (statusFilter !== "All" && row.status !== statusFilter) return false;
+    return matchesSearch(query, row.searchFields);
   });
 
-  const statusPriority: Record<Claim["status"], number> = { PENDING: 0, APPROVED: 1, REJECTED: 2 };
-  const sorted = [...filtered].sort((a, b) => {
-    const p = statusPriority[a.status] - statusPriority[b.status];
+  const statusPriority: Record<string, number> = { PENDING: 0, MATCHED: 1, APPROVED: 2, REJECTED: 3 };
+  const sortedRows = [...filteredRows].sort((a, b) => {
+    const p = (statusPriority[a.status] ?? 9) - (statusPriority[b.status] ?? 9);
     if (p !== 0) return p;
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
+    const diff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    return sortOrder === "newest" ? diff : -diff;
   });
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const paginated = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const hasFilters = !!(query || statusFilter !== "All");
+  const paginatedRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+
+  function movePhoto(key: string, delta: number, total: number) {
+    setPhotoIndices((prev) => {
+      const current = prev[key] ?? 0;
+      return { ...prev, [key]: (current + delta + total) % total };
+    });
+  }
 
   async function firstAvailableLocker(): Promise<string | null> {
     try {
@@ -164,7 +390,7 @@ export default function AdminClaims() {
     return null;
   }
 
-  async function handleApprove(id: string) {
+  async function handleApprove(id: string, note?: string) {
     try {
       const target = claims.find((claim) => claim.id === id);
       // Keep an already-assigned locker; only allocate one when the item has none.
@@ -172,150 +398,450 @@ export default function AdminClaims() {
       const res = await fetch(`/api/claims/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ action: "approve", ...(lockerNumber ? { lockerNumber } : {}) }),
+        body: JSON.stringify({
+          action: "approve",
+          ...(lockerNumber ? { lockerNumber } : {}),
+          ...(note?.trim() ? { adminNote: note.trim() } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Approve failed");
       const assigned = lockerNumber || target?.locker;
       showCenteredMessage("success", assigned ? `Claim approved — locker ${assigned} assigned` : "Claim approved");
-      await fetchClaims();
+      await Promise.all([fetchClaims(), fetchLostReports()]);
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Approve failed");
     }
   }
 
-  async function handleReject(id: string) {
+  async function openMatchFor(report: LostReport) {
+    setMatchTarget(report);
+    setMatchQuery("");
+    setShowMatchSearch(false);
     try {
-      const res = await fetch(`/api/claims/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ action: "reject" }),
-      });
+      const res = await fetch("/api/items?status=FOUND", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Reject failed");
-      showCenteredMessage("success", "Claim rejected");
-      await fetchClaims();
-    } catch (e: any) {
-      showCenteredMessage("error", e?.message || "Reject failed");
+      if (!res.ok || !data?.success) return;
+      setFoundItems(
+        (data.data as any[]).map((it) => ({
+          id: it.id,
+          itemName: it.itemName,
+          category: it.category,
+          description: it.description,
+          foundLocation: it.foundLocation,
+          foundDate: it.foundDate,
+          imageUrl: it.imageUrl || null,
+          locker: it.locker || null,
+        })),
+      );
+    } catch {
+      showCenteredMessage("error", "Could not load found items");
     }
   }
 
-  async function handleVerifyQr() {
-    const token = qrToken.trim();
-    if (!token) {
-      showCenteredMessage("error", "Scan or paste the student's QR token");
-      return;
-    }
-    if (qrVerifying) return;
-    setQrVerifying(true);
+  async function openMatchPreview(item: FoundItem) {
+    setMatchPreview({ item, images: item.imageUrl ? [item.imageUrl] : [], index: 0 });
     try {
-      const res = await fetch("/api/qrcode/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ token }),
+      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.success) {
-        showCenteredMessage("error", data.error || "QR verification failed");
-        return;
-      }
-      const itemName = data.data?.itemName || "Item";
-      const locker = data.data?.locker;
-      showCenteredMessage(
-        "success",
-        locker ? `${itemName} collected — locker ${locker} released` : `${itemName} collected`,
-      );
-      setQrOpen(false);
-      setQrToken("");
-      await fetchClaims();
+      const fresh = data?.data;
+      if (!res.ok || !data?.success || !fresh) return;
+      const reportImages: string[] = Array.isArray(fresh.reports)
+        ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
+        : [];
+      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      setMatchPreview((prev) => {
+        if (!prev || prev.item.id !== item.id) return prev;
+        const merged = Array.from(new Set([...prev.images, ...images]));
+        return { ...prev, images: merged, index: Math.min(prev.index, Math.max(0, merged.length - 1)) };
+      });
     } catch {
-      showCenteredMessage("error", "QR verification failed");
-    } finally {
-      setQrVerifying(false);
+      // Keep the list photo.
     }
   }
+
+  async function handleMatch(itemId: string) {
+    if (!matchTarget || matching) return;
+    setMatching(true);
+    try {
+      const res = await fetch("/api/claims/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ reportId: matchTarget.id, itemId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data.error || "Match failed");
+      showCenteredMessage("success", "Report matched — claim approved and pickup QR ready");
+      setMatchTarget(null);
+      await fetchLostReports();
+      await fetchClaims();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Match failed");
+    } finally {
+      setMatching(false);
+    }
+  }
+
+  async function handleRejectSubmit() {
+    if (!rejectTarget || rejecting) return;
+    setRejecting(true);
+    try {
+      const endpoint = rejectTarget.kind === "CLAIM" ? `/api/claims/${rejectTarget.id}` : `/api/reports/${rejectTarget.id}`;
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "reject", ...(rejectNote.trim() ? { adminNote: rejectNote.trim() } : {}) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data.error || "Reject failed");
+      showCenteredMessage("success", rejectTarget.kind === "CLAIM" ? "Claim rejected" : "Lost report rejected");
+      setRejectTarget(null);
+      setRejectNote("");
+      if (rejectTarget.kind === "CLAIM") await Promise.all([fetchClaims(), fetchLostReports()]);
+      else await fetchLostReports();
+    } catch (e: any) {
+      showCenteredMessage("error", e?.message || "Reject failed");
+    } finally {
+      setRejecting(false);
+    }
+  }
+
+  const suggestions = matchTarget
+    ? suggestMatches(
+        {
+          itemName: matchTarget.itemName,
+          category: matchTarget.category,
+          description: matchTarget.description,
+          location: matchTarget.location,
+          date: matchTarget.date,
+        },
+        foundItems,
+        { limit: 3 },
+      )
+    : [];
+  const suggestionRows = suggestions.flatMap((suggestion) => {
+    const item = foundItems.find((candidate) => candidate.id === suggestion.itemId);
+    return item ? [{ ...suggestion, item }] : [];
+  });
+  const matchResults = foundItems.filter((item) =>
+    matchesSearch(matchQuery, [
+      item.itemName,
+      item.description,
+      item.foundLocation,
+      item.category,
+      item.locker?.lockerNumber ? `locker ${item.locker.lockerNumber}` : "",
+    ])
+  ).slice(0, 8);
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="Claim Verification" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full h-full flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
+        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           <div className="flex flex-wrap items-center gap-2 mb-6">
-            <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" placeholder="Search claim, item or student..." />
+            <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl"
+              placeholder="Search item, student, email or claim ID..." />
+
             <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
               {statusOptions.map((s) => (
                 <button key={s} type="button"
-                  className="px-3.5 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
+                  className="px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
                   style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
                   onClick={() => { setStatusFilter(s); setPage(1); }}>
-                  {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
+                  {s === "All" ? "All" : reportStatusLabel(s)}
                 </button>
               ))}
             </div>
-            {hasFilters && (
-              <button type="button"
-                className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border bg-white transition-all duration-200 cursor-pointer"
-                style={{ borderColor: c.borderLight, color: c.primary, fontWeight: "600" }}
-                onClick={() => { setQuery(""); setStatusFilter("All"); setPage(1); }}>
-                <RotateCcw size={13} /><span>Reset</span>
-              </button>
-            )}
-            <VButton
-              variant="secondary"
-              className="ml-auto"
-              onClick={() => { setQrToken(""); setQrOpen(true); }}
-            >
-              <QrCode size={14} /> Verify pickup QR
-            </VButton>
+
+            <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-40"
+              trigger={
+                <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
+                  <ArrowUpDown size={13} style={{ color: c.textMuted }} />
+                  <span>{sortOrder === "newest" ? "Newest first" : "Oldest first"}</span>
+                  <ChevronDown size={12} style={{ color: c.textMuted }} />
+                </VFilterButton>
+              }>
+              {(close) => (
+                <>
+                  <VDropdownItem active={sortOrder === "newest"} onSelect={() => { setSortOrder("newest"); setPage(1); close(); }}>Newest first</VDropdownItem>
+                  <VDropdownItem active={sortOrder === "oldest"} onSelect={() => { setSortOrder("oldest"); setPage(1); close(); }}>Oldest first</VDropdownItem>
+                </>
+              )}
+            </VDropdown>
           </div>
 
-          {loading ? null : loadError ? (
+          {loading || !lostLoaded ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load claims</p>
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load verification queue</p>
               <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => void fetchClaims()}>
+              <VButton variant="secondary" onClick={() => void Promise.all([fetchClaims(), fetchLostReports()])}>
                 <RotateCcw size={14} /> Try again
               </VButton>
             </VCard>
-          ) : sorted.length === 0 ? (
+          ) : sortedRows.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims found</p>
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims or lost reports found</p>
               <p className="text-sm mt-1" style={{ color: c.textLight }}>Try adjusting filters.</p>
             </VCard>
           ) : (
             <>
-              <div className="space-y-4 flex-1">
-                {paginated.map((cl) => (
-                  <VCard key={cl.id} className="p-5 flex flex-col gap-4 cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => setCompareClaim(cl)}>
-                    <div className="flex flex-col lg:flex-row gap-4">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 hidden lg:flex"
-                        style={{ backgroundColor: `${statusColor(cl.status)}15` }}>
-                        <FileText size={20} style={{ color: statusColor(cl.status) }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <h3 className="text-sm font-semibold" style={{ color: c.text }}>{cl.itemName}</h3>
-                          <VBadge color={statusColor(cl.status)}>{cl.status}</VBadge>
-                          <span className="text-xs flex items-center gap-1" style={{ color: c.textLight }}>
-                            {cl.id} · {(() => { const CatIcon = categoryIcon(cl.category); return <CatIcon size={12} style={{ color: c.primary }} />; })()} {cl.category}
-                          </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 content-start flex-1">
+                {paginatedRows.map((row) => {
+                  if (row.kind === "CLAIM" && row.claim) {
+                    const cl = row.claim;
+                    const CatIcon = categoryIcon(cl.category);
+                    const evidencePhotos = cl.evidenceImageUrls?.length
+                      ? cl.evidenceImageUrls
+                      : cl.evidencePreview
+                        ? [cl.evidencePreview]
+                        : [];
+                    const itemPhotos = cl.itemImageUrls?.length
+                      ? cl.itemImageUrls
+                      : cl.itemImageUrl
+                        ? [cl.itemImageUrl]
+                        : [];
+                    const itemKey = `${cl.id}-item`;
+                    const evidenceKey = `${cl.id}-evidence`;
+                    const itemPhotoIndex = Math.min(photoIndices[itemKey] ?? 0, Math.max(0, itemPhotos.length - 1));
+                    const evidenceIndex = Math.min(photoIndices[evidenceKey] ?? 0, Math.max(0, evidencePhotos.length - 1));
+                    return (
+                      <VCard key={`claim-${cl.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => setCompareClaim(cl)}>
+                        <div className="p-4 flex items-start gap-3">
+                          <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
+                            style={{ borderColor: c.borderLight, backgroundColor: `${c.primary}0f` }}>
+                            <CatIcon size={22} style={{ color: c.primary }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <h3 className="text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{cl.itemName}</h3>
+                              {(cl.source === "MATCH" || cl.matchedReportDescription) ? (
+                                <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid ${c.primary}55` }}>Lost report</VBadge>
+                              ) : (
+                                <VBadge color="#64748b" style={{ backgroundColor: "transparent", border: "1px solid #cbd5e1" }}>Claim</VBadge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 min-w-0">
+                              <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
+                                {cl.student} · {cl.studentEmail || (cl.studentId !== "—" ? cl.studentId : "—")}
+                              </p>
+                              <VBadge color={statusColor(cl.status)} style={{ flexShrink: 0 }}>{reportStatusLabel(cl.status)}</VBadge>
+                            </div>
+                            <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: c.textMuted }}>
+                              <Clock size={12} /> Submitted {fmtDateValue(cl.createdAt || cl.date)}{cl.createdAt ? ` · ${fmtClockValue(cl.createdAt)}` : ""}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-xs" style={{ color: c.textMuted }}>{cl.student} ({cl.studentId}) · {cl.location}</p>
-                        <p className="text-xs mt-1 flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {new Date(cl.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} {cl.locker && <>· <Lock size={12} /> Locker {cl.locker}</>}</p>
-                        <p className="text-xs mt-2 p-2.5 rounded-lg" style={{ backgroundColor: c.fill, color: c.textMuted }}>&quot;{cl.reason}&quot;</p>
-                        <p className="text-[11px] mt-2 flex items-center gap-1" style={{ color: c.textLight }}><Camera size={11} /> Click to compare photos and verify</p>
+
+                        <div className="px-4">
+                          <p className="text-[11px] font-semibold" style={{ color: c.text }}>Claim explanation</p>
+                          <p className="text-xs mt-1 leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>&quot;{cl.reason}&quot;</p>
+                          {(cl.status === "REJECTED" || cl.approvedAt) && (
+                            <p className="text-[11px] mt-1.5 flex items-center gap-1" style={{ color: c.textLight }}>
+                              {cl.status === "REJECTED" ? (
+                                (cl.approvedAt || cl.createdAt) ? (
+                                  <><XCircle size={11} /> Rejected by admin · {fmtDateValue(cl.approvedAt || cl.createdAt)} · {fmtClockValue(cl.approvedAt || cl.createdAt)}</>
+                                ) : (
+                                  <><XCircle size={11} /> Rejected</>
+                                )
+                              ) : (
+                                <><CheckCircle2 size={11} /> Approved by admin · {fmtDateValue(cl.approvedAt!)} · {fmtClockValue(cl.approvedAt!)}</>
+                              )}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="px-4 mt-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: c.textLight }}>Found item photo</p>
+                              <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                                {itemPhotos.length > 0 ? (
+                                  <div className="relative">
+                                    <button type="button" aria-label="View found item details"
+                                      className="relative block w-full aspect-[4/3] group cursor-pointer"
+                                      style={{ backgroundColor: c.fill }}
+                                      onClick={() => setClaimItemDetail(cl)}>
+                                      <img src={itemPhotos[itemPhotoIndex]} alt="" className="w-full h-full object-cover" />
+                                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
+                                        <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
+                                          <Eye size={12} /> Item details
+                                        </span>
+                                      </span>
+                                    </button>
+                                    {itemPhotos.length > 1 && (
+                                      <>
+                                        <button type="button" aria-label="Previous item photo"
+                                          className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-white/90 shadow flex items-center justify-center cursor-pointer"
+                                          style={{ color: c.textMuted }}
+                                          onClick={(e) => { e.stopPropagation(); movePhoto(itemKey, -1, itemPhotos.length); }}>
+                                          <ChevronLeft size={14} />
+                                        </button>
+                                        <button type="button" aria-label="Next item photo"
+                                          className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-white/90 shadow flex items-center justify-center cursor-pointer"
+                                          style={{ color: c.textMuted }}
+                                          onClick={(e) => { e.stopPropagation(); movePhoto(itemKey, 1, itemPhotos.length); }}>
+                                          <ChevronRight size={14} />
+                                        </button>
+                                        <span className="absolute top-1.5 right-1.5 z-10 h-5 min-w-[28px] px-1.5 rounded-full bg-black/60 text-white text-[9px] font-bold flex items-center justify-center tabular-nums">
+                                          {itemPhotoIndex + 1}/{itemPhotos.length}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-1"
+                                    style={{ backgroundColor: c.fill, color: c.textLight }}>
+                                    <Package size={22} />
+                                    <span className="text-[10px]">No item photo</span>
+                                  </div>
+                                )}
+                                <p className="text-[10px] text-center py-1.5" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                                  {fmtDateValue(cl.itemFoundDate)}{cl.itemCreatedAt ? ` · ${fmtClockValue(cl.itemCreatedAt)}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: c.textLight }}>Student evidence photo</p>
+                              <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                                {evidencePhotos.length > 0 ? (
+                                  <div className="relative">
+                                    <button type="button" aria-label="View student evidence photo"
+                                      className="relative block w-full aspect-[4/3] group cursor-pointer"
+                                      style={{ backgroundColor: c.fill }}
+                                      onClick={() => setPhotoViewer({ photos: evidencePhotos, index: evidenceIndex, title: `${cl.itemName} evidence` })}>
+                                      <img src={evidencePhotos[evidenceIndex]} alt="" className="w-full h-full object-cover" />
+                                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150" />
+                                    </button>
+                                    {evidencePhotos.length > 1 && (
+                                      <>
+                                        <button type="button" aria-label="Previous evidence photo"
+                                          className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-white/90 shadow flex items-center justify-center cursor-pointer"
+                                          style={{ color: c.textMuted }}
+                                          onClick={(e) => { e.stopPropagation(); movePhoto(evidenceKey, -1, evidencePhotos.length); }}>
+                                          <ChevronLeft size={14} />
+                                        </button>
+                                        <button type="button" aria-label="Next evidence photo"
+                                          className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-white/90 shadow flex items-center justify-center cursor-pointer"
+                                          style={{ color: c.textMuted }}
+                                          onClick={(e) => { e.stopPropagation(); movePhoto(evidenceKey, 1, evidencePhotos.length); }}>
+                                          <ChevronRight size={14} />
+                                        </button>
+                                        <span className="absolute top-1.5 right-1.5 z-10 h-5 min-w-[28px] px-1.5 rounded-full bg-black/60 text-white text-[9px] font-bold flex items-center justify-center tabular-nums">
+                                          {evidenceIndex + 1}/{evidencePhotos.length}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-1"
+                                    style={{ backgroundColor: c.fill, color: c.textLight }}>
+                                    <Camera size={22} />
+                                    <span className="text-[10px]">No evidence photo</span>
+                                  </div>
+                                )}
+                                <p className="text-[10px] text-center py-1.5" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                                  {fmtDateValue(cl.evidenceUploadedAt || cl.createdAt || cl.date)}
+                                  {(cl.evidenceUploadedAt || cl.createdAt) ? ` · ${fmtClockValue(cl.evidenceUploadedAt || cl.createdAt)}` : ""}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {cl.status === "PENDING" && (
+                          <div className="mt-auto pt-4">
+                            <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: "#fbfcfe" }} onClick={(e) => e.stopPropagation()}>
+                              <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "CLAIM", id: cl.id, itemName: cl.itemName }); }}>
+                                <XCircle size={13} /> Reject
+                              </VButton>
+                              <VButton size="sm" onClick={() => { setApproveNote(""); setApproveTarget({ id: cl.id, itemName: cl.itemName }); }}>
+                                <CheckCircle2 size={13} /> Approve
+                              </VButton>
+                            </div>
+                          </div>
+                        )}
+                      </VCard>
+                    );
+                  }
+
+                  const report = row.report!;
+                  const Icon = categoryIcon(report.category);
+                  return (
+                    <VCard key={`lost-${report.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => setLostDetail(report)}>
+                      <div className="p-4 flex items-start gap-3">
+                        <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
+                          style={{ borderColor: c.borderLight, backgroundColor: `${c.primary}0f` }}>
+                          <Icon size={22} style={{ color: c.primary }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h3 className="text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{report.itemName}</h3>
+                            <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid ${c.primary}55` }}>Lost report</VBadge>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 min-w-0">
+                            <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
+                              {report.student} · {report.studentEmail || (report.studentId !== "—" ? report.studentId : "—")}
+                            </p>
+                            <VBadge color={statusColor(report.status)} style={{ flexShrink: 0 }}>{reportStatusLabel(report.status)}</VBadge>
+                          </div>
+                          <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: c.textMuted }}>
+                            <Clock size={12} /> {fmtDateValue(report.date)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 lg:flex-col xl:flex-row shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <VButton variant="outline" size="md" onClick={() => setCompareClaim(cl)}><Eye size={14} /> View</VButton>
+
+                      <div className="px-4">
+                        <p className="text-[11px] font-semibold" style={{ color: c.text }}>Report description</p>
+                        <p className="text-xs mt-1 leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>&quot;{report.description}&quot;</p>
+                        {report.status !== "PENDING" && (
+                          <p className="text-[11px] mt-1.5 flex items-center gap-1" style={{ color: c.textLight }}>
+                            {report.status === "MATCHED" ? (
+                              <><CheckCircle2 size={11} /> Matched — claim awaiting approval</>
+                            ) : (
+                              <><XCircle size={11} /> Rejected</>
+                            )}
+                          </p>
+                        )}
                       </div>
-                    </div>
-                  </VCard>
-                ))}
+
+                      {report.images.length > 0 && (
+                        <div className="px-4 mt-3" onClick={(e) => e.stopPropagation()}>
+                          <p className="text-[11px] font-semibold" style={{ color: c.text }}>Report photos</p>
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            {report.images.slice(0, 3).map((src, index) => (
+                              <button key={`${report.id}-photo-${index}`} type="button" aria-label={`View report photo ${index + 1}`}
+                                className="relative w-10 h-10 rounded-lg overflow-hidden border group cursor-pointer shrink-0"
+                                style={{ borderColor: c.border }}
+                                onClick={() => setPhotoViewer({ photos: report.images, index, title: `${report.itemName} report` })}>
+                                <img src={src} alt="" className="w-full h-full object-cover" />
+                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-150" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {report.status === "PENDING" && (
+                        <div className="mt-auto pt-4">
+                          <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: "#fbfcfe" }} onClick={(e) => e.stopPropagation()}>
+                            <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "LOST", id: report.id, itemName: report.itemName }); }}>
+                              <XCircle size={13} /> Reject
+                            </VButton>
+                            <VButton size="sm" onClick={() => void openMatchFor(report)}><PackageSearch size={13} /> Match</VButton>
+                          </div>
+                        </div>
+                      )}
+                    </VCard>
+                  );
+                })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length} results
+                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sortedRows.length)} of {sortedRows.length} results
                 </span>
                 <VPagination current={currentPage} total={totalPages} onPage={setPage} />
               </div>
@@ -324,20 +850,303 @@ export default function AdminClaims() {
         </div>
       </main>
 
+      {claimItemDetail && (
+        <ItemDetailsModal
+          zIndex="z-[70]"
+          title={claimItemDetail.itemName}
+          statusLabel={claimItemDetail.itemStatus === "CLAIMED" ? "Claimed" : claimItemDetail.itemStatus === "RETRIEVED" ? "Retrieved" : "Found"}
+          statusColor={claimItemDetail.itemStatus === "CLAIMED" ? c.primary : c.accent}
+          category={claimItemDetail.category}
+          location={claimItemDetail.location}
+          date={fmtDateValue(claimItemDetail.itemFoundDate)}
+          description={claimItemDetail.itemDescription || ""}
+          photos={claimItemDetail.itemImageUrls?.length ? claimItemDetail.itemImageUrls : claimItemDetail.itemImageUrl ? [claimItemDetail.itemImageUrl] : []}
+          onClose={() => setClaimItemDetail(null)}
+          footer={<VButton variant="secondary" className="flex-1" onClick={() => setClaimItemDetail(null)}>Close</VButton>}
+        />
+      )}
+
       {/* Compare photos pop-out */}
+      {lostDetail && (
+        <ItemDetailsModal
+          zIndex="z-[60]"
+          title={lostDetail.itemName}
+          statusLabel={lostDetail.status === "PENDING" ? "Pending" : lostDetail.status === "MATCHED" ? "Matched" : lostDetail.status === "REJECTED" ? "Rejected" : lostDetail.status === "CLOSED" ? "Closed" : lostDetail.status}
+          statusColor={statusColor(lostDetail.status)}
+          category={lostDetail.category}
+          location={lostDetail.location}
+          date={lostDetail.date ? new Date(`${lostDetail.date}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+          description={lostDetail.description}
+          photos={lostDetail.images}
+          onViewPhoto={() => setPhotoViewer({ photos: lostDetail.images, index: 0, title: lostDetail.itemName })}
+          onClose={() => setLostDetail(null)}
+          extra={<span className="flex items-center gap-1"><Users size={12} /> {lostDetail.student} ({lostDetail.studentEmail || lostDetail.studentId})</span>}
+          footer={lostDetail.status === "PENDING" ? (
+            <>
+              <VButton variant="danger" className="flex-1" onClick={() => { const target = lostDetail; setLostDetail(null); setRejectTarget({ kind: "LOST", id: target.id, itemName: target.itemName }); setRejectNote(""); }}>
+                <XCircle size={14} /> Reject
+              </VButton>
+              <VButton className="flex-1" onClick={() => { const target = lostDetail; setLostDetail(null); void openMatchFor(target); }}>
+                <PackageSearch size={14} /> Match
+              </VButton>
+            </>
+          ) : undefined}
+        />
+      )}
+
+      {photoViewer && (
+        <PhotoViewerModal
+          photos={photoViewer.photos}
+          index={photoViewer.index}
+          title={photoViewer.title}
+          onIndexChange={(index) => setPhotoViewer((prev) => (prev ? { ...prev, index } : prev))}
+          onClose={() => setPhotoViewer(null)}
+        />
+      )}
+
+      {approveTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!approving) setApproveTarget(null); }} />
+          <VCard className="relative w-full max-w-md p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Approve claim?</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{approveTarget.itemName}</p>
+              </div>
+              <button type="button" onClick={() => { if (!approving) setApproveTarget(null); }} aria-label="Close approve dialog"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+              Reason <span className="font-normal" style={{ color: c.textLight }}>(optional)</span>
+            </label>
+            <VTextarea value={approveNote} onChange={(e) => setApproveNote(e.target.value)} rows={3}
+              maxLength={500} placeholder="Add a note for the student (optional)..." />
+            <p className="text-[11px] mt-2" style={{ color: c.textLight }}>
+              A locker is assigned automatically and the student can generate the pickup QR immediately.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <VButton variant="secondary" onClick={() => { if (!approving) setApproveTarget(null); }}>Cancel</VButton>
+              <VButton onClick={async () => {
+                if (approving) return;
+                setApproving(true);
+                await handleApprove(approveTarget.id, approveNote);
+                setApproving(false);
+                setApproveTarget(null);
+              }} disabled={approving}>
+                {approving ? "Approving..." : "Approve"}
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!rejecting) setRejectTarget(null); }} />
+          <VCard className="relative w-full max-w-md p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>
+                  {rejectTarget.kind === "CLAIM" ? "Reject claim?" : "Reject lost report?"}
+                </h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{rejectTarget.itemName}</p>
+              </div>
+              <button type="button" onClick={() => { if (!rejecting) setRejectTarget(null); }} aria-label="Close reject dialog"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+              Reason <span className="font-normal" style={{ color: c.textLight }}>(optional)</span>
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {(rejectTarget.kind === "CLAIM" ? CLAIM_REJECT_REASONS : LOST_REJECT_REASONS).map((reason) => {
+                const active = rejectNote === reason;
+                return (
+                  <button key={reason} type="button" onClick={() => setRejectNote(active ? "" : reason)}
+                    className="h-7 px-2.5 rounded-full border text-[11px] font-medium cursor-pointer transition-colors duration-150"
+                    style={{
+                      borderColor: active ? c.danger : c.border,
+                      color: active ? c.danger : c.textMuted,
+                      backgroundColor: active ? "#fef2f2" : "#fff",
+                    }}>
+                    {reason}
+                  </button>
+                );
+              })}
+            </div>
+            <VTextarea value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} rows={3}
+              maxLength={500} placeholder="Let the student know why it was rejected..." />
+
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <VButton variant="secondary" onClick={() => { if (!rejecting) setRejectTarget(null); }}>Cancel</VButton>
+              <VButton variant="danger" onClick={handleRejectSubmit} disabled={rejecting}>
+                {rejecting ? "Rejecting..." : "Reject"}
+              </VButton>
+            </div>
+          </VCard>
+        </div>
+      )}
+
+      {matchTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!matching) setMatchTarget(null); }} />
+          <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Match a found item</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{matchTarget.itemName} · {matchTarget.student}</p>
+              </div>
+              <button type="button" onClick={() => { if (!matching) setMatchTarget(null); }} aria-label="Close match dialog"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <p className="text-xs mb-3" style={{ color: c.textMuted }}>
+              The lost report is matched and the claim is approved immediately. The student gets a pickup QR right away.
+            </p>
+
+            {!showMatchSearch && suggestionRows.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-semibold flex items-center gap-1.5 mb-2" style={{ color: c.text }}>
+                  <Sparkles size={13} style={{ color: c.primary }} /> Suggested matches
+                </p>
+                <div className="space-y-2">
+                  {suggestionRows.map(({ item, score }) => {
+                    const chip =
+                      score >= 70
+                        ? { backgroundColor: "#dcfce7", color: "#15803d" }
+                        : score >= 50
+                          ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
+                          : { backgroundColor: c.fill, color: c.textMuted };
+                    return (
+                      <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
+                        style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}
+                        onClick={() => void openMatchPreview(item)}>
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
+                            <Package size={16} style={{ color: c.primary }} />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
+                            <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={chip}>
+                              {suggestionLabel(score)} {score}
+                            </span>
+                          </div>
+                          <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
+                            {item.category || "Others"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                          </p>
+                        </div>
+                        <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
+                          View
+                        </VButton>
+                        <VButton size="sm" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
+                          Match
+                        </VButton>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {suggestionRows.length > 0 && !showMatchSearch ? (
+              <button type="button"
+                className="text-[11px] font-semibold underline hover:opacity-70 cursor-pointer"
+                style={{ color: c.primary }}
+                onClick={() => { setShowMatchSearch(true); setMatchQuery(""); }}>
+                Search all found items
+              </button>
+            ) : (
+              <>
+                <VSearchInput value={matchQuery} onChange={setMatchQuery} placeholder="Search found items..." className="mb-3" />
+                <div className="space-y-2 max-h-56 overflow-auto">
+                  {matchResults.length === 0 ? (
+                    <p className="text-xs py-3 text-center" style={{ color: c.textLight }}>No found items match your search.</p>
+                  ) : matchResults.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
+                      onClick={() => void openMatchPreview(item)}>
+                      {item.imageUrl ? (
+                        <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
+                          <Package size={16} style={{ color: c.primary }} />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
+                        <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
+                          {item.category || "Others"} · {item.foundLocation || "—"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                        </p>
+                      </div>
+                      <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
+                        View
+                      </VButton>
+                      <VButton size="sm" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
+                        Match
+                      </VButton>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </VCard>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!confirmMatchItem}
+        title="Match and approve this item?"
+        tone="primary"
+        confirmLabel="Match & approve"
+        onCancel={() => setConfirmMatchItem(null)}
+        onConfirm={() => {
+          const item = confirmMatchItem;
+          setConfirmMatchItem(null);
+          if (item) void handleMatch(item.id);
+        }}
+      />
+
+      {matchPreview && (
+        <ItemDetailsModal
+          zIndex="z-[70]"
+          title={matchPreview.item.itemName}
+          statusLabel="Found"
+          statusColor={c.primary}
+          category={matchPreview.item.category || "Others"}
+          location={matchPreview.item.foundLocation}
+          date={matchPreview.item.foundDate ? String(matchPreview.item.foundDate).slice(0, 10) : "—"}
+          description={matchPreview.item.description}
+          photos={matchPreview.images}
+          photoIndex={matchPreview.index}
+          onPhotoIndexChange={(index) => setMatchPreview((prev) => (prev ? { ...prev, index } : prev))}
+          onViewPhoto={() => setPhotoViewer({ photos: matchPreview.images, index: matchPreview.index, title: matchPreview.item.itemName })}
+          onClose={() => setMatchPreview(null)}
+          footer={<VButton variant="secondary" className="flex-1" onClick={() => setMatchPreview(null)}>Close</VButton>}
+        />
+      )}
+
       {compareClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setCompareClaim(null)} />
           <VCard className="relative w-full max-w-3xl max-h-[90vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-1">
               <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Compare photos</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{compareClaim.itemName} · {compareClaim.id} · {compareClaim.student} ({compareClaim.studentId})</p>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Details</h3>
               </div>
               <button type="button" onClick={() => setCompareClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
-            <p className="text-xs mb-4 p-2.5 rounded-lg" style={{ backgroundColor: c.fill, color: c.textMuted }}>&quot;{compareClaim.reason}&quot;</p>
-            <div className="grid sm:grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-2 gap-4 mb-4">
               <div>
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
@@ -349,7 +1158,10 @@ export default function AdminClaims() {
                       <span className="text-xs">No item photo uploaded</span>
                     </div>
                   )}
-                  <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>{compareClaim.location} · {compareClaim.date}</p>
+                  <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                    {fmtDateValue(compareClaim.itemFoundDate)}
+                    {compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}
+                  </p>
                 </div>
               </div>
               <div>
@@ -358,74 +1170,64 @@ export default function AdminClaims() {
                   <EvidenceSlider
                     photos={compareClaim.evidenceImageUrls?.length ? compareClaim.evidenceImageUrls : [compareClaim.evidencePreview!]}
                     alt="Evidence"
-                    caption={`Uploaded by ${compareClaim.student}`}
+                    caption={`${fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}${(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}`}
                   />
                 ) : (
-                  <div className="w-full h-64 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2" style={{ borderColor: c.border, backgroundColor: c.fill, color: c.textLight }}>
-                    <Camera size={22} />
-                    <span className="text-xs">No photo evidence provided</span>
+                  <div className="rounded-xl overflow-hidden border-2 border-dashed" style={{ borderColor: c.border }}>
+                    <div className="w-full h-64 flex flex-col items-center justify-center gap-2" style={{ backgroundColor: c.fill, color: c.textLight }}>
+                      <Camera size={22} />
+                      <span className="text-xs">No photo evidence provided</span>
+                    </div>
+                    <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                      {fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}
+                      {(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}
+                    </p>
                   </div>
                 )}
               </div>
             </div>
+            {(compareClaim.matchedReportDescription || compareClaim.reason) && (
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
+                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>
+                  {compareClaim.matchedReportDescription ? "Lost report description" : "Claim reason"}
+                </p>
+                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
+                  {compareClaim.matchedReportDescription || compareClaim.reason}
+                </p>
+                {compareClaim.matchedReportDescription && (
+                  <p className="text-[11px] mt-1.5" style={{ color: c.textLight }}>
+                    Auto-linked from the student&apos;s lost report.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {compareClaim.status === "REJECTED" && (
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#fef2f2", border: `1px solid ${c.danger}30` }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: c.danger }}>Rejected reason</p>
+                <p className="text-sm leading-relaxed" style={{ color: c.danger }}>
+                  {compareClaim.adminNote || "No reason was provided."}
+                </p>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 mt-5" onClick={(e) => e.stopPropagation()}>
               <VButton variant="secondary" onClick={() => setCompareClaim(null)}>Close</VButton>
-              {compareClaim.status === "PENDING" ? (
+              {compareClaim.status === "PENDING" && (
                 <>
-                  <VButton variant="danger" onClick={() => { handleReject(compareClaim.id); setCompareClaim(null); }}><XCircle size={14} /> Reject</VButton>
-                  <VButton onClick={() => { handleApprove(compareClaim.id); setCompareClaim(null); }}><CheckCircle2 size={14} /> Approve</VButton>
+                  <VButton variant="danger" onClick={() => { setRejectTarget({ kind: "CLAIM", id: compareClaim.id, itemName: compareClaim.itemName }); setRejectNote(""); setCompareClaim(null); }}>
+                    <XCircle size={14} /> Reject
+                  </VButton>
+                  <VButton onClick={() => { setApproveTarget({ id: compareClaim.id, itemName: compareClaim.itemName }); setApproveNote(""); setCompareClaim(null); }}>
+                    <CheckCircle2 size={14} /> Approve
+                  </VButton>
                 </>
-              ) : (
-                <VBadge color={statusColor(compareClaim.status)}>{compareClaim.status}</VBadge>
               )}
             </div>
           </VCard>
         </div>
       )}
 
-      {/* Staff QR verification */}
-      {qrOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!qrVerifying) setQrOpen(false); }} />
-          <VCard className="relative w-full max-w-md p-6">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Verify pickup QR</h3>
-                <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-                  Kiosk flow: the student scans their registered student barcode, then this QR. Verifying here also marks the item collected and releases the locker.
-                </p>
-              </div>
-              <button type="button" onClick={() => { if (!qrVerifying) setQrOpen(false); }}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="rounded-xl p-3 mb-4 flex items-start gap-2.5" style={{ backgroundColor: c.fill }}>
-              <QrCode size={16} className="shrink-0 mt-0.5" style={{ color: c.primary }} />
-              <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>
-                At the kiosk the student scans their registered student barcode first, then this QR opens the assigned locker. Valid for 24 hours and can only be used once.
-              </p>
-            </div>
-
-            <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>QR token</label>
-            <VInput
-              autoFocus
-              value={qrToken}
-              onChange={(e) => setQrToken(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void handleVerifyQr(); }}
-              placeholder="Scan or paste QR token"
-            />
-
-            <div className="flex items-center justify-end gap-2 mt-5">
-              <VButton variant="secondary" onClick={() => { if (!qrVerifying) setQrOpen(false); }}>Cancel</VButton>
-              <VButton onClick={() => void handleVerifyQr()} disabled={qrVerifying || !qrToken.trim()}>
-                {qrVerifying ? "Verifying..." : "Verify QR"}
-              </VButton>
-            </div>
-          </VCard>
-        </div>
-      )}
     </StudentShell>
   );
 }

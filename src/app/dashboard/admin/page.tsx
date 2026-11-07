@@ -16,7 +16,7 @@ const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
   { label: "Items", icon: Package, path: "/dashboard/admin/items" },
   { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Reports", icon: PackageSearch, path: "/dashboard/admin/reports" },
+  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
   { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
