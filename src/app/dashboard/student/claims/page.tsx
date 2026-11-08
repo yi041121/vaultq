@@ -314,136 +314,204 @@ export default function StudentClaims() {
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="My Claims" logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <div className="flex flex-wrap rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
-              {filters.map((f) => (
-                <button key={f} type="button"
-                  className="px-3.5 h-10 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                  style={{
-                    backgroundColor: filter === f ? c.primary : "transparent",
-                    color: filter === f ? "#fff" : c.textMuted,
-                  }}
-                  onClick={() => { setFilter(f); setPage(1); }}>
-                  {f}
-                </button>
-              ))}
+        <div className="px-6 lg:px-12 pt-6 lg:pt-8 w-full flex-1 flex flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6 lg:mb-7">
+            <div className="flex flex-wrap items-center gap-2">
+              {filters.map((f) => {
+                const active = filter === f;
+                return (
+                  <button key={f} type="button"
+                    className="h-10 px-4 rounded-xl text-sm font-medium border whitespace-nowrap transition-colors duration-150 cursor-pointer"
+                    style={{
+                      backgroundColor: active ? c.primary : "#fff",
+                      borderColor: active ? c.primary : c.border,
+                      color: active ? "#fff" : c.textMuted,
+                      boxShadow: active ? "0 2px 6px rgba(53,92,138,0.22)" : "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (active) return;
+                      e.currentTarget.style.backgroundColor = c.primarySoft;
+                      e.currentTarget.style.borderColor = c.primary;
+                      e.currentTarget.style.color = c.primary;
+                    }}
+                    onMouseLeave={(e) => {
+                      if (active) return;
+                      e.currentTarget.style.backgroundColor = "#fff";
+                      e.currentTarget.style.borderColor = c.border;
+                      e.currentTarget.style.color = c.textMuted;
+                    }}
+                    onClick={() => { setFilter(f); setPage(1); }}>
+                    {f}
+                  </button>
+                );
+              })}
             </div>
+            {!loading && !loadError && (
+              <span className="hidden sm:inline text-sm font-medium tabular-nums" style={{ color: c.textMuted }}>
+                {sorted.length} {sorted.length === 1 ? "claim" : "claims"}
+              </span>
+            )}
           </div>
 
-          {loading ? null : loadError ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <FileText size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load claims</p>
-              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadClaims(t); }}>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1" aria-busy="true" aria-label="Loading claims">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <VCard key={i} className="h-full p-5 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+                  <div className="flex items-start gap-4 min-h-[108px]">
+                    <div className="w-24 h-24 rounded-2xl shrink-0" style={{ backgroundColor: c.fill }} />
+                    <div className="flex-1 min-w-0 pt-1 space-y-2">
+                      <div className="h-4 w-4/5 rounded-md" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-3/5 rounded-md" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-2/3 rounded-md" style={{ backgroundColor: c.fill }} />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="h-3 w-24 rounded-md mb-2" style={{ backgroundColor: c.fill }} />
+                    <div className="space-y-2 min-h-[42px]">
+                      <div className="h-3 w-full rounded-md" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-5/6 rounded-md" style={{ backgroundColor: c.fill }} />
+                    </div>
+                  </div>
+                  <div className="mt-auto pt-5">
+                    <div className="flex items-center gap-2.5 border-t pt-4" style={{ borderColor: c.borderLight }}>
+                      <div className="h-10 flex-1 rounded-xl" style={{ backgroundColor: c.fill }} />
+                      <div className="h-10 flex-1 rounded-xl" style={{ backgroundColor: c.fill }} />
+                    </div>
+                  </div>
+                </VCard>
+              ))}
+            </div>
+          ) : loadError ? (
+            <VCard className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ backgroundColor: "#fef2f2" }}>
+                <FileText size={28} style={{ color: c.danger }} />
+              </div>
+              <p className="text-lg font-semibold" style={{ color: c.text }}>Could not load claims</p>
+              <p className="text-sm mt-2 max-w-md leading-relaxed" style={{ color: c.textMuted }}>{loadError}</p>
+              <VButton variant="primary" className="mt-6" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadClaims(t); }}>
                 <RefreshCw size={14} /> Try again
               </VButton>
             </VCard>
           ) : sorted.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <FileText size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>
+            <VCard className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ backgroundColor: c.primarySoft }}>
+                <FileText size={28} style={{ color: c.primary }} />
+              </div>
+              <p className="text-lg font-semibold" style={{ color: c.text }}>
                 {claims.length === 0 ? "No claims yet" : "No claims found"}
               </p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>
+              <p className="text-sm mt-2 max-w-md leading-relaxed" style={{ color: c.textMuted }}>
                 {claims.length === 0
-                  ? "Search for a found item and submit a claim with photo evidence."
-                  : `No claims with status "${filter}".`}
+                  ? "Found something that belongs to you? Search the item inventory and submit a claim with photo evidence."
+                  : `You don't have any claims with status "${filter}". Try a different filter to see your other claims.`}
               </p>
+              <VButton
+                variant={claims.length === 0 ? "primary" : "outline"}
+                className="mt-6"
+                onClick={() => {
+                  if (claims.length === 0) {
+                    router.push("/dashboard/student/search");
+                  } else {
+                    setFilter("All");
+                    setPage(1);
+                  }
+                }}>
+                {claims.length === 0 ? "Browse found items" : "Show all claims"}
+              </VButton>
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 content-start flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1">
                 {paginated.map((cl) => {
                   const Icon = filterIcons[cl.category] || Package;
                   const statusColor = CLAIM_STATUS_COLOR[cl.displayStatus];
                   const canShowQr = cl.displayStatus === "Approved" || cl.displayStatus === "QR Ready";
                   return (
-                    <VCard key={cl.id} className="p-4 flex flex-col gap-3 transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-                      <div className="flex items-start gap-3">
-                        <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 flex items-center justify-center relative"
+                    <VCard key={cl.id} className="h-full p-5 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+                      <div className="flex items-start gap-4">
+                        <div className="w-24 h-24 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
                           {cl.itemImageUrl ? (
                             <img src={cl.itemImageUrl} alt={cl.itemName} className="w-full h-full object-cover" />
                           ) : (
-                            <Icon size={28} style={{ color: c.primary, opacity: 0.75 }} />
+                            <Icon size={34} style={{ color: c.primary, opacity: 0.75 }} />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-semibold leading-snug truncate" style={{ color: c.text }}>{cl.itemName}</h3>
+                          <div className="flex items-start justify-between gap-2.5">
+                            <h3 className="text-base font-semibold leading-snug line-clamp-3 min-h-[2.75rem]" style={{ color: c.text }}>{cl.itemName}</h3>
                             <VBadge color={statusColor} style={{ flexShrink: 0 }}>{cl.displayStatus}</VBadge>
                           </div>
-                          <p className="text-[11px] mt-1 flex flex-wrap items-center gap-1.5" style={{ color: c.textMuted }}>
-                            <Icon size={11} style={{ color: c.primary }} /> {cl.category}
-                            <span className="mx-0.5">·</span>
-                            <MapPin size={11} /> <span className="truncate">{cl.location || "—"}</span>
-                          </p>
-                          <p className="text-[11px] mt-1 flex flex-wrap items-center gap-1.5" style={{ color: c.textMuted }}>
-                            <Clock size={11} /> Found {fmtDay(cl.foundDate)}
-                            {cl.locker && <><span className="mx-0.5">·</span><Package size={11} style={{ color: c.primary }} /> {cl.locker}</>}
-                          </p>
+                          <div className="mt-1.5 space-y-1">
+                            <p className="text-xs flex items-center gap-1.5 min-w-0" style={{ color: c.textMuted }}>
+                              <Icon size={13} className="shrink-0" style={{ color: c.primary }} />
+                              <span className="truncate">{cl.category}</span>
+                            </p>
+                            <p className="text-xs flex items-center gap-1.5 min-w-0" style={{ color: c.textMuted }}>
+                              <MapPin size={13} className="shrink-0" />
+                              <span className="truncate">{cl.location || "—"}</span>
+                            </p>
+                            <p className="text-xs flex items-center gap-1.5 min-w-0" style={{ color: c.textMuted }}>
+                              <Clock size={13} className="shrink-0" />
+                              <span className="truncate">Found {fmtDay(cl.foundDate)}</span>
+                              {cl.locker && (
+                                <>
+                                  <span className="shrink-0" style={{ color: c.textLight }}>·</span>
+                                  <Package size={13} className="shrink-0" style={{ color: c.primary }} />
+                                  <span className="truncate font-medium" style={{ color: c.primary }}>{cl.locker}</span>
+                                </>
+                              )}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
-                      {cl.description && (
-                        <p className="text-xs line-clamp-2" style={{ color: c.textMuted }}>{cl.description}</p>
-                      )}
+                      <div className="mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: c.textMuted }}>Description</p>
+                        <p className="text-[13px] leading-relaxed line-clamp-2 min-h-[42px]" style={{ color: c.textMuted }}>
+                          {cl.description || "No description provided."}
+                        </p>
+                      </div>
 
-                      <div className="mt-auto flex items-center gap-2 pt-1">
-                        {canShowQr && (
-                          <>
-                            <button type="button" onClick={() => setDetailsClaim(cl)}
-                              className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                              style={{ borderColor: c.border, color: c.textMuted }}>
-                              <Eye size={13} /> Details
-                            </button>
-                            <button type="button" onClick={() => openQR(cl)} disabled={qrLoadingId === cl.id}
-                              className="flex-1 h-9 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer disabled:opacity-60"
-                              style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" }}
-                              onMouseEnter={(e) => { if (qrLoadingId !== cl.id) e.currentTarget.style.backgroundColor = c.primaryDark; }}
-                              onMouseLeave={(e) => { if (qrLoadingId !== cl.id) e.currentTarget.style.backgroundColor = c.primary; }}>
-                              {qrLoadingId === cl.id ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
-                              {qrLoadingId === cl.id ? "Preparing..." : cl.displayStatus === "QR Ready" ? "View QR" : "Get QR Code"}
-                            </button>
-                          </>
-                        )}
-                        {cl.displayStatus === "Pending" && (
-                          <>
-                            <button type="button" onClick={() => setDetailsClaim(cl)}
-                              className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white transition-colors duration-200 cursor-pointer"
-                              style={{ borderColor: c.border, color: c.textMuted }}>
-                              <Eye size={13} className="inline mr-1" /> Details
-                            </button>
-                            <button type="button" onClick={() => setCancelTarget(cl)}
-                              className="flex-1 h-9 rounded-xl text-xs font-semibold border cursor-pointer"
-                              style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", color: c.danger }}>
-                              Cancel
-                            </button>
-                          </>
-                        )}
-                        {cl.displayStatus === "Collected" && (
-                          <button type="button" onClick={() => setDetailsClaim(cl)}
-                            className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                            style={{ borderColor: c.border, color: c.textMuted }}>
-                            <Eye size={13} /> View Details
-                          </button>
-                        )}
-                        {cl.displayStatus === "Rejected" && (
-                          <>
-                            <button type="button" onClick={() => setDetailsClaim(cl)}
-                              className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                              style={{ borderColor: c.border, color: c.textMuted }}>
-                              <Eye size={13} /> Details
-                            </button>
-                            <button type="button" onClick={() => openResubmit(cl)}
-                              className="flex-1 h-9 rounded-xl text-xs font-semibold cursor-pointer transition-all duration-200"
-                              style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" }}>
-                              <RefreshCw size={13} className="inline mr-1" /> Resubmit
-                            </button>
-                          </>
-                        )}
+                      <div className="mt-auto pt-5">
+                        <div className="flex items-center gap-2.5 border-t pt-4" style={{ borderColor: c.borderLight }}>
+                          {canShowQr && (
+                            <>
+                              <VButton variant="outline" size="md" className="flex-1" onClick={() => setDetailsClaim(cl)}>
+                                <Eye size={14} /> Details
+                              </VButton>
+                              <VButton variant="primary" size="md" className="flex-1" onClick={() => openQR(cl)} disabled={qrLoadingId === cl.id}>
+                                {qrLoadingId === cl.id ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
+                                {qrLoadingId === cl.id ? "Preparing..." : cl.displayStatus === "QR Ready" ? "View QR" : "Get QR Code"}
+                              </VButton>
+                            </>
+                          )}
+                          {cl.displayStatus === "Pending" && (
+                            <>
+                              <VButton variant="outline" size="md" className="flex-1" onClick={() => setDetailsClaim(cl)}>
+                                <Eye size={14} /> Details
+                              </VButton>
+                              <VButton variant="danger" size="md" className="flex-1" onClick={() => setCancelTarget(cl)}>
+                                <X size={14} /> Cancel
+                              </VButton>
+                            </>
+                          )}
+                          {cl.displayStatus === "Collected" && (
+                            <VButton variant="outline" size="md" className="w-full" onClick={() => setDetailsClaim(cl)}>
+                              <Eye size={14} /> View Details
+                            </VButton>
+                          )}
+                          {cl.displayStatus === "Rejected" && (
+                            <>
+                              <VButton variant="outline" size="md" className="flex-1" onClick={() => setDetailsClaim(cl)}>
+                                <Eye size={14} /> Details
+                              </VButton>
+                              <VButton variant="primary" size="md" className="flex-1" onClick={() => openResubmit(cl)}>
+                                <RefreshCw size={14} /> Resubmit
+                              </VButton>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </VCard>
                   );
