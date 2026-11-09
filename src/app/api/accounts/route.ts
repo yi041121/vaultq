@@ -82,15 +82,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
-    const cleanBarcode = cardBarcode === "" ? null : cardBarcode || null;
+    const cleanBarcode = typeof cardBarcode === "string" ? cardBarcode.trim() : "";
+    if (targetRole === "STUDENT" && !cleanBarcode) {
+      return NextResponse.json({ success: false, error: "Card barcode is required for student accounts" }, { status: 400 });
+    }
     if (cleanBarcode && !/^[0-9]{10}$/.test(cleanBarcode)) {
       return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits" }, { status: 400 });
     }
 
-    const cleanStudentId = targetRole === "STUDENT" ? normalizeStudentId(String(studentId || "")) : null;
-    if (targetRole === "STUDENT" && !cleanStudentId) {
-      return NextResponse.json({ success: false, error: "studentId required for student accounts" }, { status: 400 });
-    }
+    const cleanStudentId = targetRole === "STUDENT" ? normalizeStudentId(String(studentId || "")) : "";
     if (cleanStudentId && !isValidStudentId(cleanStudentId)) {
       return NextResponse.json({ success: false, error: STUDENT_ID_ERROR_MESSAGE }, { status: 400 });
     }
@@ -116,9 +116,9 @@ export async function POST(request: NextRequest) {
         email: email.trim().toLowerCase(),
         password: await hashPassword(String(password)),
         role: targetRole as any,
-        studentId: cleanStudentId,
+        studentId: cleanStudentId || null,
         adminId: targetRole === "ADMIN" ? (adminId?.trim() || null) : null,
-        cardBarcode: cleanBarcode,
+        cardBarcode: cleanBarcode || null,
       },
       select: { id: true, name: true, email: true, role: true, studentId: true, adminId: true, cardBarcode: true, isActive: true, createdAt: true },
     });

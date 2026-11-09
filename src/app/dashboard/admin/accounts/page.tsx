@@ -7,7 +7,7 @@ import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
-import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
+import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
 import { matchesSearch } from "@/lib/search";
 
 const adminNav = [
@@ -76,7 +76,6 @@ export default function AdminAccounts() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editStudentId, setEditStudentId] = useState("");
-  const [editBarcode, setEditBarcode] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -153,8 +152,8 @@ export default function AdminAccounts() {
   }
 
   async function handleAdd() {
-    if (!formName.trim() || !formEmail.trim() || !formStudentId.trim()) {
-      setFormError("Name, email and student ID are required");
+    if (!formName.trim() || !formEmail.trim()) {
+      setFormError("Name and email are required");
       showCenteredMessage("error", "Please fill required fields");
       return;
     }
@@ -163,20 +162,25 @@ export default function AdminAccounts() {
       setFormError(nameError);
       return;
     }
-    if (!isValidStudentId(formStudentId)) {
-      setFormError(STUDENT_ID_ERROR_MESSAGE);
-      return;
-    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formEmail.trim())) {
       setFormError("Invalid email format");
       return;
     }
-    if (!formPassword || formPassword.length < 8) {
-      setFormError("Temporary password must be at least 8 characters");
+    if (!formBarcode) {
+      setFormError("Card barcode is required");
+      showCenteredMessage("error", "Please enter the 10-digit card barcode");
       return;
     }
-    if (formBarcode && !/^[0-9]{10}$/.test(formBarcode)) {
+    if (!/^[0-9]{10}$/.test(formBarcode)) {
       setFormError("Barcode must be exactly 10 digits (e.g. 2000132602)");
+      return;
+    }
+    if (formStudentId.trim() && !isValidStudentId(formStudentId)) {
+      setFormError(STUDENT_ID_ERROR_MESSAGE);
+      return;
+    }
+    if (!formPassword || formPassword.length < 8) {
+      setFormError("Temporary password must be at least 8 characters");
       return;
     }
     if (!apiLive) {
@@ -184,7 +188,7 @@ export default function AdminAccounts() {
         setFormError("Email already registered");
         return;
       }
-      if (formBarcode && students.some((s) => s.cardBarcode === formBarcode)) {
+      if (students.some((s) => s.cardBarcode === formBarcode)) {
         setFormError("Barcode already registered");
         return;
       }
@@ -193,8 +197,8 @@ export default function AdminAccounts() {
         name: formName.trim(),
         email: formEmail.trim(),
         role: "STUDENT",
-        studentId: formStudentId.trim(),
-        cardBarcode: formBarcode || null,
+        studentId: formStudentId.trim() || "—",
+        cardBarcode: formBarcode,
         status: "ACTIVE",
         claims: 0,
       };
@@ -212,8 +216,8 @@ export default function AdminAccounts() {
           name: formName.trim(),
           email: formEmail.trim(),
           password: formPassword,
-          studentId: formStudentId.trim(),
-          cardBarcode: formBarcode || null,
+          studentId: formStudentId.trim() || null,
+          cardBarcode: formBarcode,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -230,8 +234,8 @@ export default function AdminAccounts() {
 
   async function handleEdit() {
     if (!editTarget) return;
-    if (!editName.trim() || !editEmail.trim() || !editStudentId.trim()) {
-      setEditError("Name, email and student ID are required");
+    if (!editName.trim() || !editEmail.trim()) {
+      setEditError("Name and email are required");
       return;
     }
     const nameError = getPersonNameError(editName);
@@ -239,7 +243,7 @@ export default function AdminAccounts() {
       setEditError(nameError);
       return;
     }
-    if (!isValidStudentId(editStudentId)) {
+    if (editStudentId.trim() && !isValidStudentId(editStudentId)) {
       setEditError(STUDENT_ID_ERROR_MESSAGE);
       return;
     }
@@ -247,12 +251,8 @@ export default function AdminAccounts() {
       setEditError("Student email must be a valid @student.tarc.edu.my address");
       return;
     }
-    if (editBarcode && !/^[0-9]{10}$/.test(editBarcode)) {
-      setEditError("Barcode must be exactly 10 digits (e.g. 2000132602)");
-      return;
-    }
     if (!apiLive) {
-      setStudents(students.map((s) => s.id === editTarget.id ? { ...s, name: editName.trim(), email: editEmail.trim(), studentId: editStudentId.trim(), cardBarcode: editBarcode || null } : s));
+      setStudents(students.map((s) => s.id === editTarget.id ? { ...s, name: editName.trim(), email: editEmail.trim(), studentId: editStudentId.trim() || "—" } : s));
       setEditTarget(null);
       showCenteredMessage("success", `${editName.trim()} updated`);
       return;
@@ -265,8 +265,7 @@ export default function AdminAccounts() {
         body: JSON.stringify({
           name: editName.trim(),
           email: editEmail.trim(),
-          studentId: editStudentId.trim(),
-          cardBarcode: editBarcode || null,
+          studentId: editStudentId.trim() || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -285,7 +284,6 @@ export default function AdminAccounts() {
     setEditName(st.name);
     setEditEmail(st.email);
     setEditStudentId(st.studentId === "—" ? "" : st.studentId);
-    setEditBarcode(st.cardBarcode || "");
     setEditError(null);
     setEditTarget(st);
   }
@@ -421,7 +419,7 @@ export default function AdminAccounts() {
                   <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Students must use @student.tarc.edu.my</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span style={{ color: c.danger }}>*</span></label>
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional — can be added later)</span></label>
                   <div className="relative">
                     <GraduationCap size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
@@ -435,12 +433,12 @@ export default function AdminAccounts() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span className="text-xs font-normal" style={{ color: c.textMuted }}>(10 digits, optional — e.g. 2000132602)</span></label>
+                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span style={{ color: c.danger }}>*</span> <span className="text-xs font-normal" style={{ color: c.textMuted }}>(10 digits — e.g. 2000132602)</span></label>
                 <div className="relative">
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                   <VInput value={formBarcode} onChange={(e) => setFormBarcode(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="2000132602" inputMode="numeric" maxLength={10} className="pl-10" />
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Exactly 10 digits for locker pickup — can be added later in student profile.</p>
+                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Required for locker pickup. Make sure it matches the physical student card.</p>
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Temporary password <span style={{ color: c.danger }}>*</span></label>
@@ -501,7 +499,7 @@ export default function AdminAccounts() {
                   <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Students must use @student.tarc.edu.my</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span style={{ color: c.danger }}>*</span></label>
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional — can be added later)</span></label>
                   <div className="relative">
                     <GraduationCap size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
@@ -515,11 +513,12 @@ export default function AdminAccounts() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span className="text-xs font-normal" style={{ color: c.textMuted }}>(10 digits, optional — e.g. 2000132602)</span></label>
+                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span className="text-xs font-normal" style={{ color: c.textMuted }}>(cannot be changed)</span></label>
                 <div className="relative">
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
-                  <VInput value={editBarcode} onChange={(e) => setEditBarcode(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="2000132602" inputMode="numeric" maxLength={10} className="pl-10" />
+                  <VInput value={editTarget.cardBarcode || "Not set"} disabled readOnly className="pl-10" style={{ backgroundColor: "#f8fafc", color: c.textMuted }} />
                 </div>
+                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Card barcode is locked after account creation. Only the student ID can be added or changed here.</p>
               </div>
               {editError && (
                 <p className="text-xs font-medium p-2.5 rounded-lg" style={{ backgroundColor: "#fef2f2", color: c.danger }}>{editError}</p>

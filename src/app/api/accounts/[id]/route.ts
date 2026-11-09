@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
 }
 
 // PATCH /api/accounts/:id — admin edits student details
-// Body: { name?, email?, studentId?, cardBarcode? }
+// Body: { name?, email?, studentId? } — cardBarcode is immutable after creation.
 export async function PATCH(request: NextRequest, { params }: Ctx) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -95,17 +95,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       data.studentId = s;
     }
     if (cardBarcode !== undefined) {
-      const clean = cardBarcode === "" ? null : cardBarcode;
+      const clean = typeof cardBarcode === "string" ? cardBarcode.trim() : "";
       if (clean && !/^[0-9]{10}$/.test(clean)) {
         return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits" }, { status: 400 });
       }
-      if (clean) {
-        const dupe = await prisma.user.findUnique({ where: { cardBarcode: clean } });
-        if (dupe && dupe.id !== id) {
-          return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
-        }
+      if (clean !== (existing.cardBarcode || "")) {
+        return NextResponse.json({ success: false, error: "Card barcode cannot be changed after the account is created" }, { status: 400 });
       }
-      data.cardBarcode = clean;
     }
 
     if (Object.keys(data).length === 0) {
