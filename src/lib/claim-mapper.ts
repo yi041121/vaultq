@@ -1,11 +1,11 @@
 // Shared mapping for student claims. The database status is only
-// PENDING / APPROVED / REJECTED; the UI derives "QR Ready" and "Collected"
-// from the QR code and the linked item state.
+// PENDING / APPROVED / REJECTED; approved claims are displayed as "QR Ready"
+// until the item is collected.
 
 import { toDateOnly } from "./item-mapper";
 
 export type ClaimStatus = "PENDING" | "APPROVED" | "REJECTED";
-export type ClaimDisplayStatus = "Pending" | "Approved" | "QR Ready" | "Collected" | "Rejected";
+export type ClaimDisplayStatus = "Pending" | "QR Ready" | "Collected" | "Rejected";
 
 export interface UserClaim {
   id: string;
@@ -49,9 +49,7 @@ export function mapUserClaim(raw: any): UserClaim {
   if (raw?.status === "REJECTED") {
     displayStatus = "Rejected";
   } else if (raw?.status === "APPROVED") {
-    if (raw?.item?.status === "RETRIEVED") displayStatus = "Collected";
-    else if (hasValidQr) displayStatus = "QR Ready";
-    else displayStatus = "Approved";
+    displayStatus = raw?.item?.status === "RETRIEVED" ? "Collected" : "QR Ready";
   }
 
   return {
@@ -97,7 +95,6 @@ export function mapUserClaim(raw: any): UserClaim {
 
 export const CLAIM_STATUS_COLOR: Record<ClaimDisplayStatus, string> = {
   Pending: "#64748b",
-  Approved: "#7FB8B5",
   "QR Ready": "#29486A",
   Collected: "#16a34a",
   Rejected: "#dc2626",

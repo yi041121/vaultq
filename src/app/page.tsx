@@ -1,5 +1,6 @@
 import { Search, Bell, PackageSearch, CircleCheck, CircleAlert, TabletSmartphone, Plus, MapPin, Clock, ArrowRight } from "lucide-react";
-import { VCard, VButton, VBadge, vcolors as c, font as f } from "@/components/ui/vault";
+import { VCard, VButton, VBadge } from "@/components/ui/vault";
+import { colors as c, font as f } from "@/lib/design";
 
 const stats = [
   { label: "Lost Items", value: 24, icon: CircleAlert, color: "#f97316", bg: "#fff7ed" },
@@ -87,13 +88,13 @@ export default function Home() {
             const Icon = cat.icon;
             return (
               <VCard key={cat.name} className="transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer">
-                <div className="p-5 flex items-center gap-4">
-                  <div className="p-3 rounded-xl" style={{ backgroundColor: c.borderLight }}>
+                <div className="p-4 sm:p-5 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="p-2.5 sm:p-3 rounded-xl" style={{ backgroundColor: c.borderLight }}>
                     <Icon className="w-5 h-5" style={{ color: c.primary }} />
                   </div>
-                  <div>
-                    <p className="font-medium" style={{ color: c.text }}>{cat.name}</p>
-                    <p className="text-sm" style={{ color: c.accent }}>{cat.count} items</p>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm sm:text-base truncate" style={{ color: c.text }}>{cat.name}</p>
+                    <p className="text-xs sm:text-sm" style={{ color: c.accent }}>{cat.count} items</p>
                   </div>
                 </div>
               </VCard>

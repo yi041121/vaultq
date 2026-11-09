@@ -8,11 +8,13 @@ import {
   ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch, Eye,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
+import { compressImageFile } from "@/lib/image-compression";
 import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
   vcolors as c,
@@ -243,21 +245,20 @@ export default function AdminItems() {
     setFormName(it.name); setFormCategory(it.category); setFormLocation(it.location); setFormDate(it.date); setFormLocker(it.locker || ""); setFormDesc(it.description || ""); setFormPhoto(null); setFormPreview(it.imageUrl || null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
   }
-  function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
+    if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
       showCenteredMessage("error", "Please choose an image file");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      showCenteredMessage("error", "Image must be under 5MB");
-      return;
+    try {
+      const compressed = await compressImageFile(file);
+      setFormPhoto(compressed.file);
+      setFormPreview(compressed.preview);
+    } catch (err) {
+      showCenteredMessage("error", err instanceof Error ? err.message : "Could not process this image");
     }
-    setFormPhoto(file);
-    const reader = new FileReader();
-    reader.onload = () => setFormPreview(reader.result as string);
-    reader.readAsDataURL(file);
   }
   function clearPhoto() {
     setFormPhoto(null);
@@ -323,16 +324,18 @@ export default function AdminItems() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `item-${Date.now()}.jpg`, { type: "image/jpeg" });
-      setFormPhoto(file);
-      // Keep the preview as a data URL so it is included when saving the item.
-      const reader = new FileReader();
-      reader.onload = () => setFormPreview(reader.result as string);
-      reader.readAsDataURL(blob);
-      showCenteredMessage("success", "Photo captured");
-      closeLiveCamera();
+      try {
+        const compressed = await compressImageFile(file);
+        setFormPhoto(compressed.file);
+        setFormPreview(compressed.preview);
+        showCenteredMessage("success", "Photo captured");
+        closeLiveCamera();
+      } catch (err) {
+        showCenteredMessage("error", err instanceof Error ? err.message : "Could not process this photo");
+      }
     }, "image/jpeg", 0.9);
   }
   async function handleSave() {
@@ -421,73 +424,72 @@ export default function AdminItems() {
 
   return (
     <StudentShell active="Items" userName={user.name} userRole={user.role} pageTitle="Item Inventory" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" placeholder="Search items..." />
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+          <FilterPanel
+            search={
+              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full" placeholder="Search items..." />
+            }
+            actions={
+              <VButton size="md" onClick={openAdd} className="w-full sm:w-auto">
+                <Plus size={15} /> Add Item
+              </VButton>
+            }
+            filters={
+              <>
+                <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
+                  {statusOptions.map((s) => (
+                    <button key={s} type="button"
+                      className="px-2 sm:px-3 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
+                      style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
+                      onClick={() => { setStatusFilter(s); setPage(1); }}>
+                      {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
 
-            <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
-              {statusOptions.map((s) => (
-                <button key={s} type="button"
-                  className="px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                  style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
-                  onClick={() => { setStatusFilter(s); setPage(1); }}>
-                  {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
-
-            <VDropdown open={categoryOpen} onOpenChange={setCategoryOpen}
-              trigger={
-                <VFilterButton active={!!categoryFilter} className="pl-3 pr-8 relative" onClick={() => setCategoryOpen(!categoryOpen)}>
-                  {categoryFilter ? (
-                    <>{(() => { const cc = categories.find(v => v.label === categoryFilter); return cc ? <cc.icon size={14} style={{ color: cc.color }} /> : null; })()}<span>{categoryFilter}</span></>
-                  ) : (
-                    <><Grid3X3 size={14} style={{ color: c.textMuted }} /><span>All Categories</span></>
+                <VDropdown open={categoryOpen} onOpenChange={setCategoryOpen}
+                  trigger={
+                    <VFilterButton active={!!categoryFilter} className="pl-3 pr-8 relative" onClick={() => setCategoryOpen(!categoryOpen)}>
+                      {categoryFilter ? (
+                        <>{(() => { const cc = categories.find(v => v.label === categoryFilter); return cc ? <cc.icon size={14} style={{ color: cc.color }} /> : null; })()}<span>{categoryFilter}</span></>
+                      ) : (
+                        <><Grid3X3 size={14} style={{ color: c.textMuted }} /><span>All Categories</span></>
+                      )}
+                      <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
+                    </VFilterButton>
+                  }>
+                  {(close) => (
+                    <>
+                      <VDropdownItem active={!categoryFilter} onSelect={() => { setCategoryFilter(null); close(); setPage(1); }}><Grid3X3 size={14} style={{ color: c.textMuted }} />All Categories</VDropdownItem>
+                      <div style={{ borderColor: c.border }} className="mx-3 border-t" />
+                      {categories.map((cat) => (
+                        <VDropdownItem key={cat.label} active={categoryFilter === cat.label} onSelect={() => { setCategoryFilter(cat.label); close(); setPage(1); }}><cat.icon size={14} style={{ color: cat.color }} />{cat.label}</VDropdownItem>
+                      ))}
+                    </>
                   )}
-                  <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textMuted }} />
-                </VFilterButton>
-              }>
-              {(close) => (
-                <>
-                  <VDropdownItem active={!categoryFilter} onSelect={() => { setCategoryFilter(null); close(); setPage(1); }}><Grid3X3 size={14} style={{ color: c.textMuted }} />All Categories</VDropdownItem>
-                  <div style={{ borderColor: c.border }} className="mx-3 border-t" />
-                  {categories.map((cat) => (
-                    <VDropdownItem key={cat.label} active={categoryFilter === cat.label} onSelect={() => { setCategoryFilter(cat.label); close(); setPage(1); }}><cat.icon size={14} style={{ color: cat.color }} />{cat.label}</VDropdownItem>
-                  ))}
-                </>
-              )}
-            </VDropdown>
+                </VDropdown>
 
-            <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-32"
-              trigger={
-                <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
-                  <ArrowUpDown size={13} style={{ color: c.textMuted }} /><span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span><ChevronDown size={12} className="text-[#64748b]" />
-                </VFilterButton>
-              }>
-              {(close) => (
-                <>
-                  {["newest", "oldest"].map((opt) => (
-                    <VDropdownItem key={opt} active={sortOrder === opt} onSelect={() => { setSortOrder(opt as any); close(); setPage(1); }}>{opt === "newest" ? "Newest" : "Oldest"}</VDropdownItem>
-                  ))}
-                </>
-              )}
-            </VDropdown>
-
-            {hasFilters && (
-              <button type="button"
-                className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border bg-white transition-all duration-200 cursor-pointer"
-                style={{ borderColor: c.borderLight, color: c.primary, fontWeight: "600" }}
-                onClick={() => { setQuery(""); setStatusFilter("All"); setCategoryFilter(null); setSortOrder("newest"); setPage(1); }}>
-                <RotateCcw size={13} /><span>Reset</span>
-              </button>
-            )}
-
-            <div className="ml-auto">
-              <VButton size="md" onClick={openAdd}><Plus size={15} /> Add Item</VButton>
-            </div>
-          </div>
+                <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-32"
+                  trigger={
+                    <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
+                      <ArrowUpDown size={13} style={{ color: c.textMuted }} /><span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span><ChevronDown size={12} className="text-[#64748b]" />
+                    </VFilterButton>
+                  }>
+                  {(close) => (
+                    <>
+                      {["newest", "oldest"].map((opt) => (
+                        <VDropdownItem key={opt} active={sortOrder === opt} onSelect={() => { setSortOrder(opt as any); close(); setPage(1); }}>{opt === "newest" ? "Newest" : "Oldest"}</VDropdownItem>
+                      ))}
+                    </>
+                  )}
+                </VDropdown>
+              </>
+            }
+            reset={hasFilters ? (
+              <ResetFiltersButton onClick={() => { setQuery(""); setStatusFilter("All"); setCategoryFilter(null); setSortOrder("newest"); setPage(1); }} />
+            ) : null}
+          />
 
           {/* Grid */}
           {loading ? null : loadError ? (

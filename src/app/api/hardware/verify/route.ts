@@ -1,42 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
+import {
+  LOCKER_NUMBER,
+  UNLOCK_MS,
+  isDeviceKeyValid,
+  isHardwareConfigured,
+  readLockerSession,
+} from "@/lib/hardware-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEVICE_KEY = process.env.HARDWARE_API_KEY;
-const LOCKER_NUMBER = process.env.LOCKER_NUMBER || "B03";
-const UNLOCK_MS = 5000;
-
-function safeEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
 /**
- * Locker hardware verification.
+ * Step 2 of the locker flow: verify the pickup QR belongs to the student who
+ * just scanned their card, and to this locker.
  *
  * POST /api/hardware/verify
  * Header: x-device-key: <HARDWARE_API_KEY>
- * Body: { deviceId, token, dryRun? }
+ * Body: { deviceId, sessionToken, token, dryRun? }
  *
- * The ESP32 scanner sends the QR token here. On success, the QR is marked
- * used, the item is marked retrieved, and the locker is freed.
- *
- * dryRun is for development testing only: it validates without changing data.
+ * On success the QR is marked used, the item is marked retrieved, and the
+ * locker is freed. dryRun is for development testing only.
  */
 export async function POST(request: NextRequest) {
-  if (!DEVICE_KEY) {
+  if (!isHardwareConfigured()) {
     return NextResponse.json(
       { success: false, error: "Hardware API is not configured" },
       { status: 500 },
     );
   }
 
-  const deviceKey = request.headers.get("x-device-key") || "";
-  if (!safeEqual(deviceKey, DEVICE_KEY)) {
+  if (!isDeviceKeyValid(request.headers.get("x-device-key"))) {
     return NextResponse.json({ success: false, error: "Unauthorized device" }, { status: 401 });
   }
 
@@ -48,11 +42,32 @@ export async function POST(request: NextRequest) {
   }
 
   const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const sessionToken = typeof body?.sessionToken === "string" ? body.sessionToken.trim() : "";
   const deviceId = typeof body?.deviceId === "string" ? body.deviceId : "locker-01";
   const dryRun = body?.dryRun === true && process.env.NODE_ENV !== "production";
 
   if (!token) {
-    return NextResponse.json({ success: false, error: "Token required" }, { status: 400 });
+    return NextResponse.json({ success: false, error: "QR token required" }, { status: 400 });
+  }
+  if (!sessionToken) {
+    return NextResponse.json(
+      { success: false, error: "Scan your student ID first" },
+      { status: 401 },
+    );
+  }
+
+  const session = readLockerSession(sessionToken);
+  if (!session) {
+    return NextResponse.json(
+      { success: false, error: "Student card session expired — scan your card again" },
+      { status: 401 },
+    );
+  }
+  if (session.deviceId !== deviceId || session.locker !== LOCKER_NUMBER) {
+    return NextResponse.json(
+      { success: false, error: "Session belongs to another locker" },
+      { status: 401 },
+    );
   }
 
   try {
@@ -81,6 +96,12 @@ export async function POST(request: NextRequest) {
     }
     if (qr.claim.item.status === "RETRIEVED") {
       return NextResponse.json({ success: false, error: "Item already collected" }, { status: 409 });
+    }
+    if (qr.claim.userId !== session.userId) {
+      return NextResponse.json(
+        { success: false, error: "This QR belongs to another student" },
+        { status: 403 },
+      );
     }
 
     const lockerNumber = qr.claim.item.locker?.lockerNumber || null;
@@ -111,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `Hardware verify: device=${deviceId} locker=${lockerNumber} claim=${qr.claimId}` +
+      `Hardware verify: device=${deviceId} student=${session.userId} locker=${lockerNumber} claim=${qr.claimId}` +
         (dryRun ? " [dry-run]" : ""),
     );
 

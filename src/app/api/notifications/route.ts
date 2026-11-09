@@ -11,6 +11,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const unreadOnly = searchParams.get("unread") === "1";
     const countOnly = searchParams.get("count") === "1";
+    const limitParam = Number(searchParams.get("limit"));
+    const take = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 100) : 100;
 
     const unreadCount = await prisma.notification.count({
       where: { userId: user.id, isRead: false },
@@ -23,7 +25,7 @@ export async function GET(request: NextRequest) {
     const notifications = await prisma.notification.findMany({
       where: { userId: user.id, ...(unreadOnly ? { isRead: false } : {}) },
       orderBy: { createdAt: "desc" },
-      take: 100,
+      take,
     });
 
     return NextResponse.json({ success: true, data: notifications, unreadCount });

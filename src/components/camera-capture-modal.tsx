@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Info, Loader2, Upload, X } from "lucide-react";
 import { VButton, VCard, vcolors as c } from "@/components/ui/vault";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { compressImageFile } from "@/lib/image-compression";
 
 interface CameraCaptureModalProps {
   onClose: () => void;
@@ -116,11 +117,19 @@ export function CameraCaptureModal({ onClose, onCapture, onUseUpload }: CameraCa
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const preview = canvas.toDataURL("image/jpeg", 0.9);
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `report-camera-${Date.now()}.jpg`, { type: "image/jpeg" });
-      onCapture({ file, preview });
-      close();
+      try {
+        const compressed = await compressImageFile(file);
+        onCapture({ file: compressed.file, preview: compressed.preview });
+        close();
+      } catch (err) {
+        setError({
+          title: "Could not process photo",
+          message: err instanceof Error ? err.message : "Please try again.",
+        });
+      }
     }, "image/jpeg", 0.9);
   }
 

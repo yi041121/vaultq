@@ -7,6 +7,7 @@ import { Crop, Loader2, X } from "lucide-react";
 import "react-easy-crop/react-easy-crop.css";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { vcolors as c } from "@/components/ui/vault";
+import { compressImageFile } from "@/lib/image-compression";
 
 interface PhotoCropModalProps {
   src: string;
@@ -41,13 +42,11 @@ async function cropPhoto(src: string, area: Area) {
     canvas.width,
     canvas.height,
   );
-  const preview = canvas.toDataURL("image/jpeg", 0.92);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
   if (!blob) throw new Error("Could not crop image");
-  return {
-    file: new File([blob], `report-photo-${Date.now()}.jpg`, { type: "image/jpeg" }),
-    preview,
-  };
+  const file = new File([blob], `report-photo-${Date.now()}.jpg`, { type: "image/jpeg" });
+  const compressed = await compressImageFile(file);
+  return { file: compressed.file, preview: compressed.preview };
 }
 
 /** Large photo preview with a square crop area. */

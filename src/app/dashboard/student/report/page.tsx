@@ -12,6 +12,7 @@ import {
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
+import { compressImageFile, compressImageFileToDataUrl } from "@/lib/image-compression";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
@@ -247,34 +248,27 @@ export default function StudentReport() {
       return;
     }
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
         showCenteredMessage("error", "Please upload image files only");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        showCenteredMessage("error", "Each image must be under 5MB");
         return;
       }
     }
 
     try {
       const drafts = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise<ReportPhoto>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                const preview = reader.result as string;
-                resolve({ file, preview, originalFile: file, originalPreview: preview });
-              };
-              reader.onerror = () => reject(new Error("Could not read image"));
-              reader.readAsDataURL(file);
-            }),
-        ),
+        files.map(async (file): Promise<ReportPhoto> => {
+          const compressed = await compressImageFile(file);
+          return {
+            file: compressed.file,
+            preview: compressed.preview,
+            originalFile: compressed.file,
+            originalPreview: compressed.preview,
+          };
+        }),
       );
       setPhotos((prev) => [...prev, ...drafts].slice(0, 3));
-    } catch {
-      showCenteredMessage("error", "Could not read one of the images");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
     }
   }
 
@@ -393,32 +387,18 @@ export default function StudentReport() {
       return;
     }
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
         showCenteredMessage("error", "Please upload image files only");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        showCenteredMessage("error", "Each image must be under 5MB");
         return;
       }
     }
     try {
-      const previews = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = () => reject(new Error("Could not read image"));
-              reader.readAsDataURL(file);
-            }),
-        ),
-      );
+      const previews = await Promise.all(files.map((file) => compressImageFileToDataUrl(file)));
       setEditPhotos((prev) =>
         [...prev, ...previews.map((preview) => ({ preview, originalPreview: preview }))].slice(0, 3),
       );
-    } catch {
-      showCenteredMessage("error", "Could not read one of the images");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
     }
   }
 
@@ -585,8 +565,8 @@ export default function StudentReport() {
 
   return (
     <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report Items" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
           {/* Tabs */}
           <div className="w-full max-w-3xl mx-auto flex rounded-xl border bg-white overflow-hidden mb-6" style={{ borderColor: c.border }}>
             <button type="button"
@@ -1030,7 +1010,7 @@ export default function StudentReport() {
                         ))}
                       </div>
                     )}
-                    <p className="text-[11px] mt-2 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
+                    <p className="text-[11px] mt-2 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
@@ -1300,7 +1280,7 @@ export default function StudentReport() {
                     ))}
                   </div>
                 )}
-                <p className="text-[11px] mt-1 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
+                <p className="text-[11px] mt-1 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
               </div>
             </div>
 

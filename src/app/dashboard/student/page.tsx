@@ -33,7 +33,7 @@ const foundItems = [
 ];
 
 const myClaims = [
-  { item: "MacBook Pro 14\"", status: "Approved", statusColor: "#7FB8B5" },
+  { item: "MacBook Pro 14\"", status: "QR Ready", statusColor: "#29486A" },
   { item: "Brown Leather Wallet", status: "Under Review", statusColor: "#355C8A" },
   { item: "AirPods Pro", status: "QR Ready", statusColor: "#29486A" },
   { item: "Student ID Card", status: "Pending", statusColor: "#64748b" },
@@ -85,7 +85,7 @@ export default function StudentDashboard() {
 
   return (
     <StudentShell active="Home" userName={user.name} userRole={user.role} pageTitle="Dashboard" logout={handleLogout}>
-      <main className="pb-6 lg:pb-6">
+      <main className="pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full">
           {/* Stats row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { notifyUser, notifyUsers } from "@/lib/notification-service";
 
+/** Thrown when the item or locker stops being available during the match. */
+class ClaimMatchConflict extends Error {}
+
 // POST /api/claims/match — admin links a lost report to a found item. The
 // claim is approved immediately (locker assigned, pickup QR ready), so the
 // admin does not need to approve it again in the Claims queue.
@@ -66,76 +69,93 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const otherPending = await prisma.claim.findMany({
-      where: { itemId, status: "PENDING", NOT: { userId: report.userId } },
-      select: { id: true, userId: true },
-    });
+    const reusingItemLocker = Boolean(item.locker && locker && item.locker.id === locker.id);
 
-    // Other lost reports already linked to this item are closed too.
-    const otherMatchedReports = await prisma.report.findMany({
-      where: { itemId, type: "LOST", status: "MATCHED", NOT: { id: report.id } },
-      select: { id: true, userId: true },
-    });
-
-    const claim = await prisma.$transaction(async (tx) => {
-      const created = await tx.claim.create({
-        data: {
-          itemId,
-          userId: report.userId,
-          claimReason: "Matched by admin from lost report",
-          evidenceImageUrl: photos[0] || null,
-          evidenceImageUrls: photos,
-          source: "MATCH",
-          matchedReportId: report.id,
-          status: "APPROVED",
-          approvedAt: new Date(),
-        },
-      });
-
-      await tx.item.update({
-        where: { id: itemId },
-        data: { status: "CLAIMED", ...(locker ? { lockerId: locker.id } : {}) },
-      });
-      if (locker) {
-        await tx.locker.update({ where: { id: locker.id }, data: { status: "OCCUPIED" } });
-      }
-
-      // The matched report is resolved by this approval.
-      await tx.report.update({
-        where: { id: report.id },
-        data: {
-          status: "CLOSED",
-          itemId,
-          reviewedById: user.id,
-          reviewedAt: new Date(),
-        },
-      });
-
-      if (otherMatchedReports.length) {
-        await tx.report.updateMany({
-          where: { itemId, type: "LOST", status: "MATCHED", NOT: { id: report.id } },
-          data: { status: "CLOSED", reviewedAt: new Date() },
+    const { created: claim, otherPending: rivals, otherMatchedReports: rivalReports } =
+      await prisma.$transaction(async (tx) => {
+        // The conditional update makes this match win the item exactly once,
+        // even if another admin approves or matches a claim concurrently.
+        const won = await tx.item.updateMany({
+          where: { id: itemId, status: "FOUND" },
+          data: { status: "CLAIMED", ...(locker ? { lockerId: locker.id } : {}) },
         });
-      }
+        if (won.count === 0) {
+          throw new ClaimMatchConflict("Item has already been claimed by another student");
+        }
 
-      if (otherPending.length) {
-        await tx.claim.updateMany({
-          where: { id: { in: otherPending.map((c) => c.id) } },
+        if (locker && !reusingItemLocker) {
+          const lockerTaken = await tx.locker.updateMany({
+            where: { id: locker.id, status: "AVAILABLE" },
+            data: { status: "OCCUPIED" },
+          });
+          if (lockerTaken.count === 0) {
+            throw new ClaimMatchConflict("Locker is no longer available");
+          }
+        }
+
+        const created = await tx.claim.create({
           data: {
-            status: "REJECTED",
-            adminNote: "Item has been claimed by another student",
+            itemId,
+            userId: report.userId,
+            claimReason: "Matched by admin from lost report",
+            evidenceImageUrl: photos[0] || null,
+            evidenceImageUrls: photos,
+            source: "MATCH",
+            matchedReportId: report.id,
+            status: "APPROVED",
             approvedAt: new Date(),
           },
         });
-      }
 
-      return created;
-    });
+        // Rivals are read after the item is locked, so nothing can be
+        // inserted behind the approval.
+        const otherPending = await tx.claim.findMany({
+          where: { itemId, status: "PENDING", NOT: { userId: report.userId } },
+          select: { id: true, userId: true },
+        });
+
+        // Other lost reports already linked to this item are closed too.
+        const otherMatchedReports = await tx.report.findMany({
+          where: { itemId, type: "LOST", status: "MATCHED", NOT: { id: report.id } },
+          select: { id: true, userId: true },
+        });
+
+        // The matched report is resolved by this approval.
+        await tx.report.update({
+          where: { id: report.id },
+          data: {
+            status: "CLOSED",
+            itemId,
+            reviewedById: user.id,
+            reviewedAt: new Date(),
+          },
+        });
+
+        if (otherMatchedReports.length) {
+          await tx.report.updateMany({
+            where: { itemId, type: "LOST", status: "MATCHED", NOT: { id: report.id } },
+            data: { status: "CLOSED", reviewedAt: new Date() },
+          });
+        }
+
+        if (otherPending.length) {
+          await tx.claim.updateMany({
+            where: { id: { in: otherPending.map((c) => c.id) } },
+            data: {
+              status: "REJECTED",
+              adminNote: "Item has been claimed by another student",
+              approvedAt: new Date(),
+            },
+          });
+        }
+
+        return { created, otherPending, otherMatchedReports };
+      });
 
     const lockerNote = locker ? ` Locker ${locker.lockerNumber} is assigned.` : "";
 
     await notifyUsers(
-      otherPending.map((c) => ({
+      rivals.map((c) => ({
         userId: c.userId,
         title: "Claim Rejected",
         message: `Your claim for ${item.itemName} was rejected because the item has been claimed by another student.`,
@@ -145,7 +165,7 @@ export async function POST(request: NextRequest) {
     );
 
     await notifyUsers(
-      otherMatchedReports
+      rivalReports
         .filter((r) => r.userId !== report.userId)
         .map((r) => ({
           userId: r.userId,
@@ -168,6 +188,9 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (e) {
+    if (e instanceof ClaimMatchConflict) {
+      return NextResponse.json({ success: false, error: e.message }, { status: 409 });
+    }
     console.error("Claim match failed", e);
     return NextResponse.json({ success: false, error: "Failed to match claim" }, { status: 500 });
   }

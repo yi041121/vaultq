@@ -117,19 +117,19 @@ export default function AdminDashboard() {
 
   return (
     <StudentShell active="Dashboard" userName={user.name} userRole={user.role} pageTitle="Admin Dashboard" bottomNav={adminNav} logout={handleLogout}>
-      <main className="pb-6 lg:pb-6">
+      <main className="pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full">
           {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
             {stats.map((s) => (
-              <VCard key={s.label} className="p-5 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              <VCard key={s.label} className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0"
                   style={{ backgroundColor: `${s.color}15` }}>
                   <s.icon size={16} style={{ color: s.color }} />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold" style={{ color: c.text }}>{s.value}</p>
-                  <p className="text-sm" style={{ color: c.textMuted }}>{s.label}</p>
+                  <p className="text-xl sm:text-2xl font-bold" style={{ color: c.text }}>{s.value}</p>
+                  <p className="text-xs sm:text-sm leading-tight" style={{ color: c.textMuted }}>{s.label}</p>
                 </div>
               </VCard>
             ))}

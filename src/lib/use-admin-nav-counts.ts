@@ -23,33 +23,26 @@ export function useAdminNavCounts(role: string) {
     async function load() {
       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
       if (!token) return;
-      const headers = { Authorization: `Bearer ${token}` };
       try {
-        const [claimsRes, reportsRes] = await Promise.all([
-          fetch("/api/claims", { headers, cache: "no-store" }),
-          fetch("/api/reports", { headers, cache: "no-store" }),
-        ]);
-        const claimsJson = await claimsRes.json().catch(() => null);
-        const reportsJson = await reportsRes.json().catch(() => null);
-        const claims = claimsJson?.success && Array.isArray(claimsJson.data)
-          ? claimsJson.data.filter((c: any) => c.status === "PENDING").length
-          : 0;
-        const intake = reportsJson?.success && Array.isArray(reportsJson.data)
-          ? reportsJson.data.filter((r: any) => r.type === "FOUND" && r.status === "PENDING").length
-          : 0;
-        // Lost reports live in the Claims page, so they count toward that badge.
-        const pendingLost = reportsJson?.success && Array.isArray(reportsJson.data)
-          ? reportsJson.data.filter((r: any) => r.type === "LOST" && r.status === "PENDING").length
-          : 0;
-        cache = { claims: claims + pendingLost, intake };
-        if (!cancelled) setCounts(cache);
+        const res = await fetch("/api/admin/nav-counts", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => null);
+        if (json?.success && json.data) {
+          cache = {
+            claims: Number(json.data.claims || 0),
+            intake: Number(json.data.intake || 0),
+          };
+          if (!cancelled) setCounts(cache);
+        }
       } catch {
         // Keep the previous counts.
       }
     }
 
     void load();
-    const interval = window.setInterval(load, 30_000);
+    const interval = window.setInterval(load, 15_000);
     window.addEventListener("focus", load);
     return () => {
       cancelled = true;

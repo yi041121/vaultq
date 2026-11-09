@@ -5,6 +5,9 @@ import { notifyUser, notifyUsers } from "@/lib/notification-service";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+/** Thrown when another approval won the item or the locker meanwhile. */
+class ClaimApprovalConflict extends Error {}
+
 const CLAIM_INCLUDE = {
   item: {
     select: {
@@ -171,34 +174,54 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       lockerId = locker.id;
     }
 
-    // Everyone else waiting on this item loses automatically.
-    const otherPending = await prisma.claim.findMany({
-      where: { itemId: claim.itemId, status: "PENDING", NOT: { id } },
-      select: { id: true, userId: true },
-    });
-
-    // Lost reports previously matched to this item are now resolved.
-    const matchedReports = await prisma.report.findMany({
-      where: { itemId: claim.itemId, type: "LOST", status: "MATCHED" },
-      select: { id: true, userId: true },
-    });
-
-    const updated = await prisma.$transaction(async (tx) => {
+    // The item row is the single source of truth. Moving it out of FOUND
+    // inside the transaction means two admins approving different claims at
+    // the same time cannot both win: the second update matches zero rows.
+    const { updated, otherPending, matchedReports } = await prisma.$transaction(async (tx) => {
       const itemData: { status: "CLAIMED"; lockerId?: string } = { status: "CLAIMED" };
       if (lockerId) itemData.lockerId = lockerId;
-      await tx.item.update({ where: { id: claim.itemId }, data: itemData });
+      const won = await tx.item.updateMany({
+        where: { id: claim.itemId, status: "FOUND" },
+        data: itemData,
+      });
+      if (won.count === 0) {
+        throw new ClaimApprovalConflict("This item has already been approved for another student");
+      }
 
       if (lockerId && lockerId !== claim.item.lockerId) {
         if (claim.item.lockerId) {
           await tx.locker.update({ where: { id: claim.item.lockerId }, data: { status: "AVAILABLE" } });
         }
-        await tx.locker.update({ where: { id: lockerId }, data: { status: "OCCUPIED" } });
+        const lockerTaken = await tx.locker.updateMany({
+          where: { id: lockerId, status: "AVAILABLE" },
+          data: { status: "OCCUPIED" },
+        });
+        if (lockerTaken.count === 0) {
+          throw new ClaimApprovalConflict("Locker is no longer available");
+        }
       }
+
+      // Read rivals only after the item is locked, so a claim submitted at
+      // the same moment is either visible here or blocked by the status.
+      const otherPending = await tx.claim.findMany({
+        where: { itemId: claim.itemId, status: "PENDING", NOT: { id } },
+        select: { id: true, userId: true },
+      });
+
+      // Lost reports previously matched to this item are now resolved.
+      const matchedReports = await tx.report.findMany({
+        where: { itemId: claim.itemId, type: "LOST", status: "MATCHED" },
+        select: { id: true, userId: true },
+      });
 
       if (otherPending.length) {
         await tx.claim.updateMany({
           where: { itemId: claim.itemId, status: "PENDING", NOT: { id } },
-          data: { status: "REJECTED" },
+          data: {
+            status: "REJECTED",
+            adminNote: "Item has been approved for another student",
+            approvedAt: new Date(),
+          },
         });
       }
 
@@ -209,10 +232,12 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         });
       }
 
-      return tx.claim.update({
+      const updated = await tx.claim.update({
         where: { id },
         data: { status: "APPROVED", approvedAt: new Date(), adminNote: adminNote || null },
       });
+
+      return { updated, otherPending, matchedReports };
     });
 
     // Notify the winning student and everyone whose claim was closed.
@@ -250,6 +275,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
+    if (e instanceof ClaimApprovalConflict) {
+      return NextResponse.json({ success: false, error: e.message }, { status: 409 });
+    }
     console.error("Claim review failed", e);
     return NextResponse.json({ success: false, error: "Failed to review claim" }, { status: 500 });
   }

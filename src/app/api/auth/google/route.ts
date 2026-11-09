@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getRequestOrigin } from "@/lib/request-origin";
 
 const CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
 const CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
@@ -8,9 +9,10 @@ const ALLOWED_DOMAIN = "student.tarc.edu.my";
 // The `hd` param pre-filters to the campus domain, but the real enforcement
 // happens in the callback (hd is only a UI hint on Google's side).
 export async function GET(request: NextRequest) {
+  const origin = getRequestOrigin(request);
   if (!CLIENT_ID || !CLIENT_SECRET) {
     return NextResponse.redirect(
-      `${request.nextUrl.origin}/login?skip=1&googleError=${encodeURIComponent(
+      `${origin}/login?skip=1&googleError=${encodeURIComponent(
         "Google login is not configured yet. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env"
       )}`
     );
@@ -26,11 +28,12 @@ export async function GET(request: NextRequest) {
   const barcode = /^[0-9]{10}$/.test(bcParam) ? bcParam : "";
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
-    redirect_uri: `${request.nextUrl.origin}/api/auth/google/callback`,
+    redirect_uri: `${origin}/api/auth/google/callback`,
     response_type: "code",
     scope: "openid email profile",
     state,
     hd: ALLOWED_DOMAIN,
+    // Show the account picker every time, as requested.
     prompt: "select_account",
   });
 

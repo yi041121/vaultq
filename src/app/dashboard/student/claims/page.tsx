@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentShell } from "@/components/student-shell";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { EvidenceSlider } from "@/components/evidence-slider";
+import { compressImageFile } from "@/lib/image-compression";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
@@ -20,6 +21,7 @@ import {
   mapUserClaim, CLAIM_STATUS_COLOR,
   type UserClaim, type ClaimDisplayStatus,
 } from "@/lib/claim-mapper";
+import { clearStudentCache, getCachedClaims, setCachedClaims } from "@/lib/student-cache";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -33,14 +35,13 @@ const filterIcons: Record<string, any> = {
   Others: Grid3X3,
 };
 
-const filters: (ClaimDisplayStatus | "All")[] = ["All", "Pending", "Approved", "QR Ready", "Collected", "Rejected"];
+const filters: (ClaimDisplayStatus | "All")[] = ["All", "Pending", "QR Ready", "Collected", "Rejected"];
 
 const statusPriority: Record<ClaimDisplayStatus, number> = {
   Pending: 0,
-  Approved: 1,
-  "QR Ready": 2,
-  Collected: 3,
-  Rejected: 4,
+  "QR Ready": 1,
+  Collected: 2,
+  Rejected: 3,
 };
 
 function fmtDay(value: string) {
@@ -78,16 +79,14 @@ type QrModal = {
   qrDataUrl: string;
 };
 
-let studentClaimsCache: UserClaim[] | null = null;
-
 export default function StudentClaims() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<ClaimDisplayStatus | "All">("All");
   const [page, setPage] = useState(1);
-  const [claims, setClaims] = useState<UserClaim[]>(studentClaimsCache ?? []);
-  const [loading, setLoading] = useState(studentClaimsCache === null);
+  const [claims, setClaims] = useState<UserClaim[]>(() => getCachedClaims() ?? []);
+  const [loading, setLoading] = useState(() => getCachedClaims() === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [qrModal, setQrModal] = useState<QrModal | null>(null);
   const [qrLoadingId, setQrLoadingId] = useState<string | null>(null);
@@ -105,7 +104,7 @@ export default function StudentClaims() {
   const pageSize = 6;
 
   async function loadClaims(token: string) {
-    if (!studentClaimsCache) setLoading(true);
+    if (!getCachedClaims()) setLoading(true);
     setLoadError(null);
     try {
       const res = await fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
@@ -113,10 +112,10 @@ export default function StudentClaims() {
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
       const mapped = (data.data as any[]).map(mapUserClaim);
       setClaims(mapped);
-      studentClaimsCache = mapped;
+      setCachedClaims(mapped);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load claims");
-      if (!studentClaimsCache) setClaims([]);
+      if (!getCachedClaims()) setClaims([]);
     } finally {
       setLoading(false);
     }
@@ -137,7 +136,7 @@ export default function StudentClaims() {
   }, []);
 
   function handleLogout() {
-    studentClaimsCache = null;
+    clearStudentCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -240,24 +239,22 @@ export default function StudentClaims() {
       return;
     }
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
         showCenteredMessage("error", "Please upload image files only");
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        showCenteredMessage("error", "Each image must be under 5MB");
-        return;
-      }
     }
-    const drafts = await Promise.all(
-      files.map((file) => new Promise<{ file: File; preview: string }>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({ file, preview: reader.result as string });
-        reader.onerror = () => reject(new Error("Could not read image"));
-        reader.readAsDataURL(file);
-      })),
-    );
-    setResubmitPhotos((prev) => [...prev, ...drafts].slice(0, 3));
+    try {
+      const drafts = await Promise.all(
+        files.map(async (file) => {
+          const compressed = await compressImageFile(file);
+          return { file: compressed.file, preview: compressed.preview };
+        }),
+      );
+      setResubmitPhotos((prev) => [...prev, ...drafts].slice(0, 3));
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
+    }
   }
 
   async function handleResubmit() {
@@ -313,8 +310,8 @@ export default function StudentClaims() {
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="My Claims" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
-        <div className="px-6 lg:px-12 pt-6 lg:pt-8 w-full flex-1 flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-6 lg:pt-8 w-full flex-1 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6 lg:mb-7">
             <div className="flex flex-wrap items-center gap-2">
               {filters.map((f) => {
@@ -357,19 +354,20 @@ export default function StudentClaims() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1" aria-busy="true" aria-label="Loading claims">
               {Array.from({ length: 6 }).map((_, i) => (
                 <VCard key={i} className="h-full p-5 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
-                  <div className="flex items-start gap-4 min-h-[108px]">
+                  <div className="flex items-start gap-4 min-h-[105px]">
                     <div className="w-24 h-24 rounded-2xl shrink-0" style={{ backgroundColor: c.fill }} />
-                    <div className="flex-1 min-w-0 pt-1 space-y-2">
+                    <div className="flex-1 min-w-0 pt-1 space-y-1.5">
                       <div className="h-4 w-4/5 rounded-md" style={{ backgroundColor: c.fill }} />
                       <div className="h-3 w-3/5 rounded-md" style={{ backgroundColor: c.fill }} />
                       <div className="h-3 w-2/3 rounded-md" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-1/2 rounded-md" style={{ backgroundColor: c.fill }} />
                     </div>
                   </div>
-                  <div className="mt-4">
-                    <div className="h-3 w-24 rounded-md mb-2" style={{ backgroundColor: c.fill }} />
+                  <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: "#d7e3ef" }}>
+                    <div className="h-3 w-24 rounded-md mb-1.5" style={{ backgroundColor: "#cbd9e6" }} />
                     <div className="space-y-2 min-h-[42px]">
-                      <div className="h-3 w-full rounded-md" style={{ backgroundColor: c.fill }} />
-                      <div className="h-3 w-5/6 rounded-md" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-full rounded-md" style={{ backgroundColor: "#d7e3ee" }} />
+                      <div className="h-3 w-5/6 rounded-md" style={{ backgroundColor: "#d7e3ee" }} />
                     </div>
                   </div>
                   <div className="mt-auto pt-5">
@@ -425,7 +423,7 @@ export default function StudentClaims() {
                 {paginated.map((cl) => {
                   const Icon = filterIcons[cl.category] || Package;
                   const statusColor = CLAIM_STATUS_COLOR[cl.displayStatus];
-                  const canShowQr = cl.displayStatus === "Approved" || cl.displayStatus === "QR Ready";
+                  const canShowQr = cl.displayStatus === "QR Ready";
                   return (
                     <VCard key={cl.id} className="h-full p-5 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
                       <div className="flex items-start gap-4">
@@ -439,10 +437,10 @@ export default function StudentClaims() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2.5">
-                            <h3 className="text-base font-semibold leading-snug line-clamp-3 min-h-[2.75rem]" style={{ color: c.text }}>{cl.itemName}</h3>
+                            <h3 className="text-base font-semibold leading-snug line-clamp-3" style={{ color: c.text }}>{cl.itemName}</h3>
                             <VBadge color={statusColor} style={{ flexShrink: 0 }}>{cl.displayStatus}</VBadge>
                           </div>
-                          <div className="mt-1.5 space-y-1">
+                          <div className="mt-1 space-y-1">
                             <p className="text-xs flex items-center gap-1.5 min-w-0" style={{ color: c.textMuted }}>
                               <Icon size={13} className="shrink-0" style={{ color: c.primary }} />
                               <span className="truncate">{cl.category}</span>
@@ -466,9 +464,9 @@ export default function StudentClaims() {
                         </div>
                       </div>
 
-                      <div className="mt-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: c.textMuted }}>Description</p>
-                        <p className="text-[13px] leading-relaxed line-clamp-2 min-h-[42px]" style={{ color: c.textMuted }}>
+                      <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: "#d7e3ef" }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: c.primary }}>Description</p>
+                        <p className="text-[13px] leading-relaxed line-clamp-2 min-h-[42px]" style={{ color: "#475569" }}>
                           {cl.description || "No description provided."}
                         </p>
                       </div>
@@ -482,7 +480,7 @@ export default function StudentClaims() {
                               </VButton>
                               <VButton variant="primary" size="md" className="flex-1" onClick={() => openQR(cl)} disabled={qrLoadingId === cl.id}>
                                 {qrLoadingId === cl.id ? <Loader2 size={14} className="animate-spin" /> : <QrCode size={14} />}
-                                {qrLoadingId === cl.id ? "Preparing..." : cl.displayStatus === "QR Ready" ? "View QR" : "Get QR Code"}
+                                {qrLoadingId === cl.id ? "Preparing..." : cl.hasValidQr ? "View QR" : "Get QR Code"}
                               </VButton>
                             </>
                           )}
@@ -591,7 +589,7 @@ export default function StudentClaims() {
               </div>
             )}
 
-            {(detailsClaim.displayStatus === "Approved" || detailsClaim.displayStatus === "QR Ready" || detailsClaim.displayStatus === "Collected") && detailsClaim.adminNote && (
+            {(detailsClaim.displayStatus === "QR Ready" || detailsClaim.displayStatus === "Collected") && detailsClaim.adminNote && (
               <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: "#15803d" }}>Approved reason</p>
                 <p className="text-sm leading-relaxed" style={{ color: "#15803d" }}>{detailsClaim.adminNote}</p>
@@ -624,9 +622,9 @@ export default function StudentClaims() {
                   Cancel claim
                 </VButton>
               )}
-              {(detailsClaim.displayStatus === "Approved" || detailsClaim.displayStatus === "QR Ready") && (
+              {detailsClaim.displayStatus === "QR Ready" && (
                 <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); void openQR(target); }}>
-                  <QrCode size={14} /> {detailsClaim.displayStatus === "QR Ready" ? "View QR" : "Get QR Code"}
+                  <QrCode size={14} /> {detailsClaim.hasValidQr ? "View QR" : "Get QR Code"}
                 </VButton>
               )}
             </div>
@@ -687,7 +685,7 @@ export default function StudentClaims() {
                   ))}
                 </div>
               )}
-              <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
+              <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
             </div>
 
             <div className="flex items-center justify-end gap-2 mt-5">

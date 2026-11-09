@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateToken } from "@/lib/auth";
+import { getRequestOrigin } from "@/lib/request-origin";
 
 const CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
 const CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
@@ -10,7 +11,8 @@ const ALLOWED_DOMAIN = "student.tarc.edu.my";
 // student domain, creates the student account on first sign-in, then hands
 // the app JWT to the client via /auth/callback.
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+  const origin = getRequestOrigin(request);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const cookieState = request.cookies.get("g_state")?.value;

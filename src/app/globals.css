@@ -97,3 +97,31 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Mobile usability helpers */
+.vq-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.vq-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* On very narrow phones the filter chips get their own full-width row so
+   they can scroll inside it instead of widening the page. */
+@media (max-width: 359px) {
+  .vq-scroll-x {
+    width: 100%;
+  }
+}
+
+/* iOS Safari zooms the page when a form control below 16px gets focus. */
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

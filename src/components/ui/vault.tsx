@@ -204,6 +204,19 @@ export function VDropdownItem({ children, active, onSelect, style }: {
 
 /* -------------------------------- Pagination ------------------------------- */
 
+function paginationItems(current: number, total: number): Array<number | "…"> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = Array.from(new Set([1, total, current - 1, current, current + 1]))
+    .filter((p) => p >= 1 && p <= total)
+    .sort((a, b) => a - b);
+  const out: Array<number | "…"> = [];
+  pages.forEach((p, i) => {
+    if (i > 0 && p - pages[i - 1] > 1) out.push("…");
+    out.push(p);
+  });
+  return out;
+}
+
 export function VPagination({ current, total, onPage }: {
   current: number;
   total: number;
@@ -220,22 +233,26 @@ export function VPagination({ current, total, onPage }: {
       >
         <ChevronLeft size={16} />
       </button>
-      {Array.from({ length: total }, (_, i) => i + 1).map((p) => (
-        <button
-          key={p}
-          type="button"
-          className="w-9 h-9 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer"
-          style={{
-            backgroundColor: current === p ? colors.primary : "#fff",
-            color: current === p ? "#fff" : colors.textMuted,
-            border: `1px solid ${current === p ? colors.primary : colors.border}`,
-            boxShadow: current === p ? "0 2px 8px rgba(53,92,138,0.3)" : "none",
-          }}
-          onClick={() => onPage(p)}
-        >
-          {p}
-        </button>
-      ))}
+      {paginationItems(current, total).map((p, i) =>
+        p === "…" ? (
+          <span key={`gap-${i}`} className="w-6 text-center text-sm" style={{ color: colors.textLight }}>…</span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            className="w-9 h-9 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer"
+            style={{
+              backgroundColor: current === p ? colors.primary : "#fff",
+              color: current === p ? "#fff" : colors.textMuted,
+              border: `1px solid ${current === p ? colors.primary : colors.border}`,
+              boxShadow: current === p ? "0 2px 8px rgba(53,92,138,0.3)" : "none",
+            }}
+            onClick={() => onPage(p)}
+          >
+            {p}
+          </button>
+        ),
+      )}
       <button
         type="button"
         className="w-9 h-9 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"

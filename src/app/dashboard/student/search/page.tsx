@@ -6,12 +6,13 @@ import {
   Search, Package,
   Briefcase, CreditCard, Key, BookText, CupSoda,
   ChevronDown, Monitor, Grid3X3, ArrowUpDown,
-  MapPin, Clock, ChevronLeft, ChevronRight, RotateCcw, Camera, X, Upload, Eye, Crop, FileText,
+  MapPin, Clock, ChevronLeft, ChevronRight, Camera, X, Upload, Eye, Crop, FileText,
   Loader2, RefreshCw, CheckCircle2, Plus,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { StudentShell } from "@/components/student-shell";
+import { ResetFiltersButton } from "@/components/filter-panel";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
@@ -21,6 +22,8 @@ import {
   vcolors as c,
 } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
+import { compressImageFile } from "@/lib/image-compression";
+import { clearStudentCache, getCachedClaimedIds, getCachedSearchItems, setCachedSearchItems } from "@/lib/student-cache";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 
@@ -56,18 +59,15 @@ type LostReportOption = {
   images: string[];
 };
 
-let searchItemsCache: FoundItem[] | null = null;
-let claimedItemIdsCache: Set<string> | null = null;
-
 export default function StudentSearch() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  const [items, setItems] = useState<FoundItem[]>(searchItemsCache ?? []);
-  const [loading, setLoading] = useState(searchItemsCache === null);
+  const [items, setItems] = useState<FoundItem[]>(() => getCachedSearchItems() ?? []);
+  const [loading, setLoading] = useState(() => getCachedSearchItems() === null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [claimedItemIds, setClaimedItemIds] = useState<Set<string>>(claimedItemIdsCache ?? new Set());
+  const [claimedItemIds, setClaimedItemIds] = useState<Set<string>>(() => getCachedClaimedIds() ?? new Set());
 
   const [query, setQuery] = useState("");
   const [sortOrder, setSortOrder] = useState("newest");
@@ -143,7 +143,7 @@ export default function StudentSearch() {
   }
 
   async function loadData(token: string) {
-    if (!searchItemsCache) setLoading(true);
+    if (!getCachedSearchItems()) setLoading(true);
     setLoadError(null);
     try {
       const [itemsRes, claimsRes] = await Promise.all([
@@ -164,9 +164,9 @@ export default function StudentSearch() {
 
       // Apply everything together so claimed items never flash into view.
       setClaimedItemIds(claimedSet);
-      claimedItemIdsCache = claimedSet;
+
       setItems(mapped);
-      searchItemsCache = mapped;
+      setCachedSearchItems(mapped, claimedSet);
 
       // A match notification deep-links to /search?item=<id>. Open that item
       // once the list has loaded, then drop the query string.
@@ -185,7 +185,7 @@ export default function StudentSearch() {
       }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load items");
-      if (!searchItemsCache) setItems([]);
+      if (!getCachedSearchItems()) setItems([]);
     } finally {
       setLoading(false);
     }
@@ -207,8 +207,7 @@ export default function StudentSearch() {
   }, []);
 
   function handleLogout() {
-    searchItemsCache = null;
-    claimedItemIdsCache = null;
+    clearStudentCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -337,30 +336,21 @@ export default function StudentSearch() {
       return;
     }
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
         showCenteredMessage("error", "Please upload image files only");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        showCenteredMessage("error", "Each image must be under 5MB");
         return;
       }
     }
     try {
       const drafts = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise<{ file: File; preview: string }>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve({ file, preview: reader.result as string });
-              reader.onerror = () => reject(new Error("Could not read image"));
-              reader.readAsDataURL(file);
-            }),
-        ),
+        files.map(async (file) => {
+          const compressed = await compressImageFile(file);
+          return { file: compressed.file, preview: compressed.preview };
+        }),
       );
       setClaimPhotos((prev) => [...prev, ...drafts].slice(0, 3));
-    } catch {
-      showCenteredMessage("error", "Could not read one of the images");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
     }
   }
 
@@ -451,12 +441,15 @@ export default function StudentSearch() {
 
   return (
     <StudentShell active="Search" userName={user.name} userRole={user.role} pageTitle="Search Items" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6 flex flex-col">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           {/* Search + filters */}
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl" />
-            <VDropdown
+          <div className="space-y-3 mb-6">
+            <div className="w-full sm:max-w-xl">
+              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+<VDropdown
               open={categoryOpen}
               onOpenChange={setCategoryOpen}
               trigger={
@@ -510,7 +503,7 @@ export default function StudentSearch() {
                 </>
               )}
             </VDropdown>
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 w-full sm:w-auto">
               <VFilterButton active={!!dateFrom}
                 onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
                 <Clock size={14} style={{ color: c.primary }} />
@@ -527,8 +520,8 @@ export default function StudentSearch() {
               </VFilterButton>
               {dateRangeOpen && (
                 <>
-                  <div className="fixed inset-0 z-20" onClick={closeDateCalendar} />
-                  <div className="absolute left-0 top-12 z-30 w-[300px] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
+                  <div className="fixed inset-0 z-40" onClick={closeDateCalendar} />
+                  <div className="absolute left-0 top-12 z-50 w-[300px] max-w-[calc(100vw-2rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
                     <div className="flex items-center justify-between mb-3">
                       <button type="button"
                         className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
@@ -635,21 +628,27 @@ export default function StudentSearch() {
                 </>
               )}
             </div>
+            </div>
             {hasFilters && (
-              <button type="button"
-                className="flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border bg-white transition-all duration-200 cursor-pointer"
-                style={{ borderColor: c.borderLight, color: c.primary, fontWeight: "600" }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.primarySoft; e.currentTarget.style.borderColor = c.primary; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#fff"; e.currentTarget.style.borderColor = c.borderLight; }}
-                onClick={resetFilters}>
-                <RotateCcw size={13} />
-                <span>Reset</span>
-              </button>
+              <div className="flex items-center">
+                <ResetFiltersButton onClick={resetFilters} />
+              </div>
             )}
           </div>
 
           {/* Items grid */}
-          {loading ? null : loadError ? (
+          {loading ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <VCard key={i} className="p-5 animate-pulse">
+                  <div className="w-full h-40 rounded-xl mb-4" style={{ backgroundColor: c.fill }} />
+                  <div className="h-4 w-2/3 rounded mb-2" style={{ backgroundColor: c.fill }} />
+                  <div className="h-3 w-1/2 rounded mb-4" style={{ backgroundColor: c.fill }} />
+                  <div className="h-9 w-full rounded-xl" style={{ backgroundColor: c.fill }} />
+                </VCard>
+              ))}
+            </div>
+          ) : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
@@ -935,7 +934,7 @@ export default function StudentSearch() {
                     </div>
                   </div>
                 )}
-                <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
+                <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">

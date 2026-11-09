@@ -11,6 +11,7 @@ import { showCenteredMessage } from "@/components/centered-message";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { EvidenceSlider } from "@/components/evidence-slider";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { ItemDetailsModal } from "@/components/item-details-modal";
@@ -33,6 +34,7 @@ const adminNav = [
 
 type Claim = {
   id: string;
+  itemId: string;
   itemName: string;
   category: string;
   student: string;
@@ -168,6 +170,7 @@ export default function AdminClaims() {
   const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [compareClaim, setCompareClaim] = useState<Claim | null>(null);
+  const [itemFilter, setItemFilter] = useState<{ id: string; name: string } | null>(null);
   const [claimItemDetail, setClaimItemDetail] = useState<Claim | null>(null);
   const [photoIndices, setPhotoIndices] = useState<Record<string, number>>({});
   const [lostLoaded, setLostLoaded] = useState(false);
@@ -199,6 +202,7 @@ export default function AdminClaims() {
   function mapApiClaim(raw: any): Claim {
     return {
       id: raw.id,
+      itemId: raw.itemId,
       itemName: raw.item?.itemName || "Unknown item",
       category: raw.item?.category || "Others",
       student: raw.user?.name || "Unknown",
@@ -356,10 +360,42 @@ export default function AdminClaims() {
       })),
   ];
 
+  // A found item can have several pending claims. Count them so the queue can
+  // show the rivalry and open all claims for one item side by side.
+  const pendingClaimCount = new Map<string, number>();
+  for (const cl of claims) {
+    if (cl.status !== "PENDING") continue;
+    pendingClaimCount.set(cl.itemId, (pendingClaimCount.get(cl.itemId) || 0) + 1);
+  }
+  const itemFilterCount = itemFilter
+    ? claims.filter((cl) => cl.itemId === itemFilter.id && cl.status === "PENDING").length
+    : 0;
+  const compareRivals = compareClaim
+    ? claims.filter(
+        (cl) =>
+          cl.itemId === compareClaim.itemId &&
+          cl.id !== compareClaim.id &&
+          cl.status === "PENDING",
+      )
+    : [];
+
   const filteredRows = rows.filter((row) => {
+    if (itemFilter && (row.kind !== "CLAIM" || row.claim?.itemId !== itemFilter.id)) return false;
     if (statusFilter !== "All" && row.status !== statusFilter) return false;
     return matchesSearch(query, row.searchFields);
   });
+
+  const hasFilters = Boolean(
+    query || statusFilter !== "PENDING" || sortOrder !== "newest" || itemFilter,
+  );
+
+  function resetFilters() {
+    setQuery("");
+    setStatusFilter("PENDING");
+    setSortOrder("newest");
+    setItemFilter(null);
+    setPage(1);
+  }
 
   const statusPriority: Record<string, number> = { PENDING: 0, MATCHED: 1, APPROVED: 2, REJECTED: 3 };
   const sortedRows = [...filteredRows].sort((a, b) => {
@@ -409,6 +445,8 @@ export default function AdminClaims() {
       const assigned = lockerNumber || target?.locker;
       showCenteredMessage("success", assigned ? `Claim approved — locker ${assigned} assigned` : "Claim approved");
       await Promise.all([fetchClaims(), fetchLostReports()]);
+      // The rivalry is resolved once a winner is approved.
+      setItemFilter(null);
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Approve failed");
     }
@@ -538,39 +576,62 @@ export default function AdminClaims() {
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="Claim Verification" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-24 lg:pb-6 flex flex-col">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="flex-1 min-w-[220px] max-w-xl"
-              placeholder="Search item, student, email or claim ID..." />
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+          <FilterPanel
+            search={
+              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
+                placeholder="Search item, student, email or claim ID..." />
+            }
+            filters={
+              <>
+                <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
+                  {statusOptions.map((s) => (
+                    <button key={s} type="button"
+                      className="px-2 sm:px-3 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
+                      style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
+                      onClick={() => { setStatusFilter(s); setPage(1); }}>
+                      {s === "All" ? "All" : reportStatusLabel(s)}
+                    </button>
+                  ))}
+                </div>
 
-            <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
-              {statusOptions.map((s) => (
-                <button key={s} type="button"
-                  className="px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                  style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
-                  onClick={() => { setStatusFilter(s); setPage(1); }}>
-                  {s === "All" ? "All" : reportStatusLabel(s)}
-                </button>
-              ))}
+                <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-40"
+                  trigger={
+                    <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
+                      <ArrowUpDown size={13} style={{ color: c.textMuted }} />
+                      <span>{sortOrder === "newest" ? "Newest first" : "Oldest first"}</span>
+                      <ChevronDown size={12} style={{ color: c.textMuted }} />
+                    </VFilterButton>
+                  }>
+                  {(close) => (
+                    <>
+                      <VDropdownItem active={sortOrder === "newest"} onSelect={() => { setSortOrder("newest"); setPage(1); close(); }}>Newest first</VDropdownItem>
+                      <VDropdownItem active={sortOrder === "oldest"} onSelect={() => { setSortOrder("oldest"); setPage(1); close(); }}>Oldest first</VDropdownItem>
+                    </>
+                  )}
+                </VDropdown>
+              </>
+            }
+            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
+          />
+
+          {itemFilter && (
+            <div className="flex flex-wrap items-center gap-2 mb-4 -mt-3">
+              <span className="inline-flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5"
+                style={{ color: "#92400e", backgroundColor: "#fef3c7", border: "1px solid #fde68a" }}>
+                <Users size={12} />
+                Comparing {itemFilterCount} {itemFilterCount === 1 ? "pending claim" : "pending claims"} for{" "}
+                <strong>{itemFilter.name}</strong>
+              </span>
+              <button type="button"
+                onClick={() => { setItemFilter(null); setPage(1); }}
+                className="text-xs font-semibold cursor-pointer underline-offset-2 hover:underline"
+                style={{ color: c.primary }}>
+                Show all items
+              </button>
             </div>
-
-            <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-40"
-              trigger={
-                <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
-                  <ArrowUpDown size={13} style={{ color: c.textMuted }} />
-                  <span>{sortOrder === "newest" ? "Newest first" : "Oldest first"}</span>
-                  <ChevronDown size={12} style={{ color: c.textMuted }} />
-                </VFilterButton>
-              }>
-              {(close) => (
-                <>
-                  <VDropdownItem active={sortOrder === "newest"} onSelect={() => { setSortOrder("newest"); setPage(1); close(); }}>Newest first</VDropdownItem>
-                  <VDropdownItem active={sortOrder === "oldest"} onSelect={() => { setSortOrder("oldest"); setPage(1); close(); }}>Oldest first</VDropdownItem>
-                </>
-              )}
-            </VDropdown>
-          </div>
+          )}
 
           {loading || !lostLoaded ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
@@ -633,6 +694,19 @@ export default function AdminClaims() {
                             <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: c.textMuted }}>
                               <Clock size={12} /> Submitted {fmtDateValue(cl.createdAt || cl.date)}{cl.createdAt ? ` · ${fmtClockValue(cl.createdAt)}` : ""}
                             </p>
+                            {cl.status === "PENDING" && (pendingClaimCount.get(cl.itemId) || 0) > 1 && (
+                              <button type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setItemFilter({ id: cl.itemId, name: cl.itemName });
+                                  setStatusFilter("PENDING");
+                                  setPage(1);
+                                }}
+                                className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-lg px-2 py-1 cursor-pointer"
+                                style={{ color: "#92400e", backgroundColor: "#fef3c7", border: "1px solid #fde68a" }}>
+                                <Users size={12} /> {pendingClaimCount.get(cl.itemId)} students claimed this item — compare
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1143,6 +1217,20 @@ export default function AdminClaims() {
             <div className="flex items-start justify-between gap-3 mb-1">
               <div>
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Details</h3>
+                {compareClaim.status === "PENDING" && compareRivals.length > 0 && (
+                  <button type="button"
+                    onClick={() => {
+                      const target = compareClaim;
+                      setCompareClaim(null);
+                      setItemFilter({ id: target.itemId, name: target.itemName });
+                      setStatusFilter("PENDING");
+                      setPage(1);
+                    }}
+                    className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-lg px-2 py-1 cursor-pointer"
+                    style={{ color: "#92400e", backgroundColor: "#fef3c7", border: "1px solid #fde68a" }}>
+                    <Users size={12} /> Compare all {compareRivals.length + 1} pending claims for this item
+                  </button>
+                )}
               </div>
               <button type="button" onClick={() => setCompareClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>

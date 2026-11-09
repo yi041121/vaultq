@@ -10,6 +10,7 @@ import {
 import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { categoryIcon } from "@/lib/category-icons";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { matchesSearch } from "@/lib/search";
@@ -363,30 +364,43 @@ export default function AdminLockers() {
     }
   }
 
+  const hasFilters = Boolean(query || filter !== "All");
+
+  function resetFilters() {
+    setQuery("");
+    setFilter("All");
+  }
+
   return (
     <StudentShell active="Lockers" userName={user.name} userRole={user.role} pageTitle="Locker Management" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full h-full flex flex-col">
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <VSearchInput value={query} onChange={setQuery} className="flex-1 min-w-[200px] max-w-md" placeholder="Search locker or item..." />
-            <div className="flex h-10 rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
-              {(["All", "AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const).map((s) => (
-                <button key={s} type="button"
-                  className="px-3.5 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                  style={{ backgroundColor: filter === s ? c.primary : "transparent", color: filter === s ? "#fff" : c.textMuted }}
-                  onClick={() => setFilter(s)}>
-                  {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
-            <button type="button" aria-label="Manage lockers" title="Manage lockers"
-              onClick={() => setManageOpen(true)}
-              className="ml-auto h-10 px-3 rounded-xl border bg-white flex items-center gap-1.5 text-xs font-semibold cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
-              style={{ borderColor: c.border, color: c.textMuted }}>
-              <Pencil size={14} /> Edit
-            </button>
-          </div>
+          <FilterPanel
+            search={
+              <VSearchInput value={query} onChange={setQuery} className="w-full" placeholder="Search locker or item..." />
+            }
+            actions={
+              <button type="button" aria-label="Manage lockers" title="Manage lockers"
+                onClick={() => setManageOpen(true)}
+                className="w-full sm:w-auto h-10 px-3 rounded-xl border bg-white inline-flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
+                style={{ borderColor: c.border, color: c.textMuted }}>
+                <Pencil size={14} /> Edit
+              </button>
+            }
+            filters={
+              <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
+                {(["All", "AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const).map((s) => (
+                  <button key={s} type="button"
+                    className="px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
+                    style={{ backgroundColor: filter === s ? c.primary : "transparent", color: filter === s ? "#fff" : c.textMuted }}
+                    onClick={() => setFilter(s)}>
+                    {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
+                  </button>
+                ))}
+              </div>
+            }
+            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
+          />
 
           {/* Grid */}
           {loading ? null : (

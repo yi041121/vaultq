@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 
+/** Thrown when the item stops being available while a claim is submitted. */
+class ClaimConflict extends Error {}
+
 // GET /api/claims — list current user's claims or all for admin
 export async function GET(request: NextRequest) {
   const user = await authenticateRequest(request);
@@ -215,6 +218,17 @@ export async function POST(request: NextRequest) {
     }
 
     const claim = await prisma.$transaction(async (tx) => {
+      // Serialize with approval: either this claim is inserted before the
+      // winner is chosen (and gets auto-rejected), or the item is no longer
+      // FOUND and the claim is refused. Without this lock, a claim could slip
+      // in after the approval transaction read the rival claims.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "items" WHERE id = ${itemId} AND status = 'FOUND' FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new ClaimConflict("Item is no longer available for claim");
+      }
+
       const created = await tx.claim.create({
         data: {
           itemId,
@@ -249,6 +263,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: claim }, { status: 201 });
   } catch (e) {
+    if (e instanceof ClaimConflict) {
+      return NextResponse.json({ success: false, error: e.message }, { status: 409 });
+    }
     console.error("Claim creation failed", e);
     return NextResponse.json({ success: false, error: "Failed to create claim" }, { status: 500 });
   }

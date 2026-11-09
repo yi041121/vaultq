@@ -43,8 +43,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (phase !== "intro") return;
-    const t1 = setTimeout(() => { if (!skipAnim.current) setPhase("transitioning"); }, 4800);
-    const t2 = setTimeout(() => { if (!skipAnim.current) setPhase("complete"); }, 5400);
+    // Let the full locker sequence play; tapping anywhere skips it.
+    const introMs = 4800;
+    const t1 = setTimeout(() => { if (!skipAnim.current) setPhase("transitioning"); }, introMs);
+    const t2 = setTimeout(() => { if (!skipAnim.current) setPhase("complete"); }, introMs + 600);
 
     function skip(e: MouseEvent | KeyboardEvent) {
       if ("key" in e && e.key !== " " && e.key !== "Enter") return;
@@ -93,7 +95,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden" style={{ backgroundColor: "#F7F6F3" }}>
+    <div className="min-h-[100dvh] relative overflow-hidden" style={{ backgroundColor: "#F7F6F3" }}>
       {/* Full-screen locker animation - becomes blurred background */}
       <div className={`absolute inset-0 transition-transform duration-700 ease-in-out ${
         phase === "intro" ? "scale-100" : "scale-105"
@@ -116,24 +118,23 @@ export default function LoginPage() {
       <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 transition-all duration-500 z-10 ${
         phase === "intro" ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
       }`}>
-        <p className="text-sm font-medium tracking-wide" style={{ color: "#7FB8B5" }}>
-          Click or press <kbd className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: "rgba(53,92,138,0.08)", color: "#355C8A" }}>Space</kbd> / <kbd className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: "rgba(53,92,138,0.08)", color: "#355C8A" }}>Enter</kbd> to skip
+        <p className="text-sm font-medium tracking-wide text-center px-4" style={{ color: "#7FB8B5" }}>
+          <span className="sm:hidden">Tap anywhere to continue</span>
+          <span className="hidden sm:inline">Click or press <kbd className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: "rgba(53,92,138,0.08)", color: "#355C8A" }}>Space</kbd> / <kbd className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: "rgba(53,92,138,0.08)", color: "#355C8A" }}>Enter</kbd> to skip</span>
         </p>
       </div>
 
       {/* Centered login form */}
       {showForm && (
-      <div className="absolute inset-0 flex items-center justify-center p-6 animate-in fade-in duration-700 ease-in-out"
-        style={{}}>
-        <div className="w-full max-w-[420px] rounded-[20px] p-8 relative"
+      <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-700 ease-in-out">
+        <div className="w-full max-w-[420px] rounded-[20px] p-6 sm:p-8 relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
           style={{
             background: "white",
             boxShadow: "0 0 0 1px rgba(255,255,255,0.9), 0 0 20px rgba(255,255,255,0.15), 0 4px 12px rgba(0,0,0,0.04), 0 20px 48px rgba(53,92,138,0.08)",
           }}>
           {/* Logo centered */}
           <div className="flex flex-col items-center mb-6">
-            <img src="/logo-removebg-preview.png" alt="VaultQ" className="object-cover mb-4"
-              style={{ width: "120px", height: "120px" }} />
+            <img src="/logo-removebg-preview.png" alt="VaultQ" className="object-contain mb-3 sm:mb-4 w-20 h-20 sm:w-[120px] sm:h-[120px]" />
             <p className="text-base text-center" style={{ color: "#475569", fontWeight: 400 }}>Sign in to your account to continue</p>
           </div>
 
@@ -185,7 +186,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" className="w-4 h-4 rounded text-[#355C8A] accent-[#355C8A]"
                   style={{ borderColor: c.border, borderRadius: "4px" }} />

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import {
   VCard, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
@@ -24,6 +25,7 @@ import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
+import { compressImageFileToDataUrl } from "@/lib/image-compression";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
@@ -210,32 +212,18 @@ export default function AdminReports() {
       return;
     }
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
+      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
         showCenteredMessage("error", "Please upload image files only");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        showCenteredMessage("error", "Each image must be under 5MB");
         return;
       }
     }
     try {
-      const previews = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = () => reject(new Error("Could not read image"));
-              reader.readAsDataURL(file);
-            }),
-        ),
-      );
+      const previews = await Promise.all(files.map((file) => compressImageFileToDataUrl(file)));
       setApprovePhotos((prev) =>
         [...prev, ...previews.map((preview) => ({ preview, originalPreview: preview }))].slice(0, 3),
       );
-    } catch {
-      showCenteredMessage("error", "Could not read one of the images");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
     }
   }
 
@@ -491,6 +479,13 @@ export default function AdminReports() {
     ])
   );
 
+  const hasFilters = Boolean(query || filterStatus !== "PENDING");
+
+  function resetFilters() {
+    setQuery("");
+    setFilterStatus("PENDING");
+  }
+
   const filtered = baseFiltered.filter((report) => filterStatus === "ALL" || report.status === filterStatus);
 
   const matchResults = foundItems.filter((item) =>
@@ -513,25 +508,29 @@ export default function AdminReports() {
 
   return (
     <StudentShell active="Intake" userName={user.name} userRole={user.role} pageTitle="Item Intake" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
-          {/* Search + status */}
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <VSearchInput value={query} onChange={setQuery} placeholder="Search item or student..." className="flex-1 min-w-[220px] max-w-xl" />
-            <div className="flex h-10 rounded-xl border bg-white overflow-hidden shrink-0" style={{ borderColor: c.border }}>
-              {statusOptions.map((status) => (
-                <button key={status} type="button"
-                  className="px-3 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                  style={{
-                    backgroundColor: filterStatus === status ? c.primary : "transparent",
-                    color: filterStatus === status ? "#fff" : c.textMuted,
-                  }}
-                  onClick={() => setFilterStatus(status)}>
-                  {statusLabel[status]}
-                </button>
-              ))}
-            </div>
-          </div>
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
+          <FilterPanel
+            search={
+              <VSearchInput value={query} onChange={setQuery} placeholder="Search item or student..." className="w-full" />
+            }
+            filters={
+              <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
+                {statusOptions.map((status) => (
+                  <button key={status} type="button"
+                    className="px-2 sm:px-3 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
+                    style={{
+                      backgroundColor: filterStatus === status ? c.primary : "transparent",
+                      color: filterStatus === status ? "#fff" : c.textMuted,
+                    }}
+                    onClick={() => setFilterStatus(status)}>
+                    {statusLabel[status]}
+                  </button>
+                ))}
+              </div>
+            }
+            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
+          />
 
           {loading ? null : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
@@ -980,7 +979,7 @@ export default function AdminReports() {
                       ))}
                     </div>
                   )}
-                  <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG up to 5MB each</p>
+                  <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
                 </div>
                 <p className="text-[11px]" style={{ color: c.textLight }}>
                   Only approve after the item has been physically handed in. The item will appear in Search immediately.

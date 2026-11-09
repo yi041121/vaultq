@@ -18,8 +18,8 @@ export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolea
   const showIdCard = !hideIdCard && timer < 55;
   const doorOpen = autoOpen;
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#f7f6f3] to-[#edebe7]"
-      style={{ perspective: "1000px", transformStyle: "preserve-3d", transform: "scale(1.25)" }}>
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#f7f6f3] to-[#edebe7] scale-100 md:scale-125"
+      style={{ perspective: "1000px", transformStyle: "preserve-3d" }}>
       {/* Floating particles with 3D depth */}
       <div className="absolute inset-0" style={{ transformStyle: "preserve-3d" }}>
         {Array.from({ length: 180 }, (_, i) => {
@@ -77,12 +77,12 @@ export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolea
 
       {/* Locker Bank - Main Focus */}
       <div className="relative" style={{ perspective: "1200px" }}>
-        <div className="flex gap-16" style={{ transform: "rotateX(4deg) rotateY(-2deg)", transformStyle: "preserve-3d", animation: "lockerFloat 18s ease-in-out infinite", willChange: "transform", backfaceVisibility: "hidden" }}>
+        <div className="flex gap-0 md:gap-16" style={{ transform: "rotateX(4deg) rotateY(-2deg)", transformStyle: "preserve-3d", animation: "lockerFloat 18s ease-in-out infinite", willChange: "transform", backfaceVisibility: "hidden" }}>
           {[0, 1, 2].map((lockerIndex) => {
             const isOpen = lockerIndex === 1 && doorOpen;
             return (
               <div key={lockerIndex}
-                className="relative">
+                className={`relative ${lockerIndex === 1 ? "" : "hidden md:block"}`}>
                   <div className="relative w-36 h-36 rounded-2xl flex-shrink-0"
                     style={{
                       background: isOpen
@@ -170,7 +170,7 @@ export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolea
           </div>
 
           {/* Phone */}
-        <div className="absolute left-[353px] -top-10 z-30" style={{ transform: "translateZ(30px)", transformStyle: "preserve-3d", opacity: showPhone ? 1 : 0 }}>
+        <div className="absolute left-[92px] -top-8 md:left-[353px] md:-top-10 z-30" style={{ transform: "translateZ(30px)", transformStyle: "preserve-3d", opacity: showPhone ? 1 : 0 }}>
           <div style={{ animation: "float3d 15s ease-in-out 0.8s infinite", willChange: "transform", backfaceVisibility: "hidden" }}>
             <div className="relative">
             <div className="w-14 h-24 bg-[#263747] rounded-2xl shadow-xl relative overflow-hidden border-2 border-[#355C8A]/40">
@@ -209,9 +209,9 @@ export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolea
         </div>
 
         {/* Student ID Card */}
-        <div className="absolute left-[305px] top-28 z-20" style={{ transform: "translateZ(15px)", transformStyle: "preserve-3d", opacity: showIdCard ? 1 : 0 }}>
+        <div className="absolute left-[58px] top-[150px] md:left-[305px] md:top-28 z-20" style={{ transform: "translateZ(15px)", transformStyle: "preserve-3d", opacity: showIdCard ? 1 : 0 }}>
           <div style={{ animation: "float3d 15s ease-in-out infinite", willChange: "transform", backfaceVisibility: "hidden" }}>
-          <div className="w-40 h-23 bg-white rounded-xl shadow-2xl">
+          <div className="w-40 h-auto bg-white rounded-xl shadow-2xl">
           <div className="p-3">
             <div className="flex items-center gap-1.5 mb-2">
               <div className="w-4 h-4 rounded bg-[#355C8A]" />
@@ -230,7 +230,7 @@ export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolea
         </div>
 
         {/* Connection lines */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" style={{ opacity: doorOpen ? 0.45 : 0 }} key={`lines-${Math.floor(timer / 30)}`}>
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 hidden md:block" style={{ opacity: doorOpen ? 0.45 : 0 }} key={`lines-${Math.floor(timer / 30)}`}>
           <line x1="358" y1="15" x2="136" y2="64" stroke="#7FB8B5" strokeWidth="2" strokeDasharray="6 6" className="animate-line-glow" />
           <line x1="310" y1="140" x2="133" y2="63" stroke="#7FB8B5" strokeWidth="2" strokeDasharray="6 6" className="animate-line-glow" />
           <circle cx="140" cy="62" r="10" fill="none" stroke="#7FB8B5" strokeWidth="0.8">

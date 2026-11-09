@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  BellRing, CheckCircle2, Package, AlertCircle, FileText,
-  Loader2, RefreshCw, CheckCheck,
-} from "lucide-react";
+import { BellRing, AlertCircle, Loader2, RefreshCw, CheckCheck } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, vcolors as c } from "@/components/ui/vault";
+import { VCard, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
+import {
+  NOTIFICATION_META, relativeTime,
+  type NotificationCategory, type NotificationType,
+} from "@/lib/notification-ui";
+import { matchesSearch } from "@/lib/search";
+import {
+  clearStudentCache, getCachedNotifications, getCachedUnread,
+  setCachedNotifications, type CachedNotification,
+} from "@/lib/student-cache";
 
 interface User { id: string; name: string; email: string; role: string; }
 
-type NotificationType = "CLAIM" | "REPORT" | "LOCKER" | "SYSTEM";
-type Filter = "All" | "Claims" | "Reports" | "Locker" | "System";
+type Filter = "All" | NotificationCategory;
 
 interface ApiNotification {
   id: string;
@@ -25,36 +30,15 @@ interface ApiNotification {
 }
 
 interface Notif extends ApiNotification {
-  category: Exclude<Filter, "All">;
+  category: NotificationCategory;
   icon: typeof BellRing;
   color: string;
 }
 
 const FILTERS: Filter[] = ["All", "Claims", "Reports", "Locker", "System"];
 
-const TYPE_META: Record<NotificationType, { category: Exclude<Filter, "All">; icon: typeof BellRing; color: string }> = {
-  CLAIM: { category: "Claims", icon: CheckCircle2, color: "#7FB8B5" },
-  REPORT: { category: "Reports", icon: FileText, color: "#355C8A" },
-  LOCKER: { category: "Locker", icon: Package, color: "#29486A" },
-  SYSTEM: { category: "System", icon: BellRing, color: "#64748b" },
-};
-
-function relativeTime(value: string) {
-  const then = new Date(value).getTime();
-  if (Number.isNaN(then)) return "";
-  const diff = Date.now() - then;
-  if (diff < 45_000) return "Just now";
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
 function toNotif(raw: ApiNotification): Notif {
-  const meta = TYPE_META[raw.type] || TYPE_META.SYSTEM;
+  const meta = NOTIFICATION_META[raw.type] || NOTIFICATION_META.SYSTEM;
   return {
     ...raw,
     category: meta.category,
@@ -63,29 +47,34 @@ function toNotif(raw: ApiNotification): Notif {
   };
 }
 
-let notificationsCache: Notif[] | null = null;
-
 export default function StudentNotifications() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [notifs, setNotifs] = useState<Notif[]>(notificationsCache ?? []);
-  const [unreadCount, setUnreadCount] = useState(notificationsCache ? notificationsCache.filter((n) => !n.isRead).length : 0);
+  const [notifs, setNotifs] = useState<Notif[]>(() => (getCachedNotifications() ?? []).map(toNotif));
+  const [unreadCount, setUnreadCount] = useState(() => getCachedUnread());
   const [filter, setFilter] = useState<Filter>("All");
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
-  const [loading, setLoading] = useState(notificationsCache === null);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(() => getCachedNotifications() === null);
   const [error, setError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const inFlight = useRef(false);
+  const pageSize = 8;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     const token = localStorage.getItem("token");
     if (!token) {
       setLoading(false);
       setError("Session expired — please sign in again");
+      inFlight.current = false;
       return;
     }
-    if (!notificationsCache) setLoading(true);
-    setError(null);
+    if (!silent && !getCachedNotifications()) setLoading(true);
+    if (!silent) setError(null);
     try {
       const res = await fetch("/api/notifications", {
         headers: { Authorization: `Bearer ${token}` },
@@ -93,22 +82,28 @@ export default function StudentNotifications() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load notifications");
-      const list = (data.data as ApiNotification[]).map(toNotif);
+      const raw = data.data as CachedNotification[];
+      const list = raw.map(toNotif);
       setNotifs(list);
-      notificationsCache = list;
-      setUnreadCount(Number(data.unreadCount ?? list.filter((n) => !n.isRead).length));
+      const unread = Number(data.unreadCount ?? list.filter((n) => !n.isRead).length);
+      setUnreadCount(unread);
+      setCachedNotifications(raw, unread);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load notifications");
-      if (!notificationsCache) setNotifs([]);
-      setUnreadCount(0);
+      // Background refreshes keep the last good list on screen.
+      if (!silent) {
+        setError(e instanceof Error ? e.message : "Failed to load notifications");
+        if (!getCachedNotifications()) setNotifs([]);
+        setUnreadCount(0);
+      }
     } finally {
       setLoading(false);
+      inFlight.current = false;
     }
   }, []);
 
   useEffect(() => {
-    if (notificationsCache !== null) notificationsCache = notifs;
-  }, [notifs]);
+    setCachedNotifications(notifs, unreadCount);
+  }, [notifs, unreadCount]);
 
   useEffect(() => {
     setMounted(true);
@@ -124,8 +119,32 @@ export default function StudentNotifications() {
     void load();
   }, [load]);
 
+  // Notifications update automatically; no manual Refresh button.
+  useEffect(() => {
+    if (!mounted) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    const onFocus = () => refresh();
+    const onUpdate = () => refresh();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("vaultq:notifications", onUpdate);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("vaultq:notifications", onUpdate);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [mounted, load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, showUnreadOnly, query]);
+
   function handleLogout() {
-    notificationsCache = null;
+    clearStudentCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -188,23 +207,32 @@ export default function StudentNotifications() {
       notifs.filter((n) => {
         if (filter !== "All" && n.category !== filter) return false;
         if (showUnreadOnly && n.isRead) return false;
+        if (query.trim() && !matchesSearch(query, [n.title, n.message, n.category])) return false;
         return true;
       }),
-    [notifs, filter, showUnreadOnly],
+    [notifs, filter, showUnreadOnly, query],
   );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   if (!user || !mounted) return null;
 
   return (
     <StudentShell active="Notifications" userName={user.name} userRole={user.role} pageTitle="Notifications" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-6 lg:pb-6">
-        <div className="px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
-          {/* Filter bar */}
-          <div className="flex flex-wrap items-center gap-3 mb-6">
-            <div className="flex rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
+          {/* Search and filters */}
+          <div className="space-y-3 mb-6">
+            <div className="w-full sm:max-w-xl">
+              <VSearchInput value={query} onChange={setQuery} className="w-full" placeholder="Search notifications..." />
+            </div>
+
+            <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
               {FILTERS.map((f) => (
                 <button key={f} type="button"
-                  className="px-3.5 h-10 text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
+                  className="px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
                   style={{
                     backgroundColor: filter === f ? c.primary : "transparent",
                     color: filter === f ? "#fff" : c.textMuted,
@@ -214,38 +242,59 @@ export default function StudentNotifications() {
                 </button>
               ))}
             </div>
-            <button type="button"
-              className="h-10 px-3.5 rounded-xl text-xs font-semibold border transition-all duration-200 cursor-pointer"
-              style={{
-                borderColor: showUnreadOnly ? c.primary : c.border,
-                color: showUnreadOnly ? c.primary : c.textMuted,
-                backgroundColor: showUnreadOnly ? c.primarySoft : "#fff",
-              }}
-              onClick={() => setShowUnreadOnly(!showUnreadOnly)}>
-              Unread only
-            </button>
 
-            <span className="text-xs ml-auto" style={{ color: c.textMuted }}>
-              {unreadCount} unread · {notifs.length} total
-            </span>
-            <button type="button"
-              className="h-10 px-3.5 rounded-xl text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ borderColor: c.border, color: c.textMuted }}
-              onClick={() => void load()} disabled={loading}>
-              <RefreshCw size={13} className={`inline mr-1 ${loading ? "animate-spin" : ""}`} /> Refresh
-            </button>
-            <button type="button"
-              className="h-10 px-3.5 rounded-xl text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ borderColor: c.border, color: c.primary }}
-              onClick={() => void markAllRead()} disabled={markingAll || unreadCount === 0}>
-              {markingAll ? <Loader2 size={13} className="inline mr-1 animate-spin" /> : <CheckCheck size={13} className="inline mr-1" />}
-              Mark all read
-            </button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3"
+              style={{ borderColor: c.border }}>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: c.textMuted }}>
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping" style={{ backgroundColor: c.accent }} />
+                    <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: c.accent }} />
+                  </span>
+                  Auto-updating
+                </span>
+                <span className="text-xs" style={{ color: c.textMuted }}>
+                  {unreadCount} unread · {notifs.length} total
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button"
+                  className="h-9 px-3 rounded-lg text-xs font-semibold border transition-all duration-200 cursor-pointer"
+                  style={{
+                    borderColor: showUnreadOnly ? c.primary : c.border,
+                    color: showUnreadOnly ? c.primary : c.textMuted,
+                    backgroundColor: showUnreadOnly ? c.primarySoft : "#fff",
+                  }}
+                  onClick={() => setShowUnreadOnly(!showUnreadOnly)}>
+                  Unread only
+                </button>
+                <button type="button"
+                  className="h-9 px-3 rounded-lg text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ borderColor: c.border, color: c.primary }}
+                  onClick={() => void markAllRead()} disabled={markingAll || unreadCount === 0}>
+                  {markingAll ? <Loader2 size={13} className="inline mr-1 animate-spin" /> : <CheckCheck size={13} className="inline mr-1" />}
+                  Mark all read
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* List */}
           <VCard className="flex-1 overflow-hidden flex flex-col">
-            {loading ? null : error ? (
+            {loading ? (
+              <div className="divide-y" style={{ borderColor: c.borderLight }}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex gap-4 px-5 py-4 animate-pulse">
+                    <div className="w-10 h-10 rounded-xl shrink-0" style={{ backgroundColor: c.fill }} />
+                    <div className="flex-1 space-y-2 py-0.5">
+                      <div className="h-3.5 w-2/3 rounded" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-full rounded" style={{ backgroundColor: c.fill }} />
+                      <div className="h-3 w-4/5 rounded" style={{ backgroundColor: c.fill }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : error ? (
               <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
                 <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
                 <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>
@@ -266,8 +315,9 @@ export default function StudentNotifications() {
                 </p>
               </div>
             ) : (
-              <div className="divide-y" style={{ borderColor: c.borderLight }}>
-                {filtered.map((n) => (
+              <>
+                <div className="divide-y flex-1" style={{ borderColor: c.borderLight }}>
+                  {paginated.map((n) => (
                   <div key={n.id}
                     className="relative flex gap-4 px-5 lg:px-6 py-4 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
                     onClick={() => openNotification(n)}>
@@ -297,7 +347,17 @@ export default function StudentNotifications() {
                     </div>
                   </div>
                 ))}
-              </div>
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-4 border-t"
+                    style={{ borderColor: c.borderLight }}>
+                    <p className="text-xs" style={{ color: c.textMuted }}>
+                      Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length}
+                    </p>
+                    <VPagination current={currentPage} total={totalPages} onPage={setPage} />
+                  </div>
+                )}
+              </>
             )}
           </VCard>
         </div>
