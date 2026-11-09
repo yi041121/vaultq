@@ -96,3 +96,28 @@ The app also keeps server-side 5 MB checks as a fallback.
 - Supabase free projects can pause after a week of inactivity.
 - Cloud storage (Vercel Blob, Cloudinary, S3) is recommended later if photo
   volume grows; the current demo stores compressed photos as base64 in Postgres.
+
+## Current deployment
+
+- Production URL: `https://vaultq-fawn.vercel.app`
+- Vercel project: `zynova5/vaultq`
+- Neon project: `spring-king-16945008` (VaultQ, Singapore)
+- Vercel Functions region: `sin1`
+
+## Hardware
+
+The working sketch is at:
+
+```text
+~/Arduino/vaultq_two_step_test/vaultq_two_step_test.ino
+```
+
+It now uses `WiFiClientSecure` with:
+
+```text
+https://vaultq-fawn.vercel.app/api/hardware/identify
+https://vaultq-fawn.vercel.app/api/hardware/verify
+```
+
+`setInsecure()` is used for the demo. For production, pin the Vercel/ISRG root
+certificate instead of disabling certificate verification.
