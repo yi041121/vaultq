@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Camera, CameraOff, Info, Upload } from "lucide-react";
+import { X, Camera, CameraOff, Info, Upload, Keyboard } from "lucide-react";
 import { VButton, vcolors as c } from "@/components/ui/vault";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   onDetect: (code: string) => void;
   onClose: () => void;
   onUseUpload?: () => void;
+  onManualEntry?: () => void;
 }
 
 function extractBarcode(raw: string): string | null {
@@ -18,7 +19,7 @@ function extractBarcode(raw: string): string | null {
   return m ? m[0] : null;
 }
 
-export default function BarcodeScanner({ open, onDetect, onClose, onUseUpload }: Props) {
+export default function BarcodeScanner({ open, onDetect, onClose, onUseUpload, onManualEntry }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -176,9 +177,9 @@ export default function BarcodeScanner({ open, onDetect, onClose, onUseUpload }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl overflow-hidden bg-black shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 bg-black/80">
+      <div className="absolute inset-0 bg-black/75" onClick={onClose} />
+      <div className="relative w-full max-w-md max-h-[92dvh] rounded-2xl overflow-hidden bg-black shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 bg-black/80 shrink-0">
           <span className="text-sm font-medium text-white flex items-center gap-2"><Camera size={16} /> Scan barcode</span>
           <button type="button" onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-colors duration-200 cursor-pointer">
             <X size={16} />
@@ -230,6 +231,9 @@ export default function BarcodeScanner({ open, onDetect, onClose, onUseUpload }:
 
               <div className="flex flex-wrap items-center gap-2 mt-3">
                 <VButton size="sm" onClick={() => void start()}><Camera size={13} /> Try again</VButton>
+                {onManualEntry && (
+                  <VButton variant="secondary" size="sm" onClick={onManualEntry}><Keyboard size={13} /> Type manually</VButton>
+                )}
                 {onUseUpload && (
                   <VButton variant="secondary" size="sm" onClick={onUseUpload}><Upload size={13} /> Upload photo</VButton>
                 )}
@@ -237,14 +241,24 @@ export default function BarcodeScanner({ open, onDetect, onClose, onUseUpload }:
             </div>
           )}
           {!error && scanning && (
-            <p className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 text-xs font-medium text-white bg-black/60 px-3 py-1.5 rounded-full whitespace-nowrap">
-              Point camera at barcode — 10 digits e.g. 2000132602
+            <p className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 text-[11px] font-medium text-white bg-black/60 px-3 py-1.5 rounded-full text-center w-[90%]">
+              Hold the card steady inside the frame — avoid glare
             </p>
           )}
         </div>
-        <div className="px-4 py-3 bg-white flex items-center justify-between">
-          <p className="text-xs" style={{ color: c.textMuted }}>Will auto-detect 10-digit code</p>
-          <VButton variant="secondary" size="sm" onClick={onClose}>Cancel</VButton>
+        <div className="px-4 py-3 bg-white shrink-0 space-y-2">
+          <p className="text-[11px] text-center" style={{ color: c.textMuted }}>
+            Keep the barcode horizontal and inside the frame. Camera not detecting it? Type the 10 digits or upload a card photo.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {onManualEntry && (
+              <VButton variant="secondary" size="sm" onClick={onManualEntry}><Keyboard size={13} /> Type manually</VButton>
+            )}
+            {onUseUpload && (
+              <VButton variant="secondary" size="sm" onClick={onUseUpload}><Upload size={13} /> Upload photo</VButton>
+            )}
+            <VButton variant="secondary" size="sm" onClick={onClose}>Cancel</VButton>
+          </div>
         </div>
       </div>
     </div>

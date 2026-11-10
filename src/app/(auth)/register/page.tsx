@@ -345,7 +345,7 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label htmlFor="name" className="text-sm font-medium block" style={{ color: c.text }}>Name</label>
+              <label htmlFor="name" className="text-sm font-medium block" style={{ color: c.text }}>Name <span style={{ color: c.danger }}>*</span></label>
               <VInput
                 id="name" type="text" placeholder="John Doe" required autoFocus maxLength={NAME_MAX_LENGTH}
                 style={{ borderColor: nameError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
@@ -358,7 +358,7 @@ export default function RegisterPage() {
             </div>
             <div className="space-y-1.5">
               <label htmlFor="email" className="text-sm font-medium block" style={{ color: c.text }}>
-                Student email
+                Student email <span style={{ color: c.danger }}>*</span>
               </label>
               <div className="relative">
                 <VInput
@@ -447,7 +447,7 @@ export default function RegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="password" className="text-sm font-medium block" style={{ color: c.text }}>Password</label>
+              <label htmlFor="password" className="text-sm font-medium block" style={{ color: c.text }}>Password <span style={{ color: c.danger }}>*</span></label>
               <div className="relative">
                 <VInput
                   id="password" type={showPassword ? "text" : "password"} placeholder="At least 8 characters" required minLength={8}
@@ -467,7 +467,7 @@ export default function RegisterPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="confirmPassword" className="text-sm font-medium block" style={{ color: c.text }}>Confirm password</label>
+              <label htmlFor="confirmPassword" className="text-sm font-medium block" style={{ color: c.text }}>Confirm password <span style={{ color: c.danger }}>*</span></label>
               <div className="relative">
                 <VInput
                   id="confirmPassword" type={showConfirmPassword ? "text" : "password"} placeholder="Repeat your password" required
@@ -533,6 +533,14 @@ export default function RegisterPage() {
         onClose={() => setShowCamera(false)}
         onDetect={(code) => { updateBarcode(code); flashBarcodeSuccess(); }}
         onUseUpload={() => { setShowCamera(false); fileRef.current?.click(); }}
+        onManualEntry={() => {
+          setShowCamera(false);
+          setTimeout(() => {
+            const el = document.getElementById("cardBarcode") as HTMLInputElement | null;
+            el?.scrollIntoView({ block: "center", behavior: "smooth" });
+            el?.focus();
+          }, 150);
+        }}
       />
       <div id="vaultq-file-reader-temp" className="hidden" />
 

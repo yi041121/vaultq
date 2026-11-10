@@ -256,6 +256,7 @@ export default function StudentProfile() {
                   <div className="relative flex-1">
                     <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
+                      id="profile-card-barcode"
                       type="text"
                       placeholder={barcodeEditing ? "Enter 10-digit barcode" : "Tap to enter or show barcode"}
                       maxLength={10}
@@ -385,6 +386,15 @@ export default function StudentProfile() {
         onClose={() => setShowCamera(false)}
         onDetect={(code) => { setBarcode(code); setBarcodeError(null); setBarcodeFromImage(true); }}
         onUseUpload={() => { setShowCamera(false); fileRef.current?.click(); }}
+        onManualEntry={() => {
+          setShowCamera(false);
+          setBarcodeEditing(true);
+          setTimeout(() => {
+            const el = document.getElementById("profile-card-barcode") as HTMLInputElement | null;
+            el?.scrollIntoView({ block: "center", behavior: "smooth" });
+            el?.focus();
+          }, 150);
+        }}
       />
       {showBarcodeCard && (
         <StudentBarcodeModal
