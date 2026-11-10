@@ -240,7 +240,7 @@ export default function StudentProfile() {
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold" style={{ color: c.text }}>Card Barcode</h3>
-                    <p className="text-[11px] mt-0.5" style={{ color: c.textLight }}>Tap the field to show a scannable code.</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: c.textLight }}>Use Show to view your scannable code.</p>
                   </div>
                 </div>
                 <button type="button"
@@ -260,17 +260,12 @@ export default function StudentProfile() {
                     <VInput
                       id="profile-card-barcode"
                       type="text"
-                      placeholder={barcodeEditing ? "Enter 10-digit barcode" : "Tap to enter or show barcode"}
+                      placeholder={barcodeEditing ? "Enter 10-digit barcode" : "10-digit card barcode"}
                       maxLength={10}
                       inputMode="numeric"
-                      className={`pl-9 ${barcodeEditing ? "" : "cursor-pointer"}`}
+                      className={`pl-9 ${barcodeEditing ? "" : "cursor-default"}`}
                       readOnly={!barcodeEditing}
                       aria-readonly={!barcodeEditing}
-                      onClick={() => {
-                        if (barcodeEditing) return;
-                        if (savedBarcode || savedStudentId) setShowBarcodeCard(true);
-                        else setBarcodeEditing(true);
-                      }}
                       onChange={(e) => {
                         setBarcode(e.target.value.replace(/\D/g, "").slice(0, 10));
                         setBarcodeError(null);
@@ -310,7 +305,7 @@ export default function StudentProfile() {
                   ) : barcode !== savedBarcode ? (
                     "Save changes to update the barcode used by the locker."
                   ) : barcode ? (
-                    "Tap the field to show a scannable code, or use the pencil to type a new barcode."
+                    "Use Show to view the scannable code, or the pencil to edit."
                   ) : (
                     "Scan or upload your card, or tap the pencil to type the barcode manually."
                   )}

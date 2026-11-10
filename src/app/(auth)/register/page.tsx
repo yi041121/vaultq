@@ -21,6 +21,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "" });
   const [googlePrefill, setGooglePrefill] = useState(false);
   const [barcode, setBarcode] = useState("");
+  const [barcodeDetected, setBarcodeDetected] = useState(false);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [barcodeFromImage, setBarcodeFromImage] = useState(false);
   const [readingImage, setReadingImage] = useState(false);
@@ -58,9 +59,12 @@ export default function RegisterPage() {
         const saved = localStorage.getItem("vq_register_barcode") || "";
         if (/^[0-9]{10}$/.test(saved)) restore = saved;
       }
+      const savedDetected = localStorage.getItem("vq_register_barcode_detected") === "1";
       localStorage.removeItem("vq_register_barcode");
+      localStorage.removeItem("vq_register_barcode_detected");
       if (restore) {
         setBarcode(restore);
+        setBarcodeDetected(savedDetected);
         flashBarcodeSuccess();
         scheduleBarcodeCheck(restore);
       }
@@ -119,17 +123,23 @@ export default function RegisterPage() {
     }, 250);
   }
 
-  function updateBarcode(raw: string) {
+  function updateBarcode(raw: string, source: "manual" | "detected" = "manual") {
     const v = raw.replace(/\D/g, "");
     setBarcode(v);
+    setBarcodeDetected(source === "detected");
     setBarcodeExists(false);
     setBarcodeAvailable(false);
     if (availableTimer.current) clearTimeout(availableTimer.current);
     if (checkTimer.current) clearTimeout(checkTimer.current);
-    // Keep a detected barcode across the Google OAuth round-trip
+    // Keep a detected barcode and its source across the Google OAuth round-trip
     if (typeof window !== "undefined") {
-      if (/^[0-9]{10}$/.test(v)) localStorage.setItem("vq_register_barcode", v);
-      else localStorage.removeItem("vq_register_barcode");
+      if (/^[0-9]{10}$/.test(v)) {
+        localStorage.setItem("vq_register_barcode", v);
+        localStorage.setItem("vq_register_barcode_detected", source === "detected" ? "1" : "0");
+      } else {
+        localStorage.removeItem("vq_register_barcode");
+        localStorage.removeItem("vq_register_barcode_detected");
+      }
     }
     if (v && !/^[0-9]{10}$/.test(v)) {
       setBarcodeError("Exactly 10 digits required");
@@ -171,7 +181,7 @@ export default function RegisterPage() {
     const code = await decodeBarcodeFromImage(file);
     setReadingImage(false);
     if (code) {
-      updateBarcode(code);
+      updateBarcode(code, "detected");
       flashBarcodeSuccess();
     } else {
       setBarcodeFromImage(false);
@@ -400,16 +410,16 @@ export default function RegisterPage() {
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                   <VInput
                     id="cardBarcode" type="text" placeholder="e.g. 2000132602"
-                    className={`pl-10 pr-10 ${barcode.length === 10 ? "cursor-default" : ""}`}
+                    className={`pl-10 pr-10 ${barcodeDetected ? "cursor-default" : ""}`}
                     inputMode="numeric"
                     maxLength={10}
-                    readOnly={barcode.length === 10}
+                    readOnly={barcodeDetected}
                     style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                     value={barcode}
                     onChange={(e) => updateBarcode(e.target.value)}
                   />
-                  {barcode && (
-                    <button type="button" onClick={() => { setBarcode(""); setBarcodeError(null); setBarcodeFromImage(false); setBarcodeExists(false); setBarcodeAvailable(false); if (typeof window !== "undefined") localStorage.removeItem("vq_register_barcode"); if (checkTimer.current) clearTimeout(checkTimer.current); if (availableTimer.current) clearTimeout(availableTimer.current); }}
+                  {barcodeDetected && (
+                    <button type="button" onClick={() => { setBarcode(""); setBarcodeDetected(false); setBarcodeError(null); setBarcodeFromImage(false); setBarcodeExists(false); setBarcodeAvailable(false); if (typeof window !== "undefined") { localStorage.removeItem("vq_register_barcode"); localStorage.removeItem("vq_register_barcode_detected"); } if (checkTimer.current) clearTimeout(checkTimer.current); if (availableTimer.current) clearTimeout(availableTimer.current); }}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}>
                       <X size={14} />
                     </button>
@@ -441,6 +451,10 @@ export default function RegisterPage() {
                     : (
                       <><CheckCircle2 size={12} /> Barcode successfully detected</>
                     )}
+                </p>
+              ) : barcodeAvailable ? (
+                <p className="text-[11px] flex items-center gap-1.5" style={{ color: "#16a34a" }}>
+                  <CheckCircle2 size={12} /> Barcode can be used
                 </p>
               ) : null}
             </div>
@@ -530,7 +544,7 @@ export default function RegisterPage() {
       <BarcodeScanner
         open={showCamera}
         onClose={() => setShowCamera(false)}
-        onDetect={(code) => { updateBarcode(code); flashBarcodeSuccess(); }}
+        onDetect={(code) => { updateBarcode(code, "detected"); flashBarcodeSuccess(); }}
       />
       <div id="vaultq-file-reader-temp" className="hidden" />
 
