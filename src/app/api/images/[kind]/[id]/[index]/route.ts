@@ -71,7 +71,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
         headers: {
           "Content-Type": mime,
           "Content-Length": String(buffer.length),
-          "Cache-Control": "private, max-age=3600, immutable",
+          "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
           "X-Content-Type-Options": "nosniff",
         },
       });

@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
     response_type: "code",
     scope: "openid email profile",
     state,
-    hd: ALLOWED_DOMAIN,
     // Show the account picker every time, as requested.
     prompt: "select_account",
   });

@@ -39,7 +39,11 @@ export async function GET(request: NextRequest) {
         grant_type: "authorization_code",
       }),
     });
-    if (!tokenRes.ok) return fail("Google login failed. Please try again.");
+    if (!tokenRes.ok) {
+      const details = await tokenRes.text().catch(() => "");
+      console.error("Google token exchange failed", tokenRes.status, details.slice(0, 300));
+      return fail("Google sign-in was rejected by Google. Please try again, or use email/password.");
+    }
     const tokens = (await tokenRes.json()) as { access_token?: string };
     if (!tokens.access_token) return fail("Google login failed. Please try again.");
 
@@ -47,7 +51,10 @@ export async function GET(request: NextRequest) {
     const infoRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
-    if (!infoRes.ok) return fail("Could not verify your Google account. Please try again.");
+    if (!infoRes.ok) {
+      console.error("Google userinfo failed", infoRes.status);
+      return fail("Could not read your Google profile. Please try again.");
+    }
     const profile = (await infoRes.json()) as {
       email?: string;
       email_verified?: boolean;
@@ -106,6 +113,6 @@ export async function GET(request: NextRequest) {
     res.cookies.set("g_state", "", { path: "/", maxAge: 0 });
     return res;
   } catch {
-    return fail("Google login failed. Please try again.");
+    return fail("Google login failed. Please try again, or use email/password.");
   }
 }
