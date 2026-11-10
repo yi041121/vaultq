@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
 }
 
 // PATCH /api/accounts/:id — admin edits student details
-// Body: { name?, email?, studentId? } — cardBarcode is immutable after creation.
+// Body: { name?, email?, studentId?, cardBarcode? }
 export async function PATCH(request: NextRequest, { params }: Ctx) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -96,12 +96,19 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     }
     if (cardBarcode !== undefined) {
       const clean = typeof cardBarcode === "string" ? cardBarcode.trim() : "";
-      if (clean && !/^[0-9]{10}$/.test(clean)) {
+      if (!clean) {
+        return NextResponse.json({ success: false, error: "Card barcode is required" }, { status: 400 });
+      }
+      if (!/^[0-9]{10}$/.test(clean)) {
         return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits" }, { status: 400 });
       }
-      if (clean !== (existing.cardBarcode || "")) {
-        return NextResponse.json({ success: false, error: "Card barcode cannot be changed after the account is created" }, { status: 400 });
+      const dupe = await prisma.user.findFirst({
+        where: { cardBarcode: clean, NOT: { id } },
+      });
+      if (dupe) {
+        return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
       }
+      data.cardBarcode = clean;
     }
 
     if (Object.keys(data).length === 0) {
@@ -111,6 +118,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     const updated = await prisma.user.update({ where: { id }, data, select: SAFE_SELECT });
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
+    if ((e as { code?: string })?.code === "P2002") {
+      return NextResponse.json({ success: false, error: "Barcode, student ID or email already registered" }, { status: 409 });
+    }
     console.error("Account update failed", e);
     return NextResponse.json({ success: false, error: "Failed to update account" }, { status: 500 });
   }

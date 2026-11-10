@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   }
   if (!sessionToken) {
     return NextResponse.json(
-      { success: false, error: "Scan your student ID first" },
+      { success: false, error: "Scan your student card barcode or student ID first" },
       { status: 401 },
     );
   }

@@ -5,6 +5,7 @@ import { isItemCategory } from "@/lib/categories";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { VALID_REPORT_TYPES, validateReportDetails } from "@/lib/report-validation";
+import { signedImageUrl } from "@/lib/image-url";
 
 const VALID_STATUS = ["PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"] as const;
 
@@ -40,13 +41,29 @@ export async function GET(request: NextRequest) {
 
     // Students do not get storage locations from report cards. Pickup details
     // are delivered through the approved claim instead.
-    const data =
+    let data: any[] =
       user.role === "STUDENT"
         ? reports.map((report) => ({
             ...report,
             item: report.item ? { ...report.item, locker: null } : null,
           }))
         : reports;
+
+    // Lightweight lists (admin verification queue) send signed image URLs
+    // instead of embedding base64 image data in the JSON response.
+    if (searchParams.get("light") === "1") {
+      data = data.map((report: any) => {
+        const sources: string[] = Array.isArray(report.imageUrls) && report.imageUrls.length
+          ? report.imageUrls
+          : report.imageUrl
+            ? [report.imageUrl]
+            : [];
+        const urls = sources
+          .map((source, index) => signedImageUrl("report", report.id, index, source))
+          .filter(Boolean);
+        return { ...report, imageUrl: urls[0] || null, imageUrls: urls };
+      });
+    }
 
     return NextResponse.json({ success: true, data });
   } catch (e) {

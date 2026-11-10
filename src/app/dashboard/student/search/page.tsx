@@ -6,8 +6,8 @@ import {
   Search, Package,
   Briefcase, CreditCard, Key, BookText, CupSoda,
   ChevronDown, Monitor, Grid3X3, ArrowUpDown,
-  MapPin, Clock, ChevronLeft, ChevronRight, Camera, X, Upload, Eye, Crop, FileText,
-  Loader2, RefreshCw, CheckCircle2, Plus,
+  MapPin, Clock, ChevronLeft, ChevronRight, X, Upload, Eye, Crop, FileText,
+  RefreshCw, CheckCircle2, Plus, RotateCcw,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ItemDetailsModal } from "@/components/item-details-modal";
@@ -88,7 +88,7 @@ export default function StudentSearch() {
   // Claim modal state
   const [claimItem, setClaimItem] = useState<FoundItem | null>(null);
   const [claimReason, setClaimReason] = useState("");
-  const [claimPhotos, setClaimPhotos] = useState<{ file: File; preview: string }[]>([]);
+  const [claimPhotos, setClaimPhotos] = useState<{ file: File; preview: string; originalFile: File; originalPreview: string }[]>([]);
   const [claimCameraOpen, setClaimCameraOpen] = useState(false);
   const [claimPhotoSourceOpen, setClaimPhotoSourceOpen] = useState(false);
   const [claimEditPhoto, setClaimEditPhoto] = useState<number | null>(null);
@@ -345,7 +345,12 @@ export default function StudentSearch() {
       const drafts = await Promise.all(
         files.map(async (file) => {
           const compressed = await compressImageFile(file);
-          return { file: compressed.file, preview: compressed.preview };
+          return {
+            file: compressed.file,
+            preview: compressed.preview,
+            originalFile: compressed.file,
+            originalPreview: compressed.preview,
+          };
         }),
       );
       setClaimPhotos((prev) => [...prev, ...drafts].slice(0, 3));
@@ -915,6 +920,19 @@ export default function StudentSearch() {
                               </span>
                             </span>
                           </button>
+                          {photo.preview !== photo.originalPreview && (
+                            <button type="button" aria-label={`Revert evidence photo ${index + 1} to original`}
+                              className="absolute bottom-1.5 left-1.5 z-10 inline-flex items-center gap-1 h-6 px-2 rounded-full bg-black/60 text-white text-[9px] font-semibold hover:bg-black/80 cursor-pointer"
+                              onClick={() => setClaimPhotos((prev) =>
+                                prev.map((entry, i) =>
+                                  i === index
+                                    ? { ...entry, file: entry.originalFile, preview: entry.originalPreview }
+                                    : entry,
+                                ),
+                              )}>
+                              <RotateCcw size={10} /> Revert
+                            </button>
+                          )}
                           <button type="button" aria-label={`Remove evidence photo ${index + 1}`}
                             onClick={() => setClaimPhotos((prev) => prev.filter((_, i) => i !== index))}
                             className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors duration-200 cursor-pointer">
@@ -964,7 +982,16 @@ export default function StudentSearch() {
           onClose={() => setClaimCameraOpen(false)}
           onUseUpload={() => { setClaimCameraOpen(false); fileRef.current?.click(); }}
           onCapture={(photo) => {
-            setClaimPhotos((prev) => (prev.length >= 3 ? prev : [...prev, { file: photo.file, preview: photo.preview }]));
+            setClaimPhotos((prev) =>
+              prev.length >= 3
+                ? prev
+                : [...prev, {
+                    file: photo.file,
+                    preview: photo.preview,
+                    originalFile: photo.file,
+                    originalPreview: photo.preview,
+                  }],
+            );
             setClaimCameraOpen(false);
           }}
         />
@@ -977,7 +1004,7 @@ export default function StudentSearch() {
           onSave={(photo) => {
             setClaimPhotos((prev) =>
               prev.map((entry, index) =>
-                index === claimEditPhoto ? { file: photo.file, preview: photo.preview } : entry,
+                index === claimEditPhoto ? { ...entry, file: photo.file, preview: photo.preview } : entry,
               ),
             );
             setClaimEditPhoto(null);

@@ -7,6 +7,7 @@ import { Eye, EyeOff, Barcode, Camera, Upload, X, CheckCircle2, Loader2 } from "
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import { showCenteredMessage } from "@/components/centered-message";
 import LockerIllustration from "@/components/locker-illustration";
+import { markSessionActivity } from "@/lib/idle-session";
 import BarcodeScanner from "@/components/barcode-scanner";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
@@ -185,6 +186,14 @@ export default function RegisterPage() {
       setNameError(nameError);
       return;
     }
+    if (!form.password) {
+      setPasswordError("Password is required");
+      return;
+    }
+    if (form.password.length < 8) {
+      setPasswordError("Password must be at least 8 characters");
+      return;
+    }
     if (form.password !== form.confirmPassword) {
       setPasswordError("Passwords do not match");
       return;
@@ -199,6 +208,11 @@ export default function RegisterPage() {
     }
     if (barcode && !/^[0-9]{10}$/.test(barcode)) {
       setBarcodeError("Exactly 10 digits required");
+      return;
+    }
+    if (!barcode) {
+      setBarcodeError("Card barcode is required");
+      showCenteredMessage("error", "Upload a previous card photo, scan your card, or ask an admin to register you");
       return;
     }
     if (barcodeExists) {
@@ -254,6 +268,7 @@ export default function RegisterPage() {
       }
       localStorage.setItem("token", data.data.token);
       localStorage.setItem("user", JSON.stringify(data.data.user));
+      markSessionActivity();
       const role = data.data.user.role;
       const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
       // Show centered success popup on this page, then redirect quickly —
@@ -376,16 +391,17 @@ export default function RegisterPage() {
             {/* Card Barcode — 10-digit + file + camera */}
             <div className="space-y-1.5">
               <label htmlFor="cardBarcode" className="text-sm font-medium block" style={{ color: c.text }}>
-                Card Barcode <span className="text-xs font-normal" style={{ color: c.textMuted }}></span>
+                Card Barcode <span style={{ color: c.danger }}>*</span>
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                   <VInput
-                    id="cardBarcode" type="text" placeholder="2000132602"
+                    id="cardBarcode" type="text" placeholder="Type or scan 2000132602"
                     className="pl-10 pr-10"
-                    readOnly
-                    style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none", cursor: "default" }}
+                    inputMode="numeric"
+                    maxLength={10}
+                    style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                     value={barcode}
                     onChange={(e) => updateBarcode(e.target.value)}
                   />
@@ -425,7 +441,7 @@ export default function RegisterPage() {
                 </p>
               ) : (
                 <p className="text-[11px]" style={{ color: c.textLight }}>
-                  Scan with the camera or upload a card image.
+                  Scan or upload your card, or type the 10 digits. Lost your card? Upload a previous card photo or ask an admin to register you.
                 </p>
               )}
             </div>
@@ -434,7 +450,7 @@ export default function RegisterPage() {
               <label htmlFor="password" className="text-sm font-medium block" style={{ color: c.text }}>Password</label>
               <div className="relative">
                 <VInput
-                  id="password" type={showPassword ? "text" : "password"} placeholder="At least 8 characters" required
+                  id="password" type={showPassword ? "text" : "password"} placeholder="At least 8 characters" required minLength={8}
                   className="pr-12"
                   style={{ borderColor: "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                   value={form.password}
@@ -512,7 +528,12 @@ export default function RegisterPage() {
       </div>
       )}
 
-      <BarcodeScanner open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { updateBarcode(code); flashBarcodeSuccess(); }} />
+      <BarcodeScanner
+        open={showCamera}
+        onClose={() => setShowCamera(false)}
+        onDetect={(code) => { updateBarcode(code); flashBarcodeSuccess(); }}
+        onUseUpload={() => { setShowCamera(false); fileRef.current?.click(); }}
+      />
       <div id="vaultq-file-reader-temp" className="hidden" />
 
       {/* Confirm details before creating account */}

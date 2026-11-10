@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { signedImageUrl } from "@/lib/image-url";
 
 /** Thrown when the item stops being available while a claim is submitted. */
 class ClaimConflict extends Error {}
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
             locker: { select: { lockerNumber: true } },
             reports: {
               where: { type: "FOUND", status: "VERIFIED" },
-              select: { imageUrls: true },
+              select: { id: true, imageUrls: true },
               take: 1,
             },
           },
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Locker numbers are only revealed once the claim is approved.
-    const data =
+    let data: any[] =
       user.role === "STUDENT"
         ? claimsWithEvidence.map((claim) =>
             claim.status === "APPROVED"
@@ -123,6 +124,45 @@ export async function GET(request: NextRequest) {
               : { ...claim, item: { ...claim.item, locker: null } },
           )
         : claimsWithEvidence;
+
+    // Admin verification queue: send signed image URLs instead of megabytes of
+    // base64 data. The browser can lazy-load only the photos it actually shows.
+    if (new URL(request.url).searchParams.get("light") === "1") {
+      data = data.map((claim: any) => {
+        const evidenceSources: string[] = claim.evidenceImageUrls?.length
+          ? claim.evidenceImageUrls
+          : claim.evidenceImageUrl
+            ? [claim.evidenceImageUrl]
+            : [];
+        const evidenceUrls = evidenceSources
+          .map((source, index) => signedImageUrl("claim", claim.id, index, source))
+          .filter(Boolean);
+        const foundReport = claim.item?.reports?.[0];
+        const itemReportUrls = Array.isArray(foundReport?.imageUrls)
+          ? foundReport.imageUrls
+              .map((source: string, index: number) => signedImageUrl("report", foundReport.id, index, source))
+              .filter(Boolean)
+          : [];
+        const itemMain = claim.item?.imageUrl
+          ? signedImageUrl("item", claim.itemId, 0, claim.item.imageUrl)
+          : "";
+        const itemUrls = Array.from(new Set([itemMain, ...itemReportUrls].filter(Boolean)));
+        return {
+          ...claim,
+          evidenceImageUrls: evidenceUrls,
+          evidenceImageUrl: evidenceUrls[0] || null,
+          item: claim.item
+            ? {
+                ...claim.item,
+                imageUrl: itemUrls[0] || null,
+                reports: foundReport
+                  ? [{ ...foundReport, imageUrls: itemReportUrls }]
+                  : [],
+              }
+            : claim.item,
+        };
+      });
+    }
 
     return NextResponse.json({ success: true, data });
   } catch (e) {

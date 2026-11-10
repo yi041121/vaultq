@@ -247,7 +247,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       "Claim Approved",
       `Your claim for ${claim.item.itemName} has been approved.${
         assignedLockerNumber ? ` Locker ${assignedLockerNumber} is assigned.` : ""
-      } View your QR code in My Claims. At the locker kiosk, scan your registered student ID barcode, then scan the QR code to open the locker and collect your item.`,
+      } View your QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
       { type: "CLAIM", link: "/dashboard/student/claims" },
     );
 

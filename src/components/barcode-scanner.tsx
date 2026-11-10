@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Camera } from "lucide-react";
+import { X, Camera, CameraOff, Info, Upload } from "lucide-react";
 import { VButton, vcolors as c } from "@/components/ui/vault";
 
 interface Props {
   open: boolean;
   onDetect: (code: string) => void;
   onClose: () => void;
+  onUseUpload?: () => void;
 }
 
 function extractBarcode(raw: string): string | null {
@@ -17,9 +18,10 @@ function extractBarcode(raw: string): string | null {
   return m ? m[0] : null;
 }
 
-export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
+export default function BarcodeScanner({ open, onDetect, onClose, onUseUpload }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [scanning, setScanning] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -37,6 +39,7 @@ export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
 
   async function start() {
     setError(null);
+    setPermissionDenied(false);
     setScanning(true);
 
     // Try native BarcodeDetector if available and supports code_128
@@ -64,7 +67,9 @@ export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
           return;
         }
       } catch (e: any) {
-        setError(e?.message || "Camera access denied. Please allow camera or upload image.");
+        const denied = e?.name === "NotAllowedError" || /permission|denied/i.test(String(e?.message || ""));
+        setPermissionDenied(denied);
+        setError(denied ? "Camera permission is blocked" : e?.message || "Camera access failed");
         setScanning(false);
         return;
       }
@@ -105,14 +110,23 @@ export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
       );
     } catch (e: any) {
       const msg = e?.message || "";
-      if (msg.includes("NotAllowedError") || msg.includes("Permission")) {
-        setError("Camera permission denied. Please allow camera or upload image.");
-      } else if (msg.includes("NotFoundError")) {
-        setError("No camera found. Please upload barcode image.");
+      if (e?.name === "NotAllowedError" || msg.includes("NotAllowedError") || msg.includes("Permission")) {
+        setPermissionDenied(true);
+        setError("Camera permission is blocked");
+      } else if (msg.includes("NotFoundError") || msg.includes("No camera")) {
+        setPermissionDenied(false);
+        setError("No camera found. Please upload a barcode photo or type the 10 digits.");
       } else if (msg.includes("NotSecureContext") || msg.includes("secure")) {
-        setError("Camera requires HTTPS or localhost. Please upload image or type 2000132602.");
+        setPermissionDenied(false);
+        setError("Camera requires HTTPS. Please upload a barcode photo or type the 10 digits.");
+      } else if (msg.includes("NotReadableError") || msg.includes("busy")) {
+        setPermissionDenied(false);
+        setError("Camera is busy. Close the other app using it, then try again.");
       } else {
-        setError(msg || "Could not start camera. Please upload image or type manually.");
+        // Most scanners report a generic failure when the browser has blocked
+        // camera access, so show the permission guide as the safest fallback.
+        setPermissionDenied(true);
+        setError("Could not start camera. Check camera permission or upload a barcode photo.");
       }
       setScanning(false);
     }
@@ -184,12 +198,46 @@ export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
             </div>
           </div>
           {error && (
-            <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-red-500/90 text-white text-xs p-3 text-center">
-              {error}
+            <div className="absolute inset-0 z-10 bg-white p-4 overflow-y-auto text-left">
+              <div className="flex items-start gap-2.5">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "#fef2f2" }}>
+                  <CameraOff size={18} style={{ color: c.danger }} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: c.text }}>
+                    {permissionDenied ? "Allow camera access" : "Camera unavailable"}
+                  </p>
+                  <p className="text-[11px] leading-relaxed mt-0.5" style={{ color: c.textMuted }}>{error}</p>
+                </div>
+              </div>
+
+              {permissionDenied && (
+                <div className="mt-2.5 rounded-lg border bg-[#f8fafc] p-2.5" style={{ borderColor: c.border }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1" style={{ color: c.textLight }}>
+                    <Info size={11} /> How to allow camera
+                  </p>
+                  <ol className="space-y-1 text-[10.5px] leading-relaxed" style={{ color: c.textMuted }}>
+                    <li><b style={{ color: c.text }}>1.</b> Tap the lock / ⓘ icon next to the website address.</li>
+                    <li><b style={{ color: c.text }}>2.</b> Open <b style={{ color: c.text }}>Permissions</b> or <b style={{ color: c.text }}>Site settings</b>.</li>
+                    <li><b style={{ color: c.text }}>3.</b> Set <b style={{ color: c.text }}>Camera</b> to <b style={{ color: c.text }}>Allow</b>.</li>
+                    <li><b style={{ color: c.text }}>4.</b> Return here and tap <b style={{ color: c.text }}>Try again</b>.</li>
+                  </ol>
+                  <p className="text-[9.5px] mt-1.5" style={{ color: c.textLight }}>
+                    iPhone Safari: tap <b>aA</b> → Website Settings → Camera → Allow.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <VButton size="sm" onClick={() => void start()}><Camera size={13} /> Try again</VButton>
+                {onUseUpload && (
+                  <VButton variant="secondary" size="sm" onClick={onUseUpload}><Upload size={13} /> Upload photo</VButton>
+                )}
+              </div>
             </div>
           )}
           {!error && scanning && (
-            <p className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs font-medium text-white bg-black/60 px-3 py-1.5 rounded-full whitespace-nowrap">
+            <p className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 text-xs font-medium text-white bg-black/60 px-3 py-1.5 rounded-full whitespace-nowrap">
               Point camera at barcode — 10 digits e.g. 2000132602
             </p>
           )}

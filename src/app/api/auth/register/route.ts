@@ -21,6 +21,15 @@ export async function POST(request: NextRequest) {
     if (!adminId && !email.endsWith("@student.tarc.edu.my")) {
       return NextResponse.json({ success: false, error: "Email must be your @student.tarc.edu.my address" }, { status: 400 });
     }
+    if (!adminId && !cardBarcode) {
+      return NextResponse.json(
+        { success: false, error: "Card barcode is required. Upload a previous card photo or ask an admin to register you." },
+        { status: 400 },
+      );
+    }
+    if (typeof password !== "string" || password.length < 8) {
+      return NextResponse.json({ success: false, error: "Password must be at least 8 characters" }, { status: 400 });
+    }
     if (cardBarcode === "") cardBarcode = null;
     if (cardBarcode && !/^[0-9]{10}$/.test(cardBarcode)) {
       return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits (e.g. 2000132602)" }, { status: 400 });

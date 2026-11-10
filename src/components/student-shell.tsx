@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NotificationBell } from "@/components/notification-bell";
 import { useAdminNavCounts } from "@/lib/use-admin-nav-counts";
 import { prefetchStudentData } from "@/lib/student-cache";
+import { useIdleSession } from "@/lib/use-idle-session";
 
 interface NavItem {
   label: string;
@@ -40,6 +41,7 @@ const defaultNav: NavItem[] = [
 
 export function StudentShell({ active, children, userName, userRole, pageTitle, bell, bottomNav = defaultNav, logout }: StudentShellProps) {
   const router = useRouter();
+  useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const adminCounts = useAdminNavCounts(userRole);
@@ -151,7 +153,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
       {/* Main area */}
       <div className="lg:ml-56 flex flex-col">
         {/* Top nav */}
-        <header className="sticky top-0 z-30 flex items-center justify-between px-4 lg:px-8 py-3 border-b bg-white/80 backdrop-blur-lg relative"
+        <header className="sticky top-0 z-30 flex items-center justify-between px-4 lg:px-8 py-3 border-b bg-white relative"
           style={{ borderColor: colors.border, paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
           <div className="flex items-center gap-3">
             <button aria-label="Open navigation" className="lg:hidden cursor-pointer -ml-2 p-2 rounded-lg" style={{ color: colors.textMuted }} onClick={() => setSidebarOpen(true)}>
@@ -225,7 +227,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
       </div>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white/90 backdrop-blur-lg border-t grid px-1 pt-2"
+      <nav className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-white border-t grid px-1 pt-2"
         style={{
           borderColor: colors.border,
           gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,

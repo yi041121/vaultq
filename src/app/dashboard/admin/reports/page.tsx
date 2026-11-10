@@ -570,7 +570,7 @@ export default function AdminReports() {
                       }
                     }}>
                     {report.imageUrl ? (
-                      <img src={report.imageUrl} alt={report.itemName} className="absolute inset-0 w-full h-full object-cover" />
+                      <img src={report.imageUrl} alt={report.itemName} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-contain bg-[#f8fafc]" />
                     ) : (
                       <>
                         <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
@@ -954,7 +954,7 @@ export default function AdminReports() {
                             className="block w-full cursor-pointer"
                             onClick={() => setApproveEditingPhoto(index)}>
                             <img src={photo.preview} alt={`Report photo ${index + 1}`}
-                              className={`w-full object-cover ${approvePhotos.length === 1 ? "h-32" : "h-20"}`} />
+                              className={`w-full object-contain bg-[#f8fafc] ${approvePhotos.length === 1 ? "h-32" : "h-20"}`} />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                 View &amp; crop

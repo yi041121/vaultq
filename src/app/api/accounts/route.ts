@@ -125,6 +125,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (e) {
+    if ((e as { code?: string })?.code === "P2002") {
+      return NextResponse.json({ success: false, error: "Barcode, student ID or email already registered" }, { status: 409 });
+    }
     console.error("Account creation failed", e);
     return NextResponse.json({ success: false, error: "Failed to create account" }, { status: 500 });
   }

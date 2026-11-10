@@ -737,7 +737,7 @@ export default function StudentClaims() {
             </p>
             <p className="text-xs mt-1" style={{ color: c.textMuted }}>Expires {fmtTimestamp(qrModal.expiresAt)}</p>
             <p className="text-xs mt-3 p-3 rounded-lg leading-relaxed" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
-              At the locker kiosk, scan your registered student ID barcode first, then scan this QR code to unlock the locker and collect your item.
+              At the locker kiosk, scan your student card barcode (or show the barcode from your Profile) first, then scan this QR code to unlock the locker and collect your item.
             </p>
             <p className="text-[11px] mt-3 p-2.5 rounded-lg font-mono break-all" style={{ backgroundColor: c.fill, color: c.textMuted }}>{qrModal.token}</p>
             <div className="flex items-center gap-2 mt-4">

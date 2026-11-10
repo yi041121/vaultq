@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2 } from "lucide-react";
+import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2, Pencil, QrCode, Check } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { StudentBarcodeModal } from "@/components/student-barcode-modal";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { getPersonNameError, normalizePersonName, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
@@ -32,6 +33,8 @@ export default function StudentProfile() {
   const [readingImage, setReadingImage] = useState(false);
   const [barcodeFromImage, setBarcodeFromImage] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [barcodeEditing, setBarcodeEditing] = useState(false);
+  const [showBarcodeCard, setShowBarcodeCard] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
 
@@ -124,7 +127,7 @@ export default function StudentProfile() {
     setNameError(null);
     if (!barcode) {
       setBarcodeError("Card barcode is required");
-      showCenteredMessage("error", "Please enter or scan your 10-digit card barcode");
+      showCenteredMessage("error", "Enter, scan, or upload your card barcode");
       return;
     }
     if (!/^[0-9]{10}$/.test(barcode)) {
@@ -148,7 +151,7 @@ export default function StudentProfile() {
         body: JSON.stringify({
           name: name.trim().replace(/\s+/g, " "),
           studentId: sid || null,
-          cardBarcode: barcode,
+          ...(barcode ? { cardBarcode: barcode } : {}),
         }),
       });
       const data = await res.json().catch(() => null);
@@ -173,6 +176,7 @@ export default function StudentProfile() {
       localStorage.setItem("user", JSON.stringify(updated));
       // Saved — replace the success message with the "change your barcode" hint.
       setBarcodeFromImage(false);
+      setBarcodeEditing(false);
       showCenteredMessage("success", "Profile updated");
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to update profile");
@@ -184,6 +188,8 @@ export default function StudentProfile() {
   if (!user || !mounted) return null;
 
   const needsBarcode = !user.cardBarcode;
+  const savedBarcode = user.cardBarcode || "";
+  const savedStudentId = cleanStudentId(user.studentId);
   const isDirty =
     normalizePersonName(name) !== normalizePersonName(user.name) ||
     normalizeStudentId(studentId) !== normalizeStudentId(cleanStudentId(user.studentId)) ||
@@ -219,37 +225,65 @@ export default function StudentProfile() {
             {needsBarcode && (
               <div className="rounded-xl border px-4 py-3 flex items-center gap-3" style={{ backgroundColor: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }}>
                 <Barcode size={18} className="shrink-0" />
-                <p className="text-xs font-medium flex-1">Register your 10-digit barcode to enable locker pickup.</p>
+                <p className="text-xs font-medium flex-1">No card barcode yet. Enter or scan it, upload a previous card photo, or ask an admin to assign one.</p>
               </div>
             )}
 
             {/* Card Barcode */}
             <VCard className="p-5 sm:p-6 lg:p-8">
-              <div className="flex items-center gap-2 mb-5">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${c.primary}15` }}>
-                  <Barcode size={16} style={{ color: c.primary }} />
+              <div className="flex items-start justify-between gap-3 mb-5">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${c.primary}15` }}>
+                    <Barcode size={16} style={{ color: c.primary }} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: c.text }}>Card Barcode</h3>
+                    <p className="text-[11px] mt-0.5" style={{ color: c.textLight }}>Tap the field to show a scannable code.</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: c.text }}>Card Barcode</h3>
-                </div>
+                <button type="button"
+                  onClick={() => setShowBarcodeCard(true)}
+                  disabled={!savedBarcode && !savedStudentId}
+                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border bg-white text-[11px] font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  style={{ borderColor: c.border, color: c.primary }}>
+                  <QrCode size={13} /> Show
+                </button>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium block" style={{ color: c.text }}>
-                  Barcode {!barcode && <span style={{ color: c.danger }}>*</span>}
-                </label>
+                <label className="text-sm font-medium block" style={{ color: c.text }}>Barcode <span style={{ color: c.danger }}>*</span></label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
-                      type="text" placeholder="Scan or upload your card" maxLength={10}
-                      className="pl-9 cursor-default"
-                      readOnly
-                      aria-readonly="true"
+                      type="text"
+                      placeholder={barcodeEditing ? "Enter 10-digit barcode" : "Tap to enter or show barcode"}
+                      maxLength={10}
+                      inputMode="numeric"
+                      className={`pl-9 ${barcodeEditing ? "" : "cursor-pointer"}`}
+                      readOnly={!barcodeEditing}
+                      aria-readonly={!barcodeEditing}
+                      onClick={() => {
+                        if (barcodeEditing) return;
+                        if (savedBarcode || savedStudentId) setShowBarcodeCard(true);
+                        else setBarcodeEditing(true);
+                      }}
+                      onChange={(e) => {
+                        setBarcode(e.target.value.replace(/\D/g, "").slice(0, 10));
+                        setBarcodeError(null);
+                        setBarcodeFromImage(false);
+                      }}
                       style={{ borderColor: barcodeError ? c.danger : barcodeFromImage ? "#16a34a" : c.border, backgroundColor: barcodeFromImage ? "#f0fdf4" : c.fill, color: c.text }}
                       value={barcode}
                     />
                   </div>
+                  <button type="button"
+                    onClick={() => { setBarcodeEditing((editing) => !editing); setBarcodeError(null); }}
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
+                    style={{ borderColor: barcodeEditing ? c.primary : c.border, backgroundColor: "#fff", color: barcodeEditing ? c.primary : c.textMuted }}
+                    title={barcodeEditing ? "Done editing barcode" : "Enter barcode manually"}>
+                    {barcodeEditing ? <Check size={16} /> : <Pencil size={16} />}
+                  </button>
                   <label className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
                     style={{ borderColor: readingImage ? c.primary : c.border, backgroundColor: "#fff", color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
                     {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
@@ -266,11 +300,16 @@ export default function StudentProfile() {
                     <><Loader2 size={12} className="animate-spin" /> Reading barcode from image…</>
                   ) : barcodeFromImage ? (
                     <><CheckCircle2 size={12} /> Barcode successfully detected</>
+                  ) : barcodeError ? (
+                    barcodeError
+                  ) : barcodeEditing ? (
+                    "Type the 10 digits printed on your student card."
+                  ) : barcode !== savedBarcode ? (
+                    "Save changes to update the barcode used by the locker."
+                  ) : barcode ? (
+                    "Tap the field to show a scannable code, or use the pencil to type a new barcode."
                   ) : (
-                    barcodeError ||
-                    (barcode
-                      ? "To change your barcode, upload a new card image or scan again."
-                      : "Upload a card image or scan your card to fill this in.")
+                    "Scan or upload your card, or tap the pencil to type the barcode manually."
                   )}
                 </p>
               </div>
@@ -332,7 +371,7 @@ export default function StudentProfile() {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t" style={{ borderColor: c.borderLight }}>
-                <VButton variant="secondary" size="lg" onClick={() => { setName(user.name); setStudentId(cleanStudentId(user.studentId)); setStudentIdError(null); setNameError(null); setBarcode(user.cardBarcode || ""); setBarcodeError(null); setBarcodeFromImage(false); }}>Cancel</VButton>
+                <VButton variant="secondary" size="lg" onClick={() => { setName(user.name); setStudentId(cleanStudentId(user.studentId)); setStudentIdError(null); setNameError(null); setBarcode(user.cardBarcode || ""); setBarcodeError(null); setBarcodeFromImage(false); setBarcodeEditing(false); }}>Cancel</VButton>
                 <VButton size="lg" onClick={handleSave} disabled={saving || readingImage || !isDirty || !name.trim() || barcode.length !== 10 || !!barcodeError || !!studentIdError || !!nameError}>
                   <Save size={15} /> {saving ? "Saving..." : "Save Changes"}
                 </VButton>
@@ -341,7 +380,20 @@ export default function StudentProfile() {
           </div>
         </div>
       </main>
-      <BarcodeScanner open={showCamera} onClose={() => setShowCamera(false)} onDetect={(code) => { setBarcode(code); setBarcodeError(null); setBarcodeFromImage(true); }} />
+      <BarcodeScanner
+        open={showCamera}
+        onClose={() => setShowCamera(false)}
+        onDetect={(code) => { setBarcode(code); setBarcodeError(null); setBarcodeFromImage(true); }}
+        onUseUpload={() => { setShowCamera(false); fileRef.current?.click(); }}
+      />
+      {showBarcodeCard && (
+        <StudentBarcodeModal
+          barcode={savedBarcode}
+          studentId={savedStudentId}
+          name={user.name}
+          onClose={() => setShowBarcodeCard(false)}
+        />
+      )}
       <ConfirmDialog
         open={confirmLogout}
         title="Log out?"

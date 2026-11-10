@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch } from "lucide-react";
+import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch, Upload, Loader2 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
+import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
@@ -68,6 +69,8 @@ export default function AdminAccounts() {
   const [formPassword, setFormPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [barcodeReading, setBarcodeReading] = useState(false);
+  const barcodeFileRef = useRef<HTMLInputElement>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -76,6 +79,7 @@ export default function AdminAccounts() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editStudentId, setEditStudentId] = useState("");
+  const [editBarcode, setEditBarcode] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -97,6 +101,27 @@ export default function AdminAccounts() {
       status: raw.isActive === false ? "DISABLED" : "ACTIVE",
       claims: raw._count?.claims ?? 0,
     };
+  }
+
+  /** Exact duplicate check against the database (not just the loaded page). */
+  async function findAccountBy(field: "cardBarcode" | "studentId" | "email", value: string) {
+    try {
+      const res = await fetch(`/api/accounts?q=${encodeURIComponent(value)}`, {
+        headers: authHeaders(),
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => ({}));
+      if (!data?.success || !Array.isArray(data.data)) return null;
+      return (data.data as any[]).find((u) => {
+        if (field === "cardBarcode") return u.cardBarcode === value;
+        if (field === "studentId") return String(u.studentId || "").toUpperCase() === value.toUpperCase();
+        return String(u.email || "").toLowerCase() === value.toLowerCase();
+      }) || null;
+    } catch {
+      // Fall through to the server-side duplicate check on submit.
+      return null;
+    }
   }
 
   async function fetchAccounts() {
@@ -151,6 +176,35 @@ export default function AdminAccounts() {
     setShowModal(true);
   }
 
+  async function handleBarcodeImage(event: React.ChangeEvent<HTMLInputElement>, mode: "add" | "edit") {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showCenteredMessage("error", "Please upload an image of the card barcode");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showCenteredMessage("error", "Barcode image must be under 5MB");
+      return;
+    }
+    setBarcodeReading(true);
+    try {
+      const code = await decodeBarcodeFromImage(file);
+      if (!code) {
+        showCenteredMessage("error", "Could not detect the barcode — type the 10 digits manually");
+        return;
+      }
+      if (mode === "add") setFormBarcode(code);
+      else setEditBarcode(code);
+      setFormError(null);
+      setEditError(null);
+      showCenteredMessage("success", "Barcode detected from card photo");
+    } finally {
+      setBarcodeReading(false);
+    }
+  }
+
   async function handleAdd() {
     if (!formName.trim() || !formEmail.trim()) {
       setFormError("Name and email are required");
@@ -164,6 +218,10 @@ export default function AdminAccounts() {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formEmail.trim())) {
       setFormError("Invalid email format");
+      return;
+    }
+    if (!formEmail.trim().toLowerCase().endsWith("@student.tarc.edu.my")) {
+      setFormError("Student email must be a valid @student.tarc.edu.my address");
       return;
     }
     if (!formBarcode) {
@@ -192,6 +250,10 @@ export default function AdminAccounts() {
         setFormError("Barcode already registered");
         return;
       }
+      if (formStudentId.trim() && students.some((s) => s.studentId.toUpperCase() === formStudentId.trim().toUpperCase())) {
+        setFormError("Student ID already registered");
+        return;
+      }
       const newStudent: Student = {
         id: String(Date.now()),
         name: formName.trim(),
@@ -209,6 +271,26 @@ export default function AdminAccounts() {
     }
     setSaving(true);
     try {
+      const barcodeOwner = await findAccountBy("cardBarcode", formBarcode);
+      if (barcodeOwner) {
+        setFormError("Barcode already registered");
+        showCenteredMessage("error", "This card barcode is already assigned to another account");
+        return;
+      }
+      if (formStudentId.trim()) {
+        const studentIdOwner = await findAccountBy("studentId", formStudentId.trim());
+        if (studentIdOwner) {
+          setFormError("Student ID already registered");
+          showCenteredMessage("error", "This student ID is already assigned to another account");
+          return;
+        }
+      }
+      const emailOwner = await findAccountBy("email", formEmail.trim());
+      if (emailOwner) {
+        setFormError("Email already registered");
+        showCenteredMessage("error", "This email is already assigned to another account");
+        return;
+      }
       const res = await fetch("/api/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -251,14 +333,54 @@ export default function AdminAccounts() {
       setEditError("Student email must be a valid @student.tarc.edu.my address");
       return;
     }
+    if (!editBarcode) {
+      setEditError("Card barcode is required");
+      return;
+    }
+    if (!/^[0-9]{10}$/.test(editBarcode)) {
+      setEditError("Barcode must be exactly 10 digits (e.g. 2000132602)");
+      return;
+    }
     if (!apiLive) {
-      setStudents(students.map((s) => s.id === editTarget.id ? { ...s, name: editName.trim(), email: editEmail.trim(), studentId: editStudentId.trim() || "—" } : s));
+      if (students.some((s) => s.id !== editTarget.id && s.email.toLowerCase() === editEmail.trim().toLowerCase())) {
+        setEditError("Email already registered");
+        return;
+      }
+      if (students.some((s) => s.id !== editTarget.id && s.cardBarcode === editBarcode)) {
+        setEditError("Barcode already registered");
+        return;
+      }
+      if (editStudentId.trim() && students.some((s) => s.id !== editTarget.id && s.studentId.toUpperCase() === editStudentId.trim().toUpperCase())) {
+        setEditError("Student ID already registered");
+        return;
+      }
+      setStudents(students.map((s) => s.id === editTarget.id ? { ...s, name: editName.trim(), email: editEmail.trim(), studentId: editStudentId.trim() || "—", cardBarcode: editBarcode } : s));
       setEditTarget(null);
       showCenteredMessage("success", `${editName.trim()} updated`);
       return;
     }
     setEditSaving(true);
     try {
+      const barcodeOwner = await findAccountBy("cardBarcode", editBarcode);
+      if (barcodeOwner && barcodeOwner.id !== editTarget.id) {
+        setEditError("Barcode already registered");
+        showCenteredMessage("error", "This card barcode is already assigned to another account");
+        return;
+      }
+      if (editStudentId.trim()) {
+        const studentIdOwner = await findAccountBy("studentId", editStudentId.trim());
+        if (studentIdOwner && studentIdOwner.id !== editTarget.id) {
+          setEditError("Student ID already registered");
+          showCenteredMessage("error", "This student ID is already assigned to another account");
+          return;
+        }
+      }
+      const emailOwner = await findAccountBy("email", editEmail.trim());
+      if (emailOwner && emailOwner.id !== editTarget.id) {
+        setEditError("Email already registered");
+        showCenteredMessage("error", "This email is already assigned to another account");
+        return;
+      }
       const res = await fetch(`/api/accounts/${editTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -266,6 +388,7 @@ export default function AdminAccounts() {
           name: editName.trim(),
           email: editEmail.trim(),
           studentId: editStudentId.trim() || null,
+          cardBarcode: editBarcode,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -284,6 +407,7 @@ export default function AdminAccounts() {
     setEditName(st.name);
     setEditEmail(st.email);
     setEditStudentId(st.studentId === "—" ? "" : st.studentId);
+    setEditBarcode(st.cardBarcode || "");
     setEditError(null);
     setEditTarget(st);
   }
@@ -419,7 +543,7 @@ export default function AdminAccounts() {
                   <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Students must use @student.tarc.edu.my</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional — can be added later)</span></label>
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional)</span></label>
                   <div className="relative">
                     <GraduationCap size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
@@ -434,11 +558,18 @@ export default function AdminAccounts() {
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span style={{ color: c.danger }}>*</span> <span className="text-xs font-normal" style={{ color: c.textMuted }}>(10 digits — e.g. 2000132602)</span></label>
-                <div className="relative">
-                  <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
-                  <VInput value={formBarcode} onChange={(e) => setFormBarcode(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="2000132602" inputMode="numeric" maxLength={10} className="pl-10" />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
+                    <VInput value={formBarcode} onChange={(e) => setFormBarcode(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="2000132602" inputMode="numeric" maxLength={10} className="pl-10" />
+                  </div>
+                  <label className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${barcodeReading ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
+                    style={{ borderColor: c.border, backgroundColor: "#fff", color: c.primary }} title="Upload a previous card photo">
+                    {barcodeReading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    <input ref={barcodeFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleBarcodeImage(e, "add")} disabled={barcodeReading} />
+                  </label>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Required for locker pickup. Make sure it matches the physical student card.</p>
+                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Identifies the student at the locker; lockers are assigned to items, not to cards. Type the 10 digits or upload a previous card photo.</p>
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Temporary password <span style={{ color: c.danger }}>*</span></label>
@@ -449,7 +580,7 @@ export default function AdminAccounts() {
               )}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <VButton variant="secondary" onClick={() => setShowModal(false)}>Cancel</VButton>
-                <VButton onClick={handleAdd} disabled={saving}><Plus size={14} /> {saving ? "Creating..." : "Create Account"}</VButton>
+                <VButton onClick={handleAdd} disabled={saving || barcodeReading}><Plus size={14} /> {saving ? "Creating..." : "Create Account"}</VButton>
               </div>
             </div>
           </VCard>
@@ -499,7 +630,7 @@ export default function AdminAccounts() {
                   <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Students must use @student.tarc.edu.my</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional — can be added later)</span></label>
+                  <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Student ID <span className="text-xs font-normal" style={{ color: c.textMuted }}>(optional)</span></label>
                   <div className="relative">
                     <GraduationCap size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
@@ -513,19 +644,26 @@ export default function AdminAccounts() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span className="text-xs font-normal" style={{ color: c.textMuted }}>(cannot be changed)</span></label>
-                <div className="relative">
-                  <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
-                  <VInput value={editTarget.cardBarcode || "Not set"} disabled readOnly className="pl-10" style={{ backgroundColor: "#f8fafc", color: c.textMuted }} />
+                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Card barcode <span style={{ color: c.danger }}>*</span> <span className="text-xs font-normal" style={{ color: c.textMuted }}>(10 digits — e.g. 2000132602)</span></label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
+                    <VInput value={editBarcode} onChange={(e) => setEditBarcode(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="2000132602" inputMode="numeric" maxLength={10} className="pl-10" />
+                  </div>
+                  <label className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${barcodeReading ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
+                    style={{ borderColor: c.border, backgroundColor: "#fff", color: c.primary }} title="Upload a previous card photo">
+                    {barcodeReading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    <input ref={barcodeFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleBarcodeImage(e, "edit")} disabled={barcodeReading} />
+                  </label>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Card barcode is locked after account creation. Only the student ID can be added or changed here.</p>
+                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Identifies the student at the locker; lockers are assigned to items, not to cards. Type the 10 digits or upload a previous card photo.</p>
               </div>
               {editError && (
                 <p className="text-xs font-medium p-2.5 rounded-lg" style={{ backgroundColor: "#fef2f2", color: c.danger }}>{editError}</p>
               )}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <VButton variant="secondary" onClick={() => setEditTarget(null)}>Cancel</VButton>
-                <VButton onClick={handleEdit} disabled={editSaving}><SquarePen size={14} /> {editSaving ? "Saving..." : "Save Changes"}</VButton>
+                <VButton onClick={handleEdit} disabled={editSaving || barcodeReading}><SquarePen size={14} /> {editSaving ? "Saving..." : "Save Changes"}</VButton>
               </div>
             </div>
           </VCard>

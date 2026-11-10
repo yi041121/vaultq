@@ -8,6 +8,13 @@ export async function POST(request: NextRequest) {
     // Case-insensitive + whitespace tolerant: matching how users actually type emails
     const email = String(rawEmail || "").trim().toLowerCase();
 
+    if (!email || typeof password !== "string" || !password) {
+      return NextResponse.json({ success: false, error: "Email and password are required" }, { status: 400 });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ success: false, error: "Invalid email address" }, { status: 400 });
+    }
+
     const user = await prisma.user.findFirst({
       where: { email: { equals: email, mode: "insensitive" } },
     });

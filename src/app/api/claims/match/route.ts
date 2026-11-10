@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
     await notifyUser(
       report.userId,
       "Lost Item Matched — Claim Approved",
-      `Your lost report for ${report.itemName} was matched to a found item and approved.${lockerNote} View your pickup QR code in My Claims. At the locker kiosk, scan your registered student ID barcode, then scan the QR code to open the locker and collect your item.`,
+      `Your lost report for ${report.itemName} was matched to a found item and approved.${lockerNote} View your pickup QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
       { type: "CLAIM", link: "/dashboard/student/claims" },
     );
 

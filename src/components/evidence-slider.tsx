@@ -24,7 +24,7 @@ export function EvidenceSlider({ photos, alt, caption, label = "evidence" }: {
   return (
     <div className="rounded-xl overflow-hidden border relative" style={{ borderColor: c.border }}>
       <div className="relative">
-        <img src={photos[safe]} alt={alt} className="w-full h-64 object-cover bg-[#f8fafc]" />
+        <img src={photos[safe]} alt={alt} loading="lazy" decoding="async" className="w-full h-64 object-contain bg-[#f8fafc]" />
         {photos.length > 1 && (
           <>
             <button type="button" aria-label={`Previous ${label} photo`}

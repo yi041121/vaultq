@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import LockerIllustration from "@/components/locker-illustration";
+import { clearClientSession, isSessionIdle, markSessionActivity } from "@/lib/idle-session";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,35 +15,71 @@ export default function LoginPage() {
   const [succeeded, setSucceeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loggedOut, setLoggedOut] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [form, setForm] = useState({ email: "", password: "" });
   const [phase, setPhase] = useState<"intro" | "transitioning" | "complete">("intro");
   const showForm = phase !== "intro";
   const skipAnim = useRef(false);
 
   useEffect(() => {
-    // Clear stale role cookie so the route guard starts clean on a fresh login
+    if (typeof window === "undefined") return;
+
+    // Already signed in? Send the user straight back to their dashboard
+    // before the login form is ever displayed.
+    const token = localStorage.getItem("token");
+    const rawUser = localStorage.getItem("user");
+    if (token && rawUser && !isSessionIdle()) {
+      try {
+        const user = JSON.parse(rawUser) as { role?: string };
+        const encoded = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") || "";
+        const padded = encoded.padEnd(encoded.length + ((4 - (encoded.length % 4)) % 4), "=");
+        const payload = JSON.parse(atob(padded));
+        const expired = typeof payload?.exp === "number" && payload.exp * 1000 <= Date.now();
+        if (!expired) {
+          const role = payload?.role === "ADMIN" || (!payload?.role && user?.role === "ADMIN") ? "ADMIN" : "STUDENT";
+          document.cookie = `vq_role=${role}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          router.replace(role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
+          return;
+        }
+      } catch {
+        // Malformed session — fall through and clear it below.
+      }
+      clearClientSession();
+    } else if (token || rawUser) {
+      // Present but unused for too long — clear it instead of restoring.
+      clearClientSession();
+    }
+
+    // No active session — clear any stale role cookie before showing login.
     document.cookie = "vq_role=; path=/; max-age=0";
-    if (typeof window !== "undefined" && window.location.search.includes("skip=1")) {
+    window.setTimeout(() => setCheckingSession(false), 0);
+
+    if (window.location.search.includes("skip=1")) {
       skipAnim.current = true;
       setPhase("complete");
     }
     // Centered "Logged out" popup (redirected back with ?loggedOut=1)
-    if (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("loggedOut") === "1" : false) {
+    if (new URLSearchParams(window.location.search).get("loggedOut") === "1") {
       setLoggedOut(true);
       setTimeout(() => setLoggedOut(false), 1500);
       window.history.replaceState(null, "", "/login?skip=1");
     }
     // Surface errors from the Google OAuth callback (redirected back with ?googleError=...)
-    const googleError = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("googleError") : null;
+    const params = new URLSearchParams(window.location.search);
+    const googleError = params.get("googleError");
     if (googleError) {
       showError(googleError);
       // Strip the error from the URL so refreshing doesn't re-trigger the popup
       window.history.replaceState(null, "", "/login?skip=1");
     }
-  }, []);
+    if (params.get("expired") === "1") {
+      showError("Session expired — please sign in again", 3000);
+      window.history.replaceState(null, "", "/login?skip=1");
+    }
+  }, [router]);
 
   useEffect(() => {
-    if (phase !== "intro") return;
+    if (checkingSession || phase !== "intro") return;
     // Let the full locker sequence play; tapping anywhere skips it.
     const introMs = 4800;
     const t1 = setTimeout(() => { if (!skipAnim.current) setPhase("transitioning"); }, introMs);
@@ -62,28 +99,42 @@ export default function LoginPage() {
       document.removeEventListener("click", skip);
       document.removeEventListener("keydown", skip);
     };
-  }, [phase]);
+  }, [phase, checkingSession]);
 
-  function showError(msg: string) {
+  function showError(msg: string, duration = 1500) {
     setError(msg);
     // Brief flash then auto-close; clicking anywhere closes it immediately
-    setTimeout(() => setError(null), 1500);
+    setTimeout(() => setError(null), duration);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const email = form.email.trim().toLowerCase();
+    if (!email) {
+      showError("Email is required");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showError("Invalid email address");
+      return;
+    }
+    if (!form.password) {
+      showError("Password is required");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ email, password: form.password }),
       });
       const data = await res.json();
       if (!res.ok) { showError(data.error || "Login failed"); setLoading(false); return; }
       localStorage.setItem("token", data.data.token);
       localStorage.setItem("user", JSON.stringify(data.data.user));
+      markSessionActivity();
       const role = data.data.user.role;
       const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
       // Show centered success popup on this page, then redirect quickly —
@@ -92,6 +143,14 @@ export default function LoginPage() {
       setSucceeded(true);
       setTimeout(() => router.push(target), 800);
     } catch { showError("Something went wrong"); setLoading(false); }
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center" style={{ backgroundColor: "#F7F6F3" }}>
+        <img src="/logo-removebg-preview.png" alt="VaultQ" className="w-20 h-20 object-contain opacity-70" />
+      </div>
+    );
   }
 
   return (

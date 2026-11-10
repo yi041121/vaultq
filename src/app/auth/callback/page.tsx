@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
+import { markSessionActivity } from "@/lib/idle-session";
 
 // Landing point after Google OAuth succeeds. The API callback hands us the
 // app JWT via query params; we store it exactly like the email/password
@@ -24,6 +25,7 @@ export default function AuthCallback() {
     if (token && id && role) {
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify({ id, name, email, role, cardBarcode: barcode || null }));
+      markSessionActivity();
       // Same centered "Login successful" popup as the sign-in form, then redirect
       setSucceeded(true);
       setTimeout(() => {

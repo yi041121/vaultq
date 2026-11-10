@@ -79,6 +79,8 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
       }
       data.cardBarcode = barcode;
+    } else if (!user.cardBarcode) {
+      return NextResponse.json({ success: false, error: "Card barcode is required" }, { status: 400 });
     }
 
     if (Object.keys(data).length === 0) {

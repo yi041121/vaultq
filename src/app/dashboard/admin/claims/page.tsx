@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Package, Grid3X3, Lock, FileText, Users, Search, Clock,
   CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, Sparkles,
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Loader2,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { useEscapeKey } from "@/lib/use-escape-key";
@@ -158,6 +158,7 @@ type FoundItem = {
 type MatchPreview = { item: FoundItem; images: string[]; index: number };
 
 let claimsCache: Claim[] | null = null;
+let lostReportsCache: LostReport[] | null = null;
 
 export default function AdminClaims() {
   const router = useRouter();
@@ -173,7 +174,8 @@ export default function AdminClaims() {
   const [itemFilter, setItemFilter] = useState<{ id: string; name: string } | null>(null);
   const [claimItemDetail, setClaimItemDetail] = useState<Claim | null>(null);
   const [photoIndices, setPhotoIndices] = useState<Record<string, number>>({});
-  const [lostLoaded, setLostLoaded] = useState(false);
+  const [detailPhotoIndex, setDetailPhotoIndex] = useState(0);
+  const [lostLoaded, setLostLoaded] = useState(lostReportsCache !== null);
   const [matchTarget, setMatchTarget] = useState<LostReport | null>(null);
   const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
   const [matchQuery, setMatchQuery] = useState("");
@@ -181,7 +183,7 @@ export default function AdminClaims() {
   const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
   const [confirmMatchItem, setConfirmMatchItem] = useState<FoundItem | null>(null);
   const [matching, setMatching] = useState(false);
-  const [lostReports, setLostReports] = useState<LostReport[]>([]);
+  const [lostReports, setLostReports] = useState<LostReport[]>(lostReportsCache ?? []);
   const [photoViewer, setPhotoViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
   const [lostDetail, setLostDetail] = useState<LostReport | null>(null);
   const [rejectTarget, setRejectTarget] = useState<{ kind: "CLAIM" | "LOST"; id: string; itemName: string } | null>(null);
@@ -236,33 +238,33 @@ export default function AdminClaims() {
 
   async function fetchLostReports() {
     try {
-      const res = await fetch("/api/reports", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetch("/api/reports?type=LOST&light=1", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) return;
-      setLostReports(
-        (data.data as any[])
-          .filter((r) => r.type === "LOST")
-          .map((r) => {
-            const images: string[] = Array.isArray(r.imageUrls) && r.imageUrls.length
-              ? r.imageUrls
-              : r.imageUrl
-                ? [r.imageUrl]
-                : [];
-            return {
-              id: r.id,
-              itemName: r.itemName || "Unknown item",
-              category: r.category || "Others",
-              description: r.description || "",
-              location: r.location || "",
-              date: String(r.date || r.createdAt || "").slice(0, 10),
-              status: r.status || "PENDING",
-              images,
-              student: r.user?.name || "Unknown",
-              studentId: r.user?.studentId || "—",
-              studentEmail: r.user?.email || "",
-            };
-          }),
-      );
+      const mapped = (data.data as any[])
+        .filter((r) => r.type === "LOST")
+        .map((r) => {
+          const images: string[] = Array.isArray(r.imageUrls) && r.imageUrls.length
+            ? r.imageUrls
+            : r.imageUrl
+              ? [r.imageUrl]
+              : [];
+          return {
+            id: r.id,
+            itemName: r.itemName || "Unknown item",
+            category: r.category || "Others",
+            description: r.description || "",
+            location: r.location || "",
+            date: String(r.date || r.createdAt || "").slice(0, 10),
+            status: r.status || "PENDING",
+            images,
+            student: r.user?.name || "Unknown",
+            studentId: r.user?.studentId || "—",
+            studentEmail: r.user?.email || "",
+          };
+        });
+      setLostReports(mapped);
+      lostReportsCache = mapped;
     } catch {
       // Lost list stays as-is; claims can still be reviewed.
     } finally {
@@ -274,7 +276,7 @@ export default function AdminClaims() {
     if (!claimsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/claims", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetch("/api/claims?light=1", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
       const mapped = (data.data as any[]).map(mapApiClaim);
@@ -408,6 +410,15 @@ export default function AdminClaims() {
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const claimItemDetailPhotos = claimItemDetail
+    ? claimItemDetail.itemImageUrls?.length
+      ? claimItemDetail.itemImageUrls
+      : claimItemDetail.itemImageUrl
+        ? [claimItemDetail.itemImageUrl]
+        : []
+    : [];
+  const lostDetailPhotos = lostDetail?.images ?? [];
 
 
   function movePhoto(key: string, delta: number, total: number) {
@@ -576,8 +587,8 @@ export default function AdminClaims() {
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="Claim Verification" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col overflow-x-hidden">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full min-w-0 flex-1 flex flex-col">
           <FilterPanel
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
@@ -633,7 +644,12 @@ export default function AdminClaims() {
             </div>
           )}
 
-          {loading || !lostLoaded ? null : loadError ? (
+          {loading ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <Loader2 size={30} className="animate-spin mb-3" style={{ color: c.primary }} />
+              <p className="text-sm font-medium" style={{ color: c.textMuted }}>Loading verification queue…</p>
+            </VCard>
+          ) : loadError && claims.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load verification queue</p>
@@ -643,14 +659,26 @@ export default function AdminClaims() {
               </VButton>
             </VCard>
           ) : sortedRows.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims or lost reports found</p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>Try adjusting filters.</p>
-            </VCard>
+            !lostLoaded ? (
+              <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+                <Loader2 size={30} className="animate-spin mb-3" style={{ color: c.primary }} />
+                <p className="text-sm font-medium" style={{ color: c.textMuted }}>Loading lost reports…</p>
+              </VCard>
+            ) : (
+              <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+                <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+                <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims or lost reports found</p>
+                <p className="text-sm mt-1" style={{ color: c.textLight }}>Try adjusting filters.</p>
+              </VCard>
+            )
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 content-start flex-1">
+              {!lostLoaded && (
+                <p className="text-xs mb-3 inline-flex items-center gap-1.5" style={{ color: c.textMuted }}>
+                  <Loader2 size={12} className="animate-spin" /> Loading lost reports…
+                </p>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 content-start flex-1 min-w-0">
                 {paginatedRows.map((row) => {
                   if (row.kind === "CLAIM" && row.claim) {
                     const cl = row.claim;
@@ -738,8 +766,8 @@ export default function AdminClaims() {
                                     <button type="button" aria-label="View found item details"
                                       className="relative block w-full aspect-[4/3] group cursor-pointer"
                                       style={{ backgroundColor: c.fill }}
-                                      onClick={() => setClaimItemDetail(cl)}>
-                                      <img src={itemPhotos[itemPhotoIndex]} alt="" className="w-full h-full object-cover" />
+                                      onClick={() => { setDetailPhotoIndex(0); setClaimItemDetail(cl); }}>
+                                      <img src={itemPhotos[itemPhotoIndex]} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
                                         <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                           <Eye size={12} /> Item details
@@ -787,7 +815,7 @@ export default function AdminClaims() {
                                       className="relative block w-full aspect-[4/3] group cursor-pointer"
                                       style={{ backgroundColor: c.fill }}
                                       onClick={() => setPhotoViewer({ photos: evidencePhotos, index: evidenceIndex, title: `${cl.itemName} evidence` })}>
-                                      <img src={evidencePhotos[evidenceIndex]} alt="" className="w-full h-full object-cover" />
+                                      <img src={evidencePhotos[evidenceIndex]} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150" />
                                     </button>
                                     {evidencePhotos.length > 1 && (
@@ -845,7 +873,7 @@ export default function AdminClaims() {
                   const report = row.report!;
                   const Icon = categoryIcon(report.category);
                   return (
-                    <VCard key={`lost-${report.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => setLostDetail(report)}>
+                    <VCard key={`lost-${report.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
                       <div className="p-4 flex items-start gap-3">
                         <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
                           style={{ borderColor: c.borderLight, backgroundColor: `${c.primary}0f` }}>
@@ -885,17 +913,22 @@ export default function AdminClaims() {
                       {report.images.length > 0 && (
                         <div className="px-4 mt-3" onClick={(e) => e.stopPropagation()}>
                           <p className="text-[11px] font-semibold" style={{ color: c.text }}>Report photos</p>
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            {report.images.slice(0, 3).map((src, index) => (
-                              <button key={`${report.id}-photo-${index}`} type="button" aria-label={`View report photo ${index + 1}`}
-                                className="relative w-10 h-10 rounded-lg overflow-hidden border group cursor-pointer shrink-0"
-                                style={{ borderColor: c.border }}
-                                onClick={() => setPhotoViewer({ photos: report.images, index, title: `${report.itemName} report` })}>
-                                <img src={src} alt="" className="w-full h-full object-cover" />
-                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-150" />
-                              </button>
-                            ))}
-                          </div>
+                          <button type="button" aria-label={`View ${report.itemName} report photos`}
+                            className="relative block w-full aspect-[4/3] rounded-xl overflow-hidden border group cursor-pointer mt-1.5"
+                            style={{ borderColor: c.border, backgroundColor: c.fill }}
+                            onClick={() => setPhotoViewer({ photos: report.images, index: 0, title: `${report.itemName} report` })}>
+                            <img src={report.images[0]} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain bg-[#f8fafc]" />
+                            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
+                              <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
+                                <Eye size={12} /> View full size
+                              </span>
+                            </span>
+                            {report.images.length > 1 && (
+                              <span className="absolute top-2 right-2 rounded-full bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5">
+                                {report.images.length} photos
+                              </span>
+                            )}
+                          </button>
                         </div>
                       )}
 
@@ -934,8 +967,11 @@ export default function AdminClaims() {
           location={claimItemDetail.location}
           date={fmtDateValue(claimItemDetail.itemFoundDate)}
           description={claimItemDetail.itemDescription || ""}
-          photos={claimItemDetail.itemImageUrls?.length ? claimItemDetail.itemImageUrls : claimItemDetail.itemImageUrl ? [claimItemDetail.itemImageUrl] : []}
-          onClose={() => setClaimItemDetail(null)}
+          photos={claimItemDetailPhotos}
+          photoIndex={detailPhotoIndex}
+          onPhotoIndexChange={setDetailPhotoIndex}
+          onViewPhoto={() => setPhotoViewer({ photos: claimItemDetailPhotos, index: detailPhotoIndex, title: claimItemDetail.itemName })}
+          onClose={() => { setClaimItemDetail(null); setDetailPhotoIndex(0); }}
           footer={<VButton variant="secondary" className="flex-1" onClick={() => setClaimItemDetail(null)}>Close</VButton>}
         />
       )}
@@ -951,9 +987,11 @@ export default function AdminClaims() {
           location={lostDetail.location}
           date={lostDetail.date ? new Date(`${lostDetail.date}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
           description={lostDetail.description}
-          photos={lostDetail.images}
-          onViewPhoto={() => setPhotoViewer({ photos: lostDetail.images, index: 0, title: lostDetail.itemName })}
-          onClose={() => setLostDetail(null)}
+          photos={lostDetailPhotos}
+          photoIndex={detailPhotoIndex}
+          onPhotoIndexChange={setDetailPhotoIndex}
+          onViewPhoto={() => setPhotoViewer({ photos: lostDetailPhotos, index: detailPhotoIndex, title: lostDetail.itemName })}
+          onClose={() => { setLostDetail(null); setDetailPhotoIndex(0); }}
           extra={<span className="flex items-center gap-1"><Users size={12} /> {lostDetail.student} ({lostDetail.studentEmail || lostDetail.studentId})</span>}
           footer={lostDetail.status === "PENDING" ? (
             <>
@@ -1104,7 +1142,7 @@ export default function AdminClaims() {
                         style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                          <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
                         ) : (
                           <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
                             <Package size={16} style={{ color: c.primary }} />
@@ -1151,7 +1189,7 @@ export default function AdminClaims() {
                     <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
                       onClick={() => void openMatchPreview(item)}>
                       {item.imageUrl ? (
-                        <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                        <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
                           <Package size={16} style={{ color: c.primary }} />
@@ -1239,7 +1277,7 @@ export default function AdminClaims() {
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
                   {compareClaim.itemImageUrl ? (
-                    <img src={compareClaim.itemImageUrl} alt="Found item" className="w-full h-64 object-cover bg-[#f8fafc]" />
+                    <img src={compareClaim.itemImageUrl} alt="Found item" loading="eager" decoding="async" className="w-full h-64 object-contain bg-[#f8fafc]" />
                   ) : (
                     <div className="w-full h-64 flex flex-col items-center justify-center gap-2 bg-[#f8fafc]" style={{ color: c.textLight }}>
                       <Package size={36} />
