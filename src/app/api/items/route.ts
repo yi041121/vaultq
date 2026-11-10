@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
 import { createItemRecord } from "@/lib/item-service";
 import { startsWithNumber } from "@/lib/text-validation";
+import { signedImageUrl } from "@/lib/image-url";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 
@@ -51,7 +52,14 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ success: true, data: items });
+    const data = searchParams.get("light") === "1"
+      ? items.map((item) => ({
+          ...item,
+          imageUrl: item.imageUrl ? signedImageUrl("item", item.id, 0, item.imageUrl) : null,
+        }))
+      : items;
+
+    return NextResponse.json({ success: true, data });
   } catch (e) {
     console.error("Items list failed", e);
     return NextResponse.json({ success: false, error: "Failed to list items" }, { status: 500 });

@@ -74,7 +74,7 @@ export function prefetchStudentData(token: string): Promise<void> {
     const [claims, notifications, items] = await Promise.allSettled([
       getJson("/api/claims", token),
       getJson("/api/notifications", token),
-      getJson("/api/items", token),
+      getJson("/api/items?light=1", token),
     ]);
 
     if (claims.status === "fulfilled" && Array.isArray(claims.value.data)) {

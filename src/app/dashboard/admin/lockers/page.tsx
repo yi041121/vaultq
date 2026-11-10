@@ -126,7 +126,7 @@ export default function AdminLockers() {
 
   async function fetchUnassigned() {
     try {
-      const res = await fetch("/api/items?status=FOUND", { headers: authHeaders() });
+      const res = await fetch("/api/items?status=FOUND&light=1", { headers: authHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return;
       setUnassignedItems(

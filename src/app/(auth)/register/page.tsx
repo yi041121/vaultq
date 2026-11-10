@@ -174,7 +174,9 @@ export default function RegisterPage() {
       updateBarcode(code);
       flashBarcodeSuccess();
     } else {
-      showCenteredMessage("error", "Could not detect barcode in the image — please type the 10 digits manually");
+      setBarcodeFromImage(false);
+      setBarcodeError("No barcode detected in this image. Please upload a clear photo of the card barcode.");
+      showCenteredMessage("error", "No barcode detected in this image");
     }
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -397,10 +399,11 @@ export default function RegisterPage() {
                 <div className="relative flex-1">
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                   <VInput
-                    id="cardBarcode" type="text" placeholder="Type or scan 2000132602"
-                    className="pl-10 pr-10"
+                    id="cardBarcode" type="text" placeholder="e.g. 2000132602"
+                    className={`pl-10 pr-10 ${barcode.length === 10 ? "cursor-default" : ""}`}
                     inputMode="numeric"
                     maxLength={10}
+                    readOnly={barcode.length === 10}
                     style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                     value={barcode}
                     onChange={(e) => updateBarcode(e.target.value)}
@@ -439,11 +442,7 @@ export default function RegisterPage() {
                       <><CheckCircle2 size={12} /> Barcode successfully detected</>
                     )}
                 </p>
-              ) : (
-                <p className="text-[11px]" style={{ color: c.textLight }}>
-                  Scan or upload your card, or type the 10 digits. Lost your card? Upload a previous card photo or ask an admin to register you.
-                </p>
-              )}
+              ) : null}
             </div>
 
             <div className="space-y-1.5">
@@ -532,15 +531,6 @@ export default function RegisterPage() {
         open={showCamera}
         onClose={() => setShowCamera(false)}
         onDetect={(code) => { updateBarcode(code); flashBarcodeSuccess(); }}
-        onUseUpload={() => { setShowCamera(false); fileRef.current?.click(); }}
-        onManualEntry={() => {
-          setShowCamera(false);
-          setTimeout(() => {
-            const el = document.getElementById("cardBarcode") as HTMLInputElement | null;
-            el?.scrollIntoView({ block: "center", behavior: "smooth" });
-            el?.focus();
-          }, 150);
-        }}
       />
       <div id="vaultq-file-reader-temp" className="hidden" />
 

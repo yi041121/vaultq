@@ -18,6 +18,7 @@ import { ItemDetailsModal } from "@/components/item-details-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { suggestMatches, suggestionLabel } from "@/lib/report-match";
 import { categoryIcon } from "@/lib/category-icons";
+import { clearClientSession } from "@/lib/idle-session";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VSearchInput, VPagination,
   VDropdown, VDropdownItem, VFilterButton, vcolors as c,
@@ -201,6 +202,11 @@ export default function AdminClaims() {
     return t ? { Authorization: `Bearer ${t}` } : {};
   }
 
+  function redirectUnauthorized() {
+    clearClientSession();
+    router.replace("/login?skip=1&expired=1");
+  }
+
   function mapApiClaim(raw: any): Claim {
     return {
       id: raw.id,
@@ -237,8 +243,16 @@ export default function AdminClaims() {
   }
 
   async function fetchLostReports() {
+    if (typeof window === "undefined" || !localStorage.getItem("token")) {
+      redirectUnauthorized();
+      return;
+    }
     try {
       const res = await fetch("/api/reports?type=LOST&light=1", { headers: authHeaders(), cache: "no-store" });
+      if (res.status === 401) {
+        redirectUnauthorized();
+        return;
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) return;
       const mapped = (data.data as any[])
@@ -273,10 +287,19 @@ export default function AdminClaims() {
   }
 
   async function fetchClaims(openId?: string | null) {
+    if (typeof window === "undefined" || !localStorage.getItem("token")) {
+      setLoading(false);
+      redirectUnauthorized();
+      return;
+    }
     if (!claimsCache) setLoading(true);
     setLoadError(null);
     try {
       const res = await fetch("/api/claims?light=1", { headers: authHeaders(), cache: "no-store" });
+      if (res.status === 401) {
+        redirectUnauthorized();
+        return;
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
       const mapped = (data.data as any[]).map(mapApiClaim);
@@ -468,7 +491,7 @@ export default function AdminClaims() {
     setMatchQuery("");
     setShowMatchSearch(false);
     try {
-      const res = await fetch("/api/items?status=FOUND", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetch("/api/items?status=FOUND&light=1", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) return;
       setFoundItems(

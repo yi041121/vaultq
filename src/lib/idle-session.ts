@@ -24,6 +24,18 @@ export function isSessionIdle(now = Date.now()) {
   }
 }
 
+/** Client-side expiry check for UX only; the server still verifies the JWT. */
+export function isTokenExpired(token: string) {
+  try {
+    const encoded = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") || "";
+    const padded = encoded.padEnd(encoded.length + ((4 - (encoded.length % 4)) % 4), "=");
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
+    return typeof payload.exp === "number" && payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
 export function clearClientSession() {
   if (typeof window === "undefined") return;
   try {

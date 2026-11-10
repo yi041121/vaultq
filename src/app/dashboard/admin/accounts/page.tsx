@@ -192,7 +192,10 @@ export default function AdminAccounts() {
     try {
       const code = await decodeBarcodeFromImage(file);
       if (!code) {
-        showCenteredMessage("error", "Could not detect the barcode — type the 10 digits manually");
+        const message = "No barcode detected in this image. Please upload a clear photo of the card barcode.";
+        if (mode === "add") setFormError(message);
+        else setEditError(message);
+        showCenteredMessage("error", "No barcode detected in this image");
         return;
       }
       if (mode === "add") setFormBarcode(code);

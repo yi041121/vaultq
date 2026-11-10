@@ -110,7 +110,9 @@ export default function StudentProfile() {
         setBarcodeFromImage(true);
         if (fileRef.current) fileRef.current.value = "";
       } else {
-        showCenteredMessage("error", "Could not detect barcode in the image — please try a clearer photo");
+        setBarcodeFromImage(false);
+        setBarcodeError("No barcode detected in this image. Please upload a clear photo of the card barcode.");
+        showCenteredMessage("error", "No barcode detected in this image");
         if (fileRef.current) fileRef.current.value = "";
       }
     });
@@ -385,16 +387,6 @@ export default function StudentProfile() {
         open={showCamera}
         onClose={() => setShowCamera(false)}
         onDetect={(code) => { setBarcode(code); setBarcodeError(null); setBarcodeFromImage(true); }}
-        onUseUpload={() => { setShowCamera(false); fileRef.current?.click(); }}
-        onManualEntry={() => {
-          setShowCamera(false);
-          setBarcodeEditing(true);
-          setTimeout(() => {
-            const el = document.getElementById("profile-card-barcode") as HTMLInputElement | null;
-            el?.scrollIntoView({ block: "center", behavior: "smooth" });
-            el?.focus();
-          }, 150);
-        }}
       />
       {showBarcodeCard && (
         <StudentBarcodeModal

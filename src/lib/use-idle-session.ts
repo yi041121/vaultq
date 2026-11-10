@@ -6,6 +6,7 @@ import {
   LAST_ACTIVITY_KEY,
   clearClientSession,
   isSessionIdle,
+  isTokenExpired,
   markSessionActivity,
 } from "@/lib/idle-session";
 
@@ -19,9 +20,19 @@ type SessionRouter = { replace: (href: string) => void };
 export function useIdleSession(router: SessionRouter) {
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let token: string | null = null;
     try {
-      if (!localStorage.getItem("token")) return;
+      token = localStorage.getItem("token");
     } catch {
+      token = null;
+    }
+    if (!token) {
+      router.replace("/login?skip=1&expired=1");
+      return;
+    }
+    if (isTokenExpired(token)) {
+      clearClientSession();
+      router.replace("/login?skip=1&expired=1");
       return;
     }
 

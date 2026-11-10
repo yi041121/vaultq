@@ -28,6 +28,7 @@ import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { compressImageFileToDataUrl } from "@/lib/image-compression";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { clearClientSession } from "@/lib/idle-session";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -111,6 +112,9 @@ export default function AdminReports() {
   const [approveCameraOpen, setApproveCameraOpen] = useState(false);
   const [approveEditingPhoto, setApproveEditingPhoto] = useState<number | null>(null);
   const [savingPhotos, setSavingPhotos] = useState(false);
+  const [loadingVerifyPhotos, setLoadingVerifyPhotos] = useState(false);
+  const [verifyPhotosReady, setVerifyPhotosReady] = useState(false);
+  const verifyOpenRef = useRef(false);
   const approveUploadRef = useRef<HTMLInputElement>(null);
   const approveCameraInputRef = useRef<HTMLInputElement>(null);
   const [selectedLockerId, setSelectedLockerId] = useState("");
@@ -131,11 +135,25 @@ export default function AdminReports() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
+  function redirectUnauthorized() {
+    clearClientSession();
+    router.replace("/login?skip=1&expired=1");
+  }
+
   async function fetchReports() {
+    if (typeof window === "undefined" || !localStorage.getItem("token")) {
+      setLoading(false);
+      redirectUnauthorized();
+      return;
+    }
     if (!reportsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/reports", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetch("/api/reports?light=1", { headers: authHeaders(), cache: "no-store" });
+      if (res.status === 401) {
+        redirectUnauthorized();
+        return;
+      }
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load reports");
       const list = (data.data as any[]).map(mapReport);
@@ -152,9 +170,13 @@ export default function AdminReports() {
   async function fetchSupporting() {
     try {
       const [itemsRes, lockersRes] = await Promise.all([
-        fetch("/api/items?status=FOUND", { headers: authHeaders(), cache: "no-store" }),
+        fetch("/api/items?status=FOUND&light=1", { headers: authHeaders(), cache: "no-store" }),
         fetch("/api/lockers?status=AVAILABLE", { headers: authHeaders(), cache: "no-store" }),
       ]);
+      if (itemsRes.status === 401 || lockersRes.status === 401) {
+        redirectUnauthorized();
+        return;
+      }
       const itemsJson = await itemsRes.json().catch(() => null);
       if (itemsJson?.success) setFoundItems((itemsJson.data as any[]).map((it) => ({
         id: it.id,
@@ -178,8 +200,11 @@ export default function AdminReports() {
     const stored = localStorage.getItem("user");
     setUser(stored ? JSON.parse(stored) : { name: "Admin User", role: "ADMIN" });
     void fetchReports();
-    void fetchSupporting();
   }, []);
+
+  useEffect(() => {
+    if (!verifyReport) verifyOpenRef.current = false;
+  }, [verifyReport]);
 
   function handleLogout() {
     localStorage.removeItem("token");
@@ -187,7 +212,8 @@ export default function AdminReports() {
     router.push("/login?skip=1&loggedOut=1");
   }
 
-  function openVerify(report: UserReport) {
+  async function openVerify(report: UserReport) {
+    verifyOpenRef.current = true;
     setVerifyReport(report);
     setApproveStage("form");
     setVerifyDateOpen(false);
@@ -203,9 +229,48 @@ export default function AdminReports() {
       date: report.date,
       description: report.description,
     });
+    setVerifyPhotosReady(false);
+    setLoadingVerifyPhotos(true);
+    if (foundItems.length === 0 || lockers.length === 0) void fetchSupporting();
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      setLoadingVerifyPhotos(false);
+      redirectUnauthorized();
+      return;
+    }
+    try {
+      const res = await fetch(`/api/reports/${report.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        redirectUnauthorized();
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      if (!verifyOpenRef.current) return;
+      if (res.ok && data?.success && data.data) {
+        const full = mapReport(data.data);
+        setVerifyReport(full);
+        setApprovePhotos(full.images.map((src) => ({ preview: src, originalPreview: src })));
+        setVerifyForm({
+          itemName: full.itemName,
+          category: full.category,
+          location: full.location,
+          date: full.date,
+          description: full.description,
+        });
+        setVerifyPhotosReady(true);
+      }
+    } catch {
+      // Keep the signed thumbnails; photo editing stays disabled until a reload.
+    } finally {
+      setLoadingVerifyPhotos(false);
+    }
   }
 
   async function addApprovePhotos(files: File[]) {
+    if (!verifyPhotosReady) return;
     if (!files.length) return;
     if (approvePhotos.length + files.length > 3) {
       showCenteredMessage("error", "You can upload up to 3 photos");
@@ -234,6 +299,7 @@ export default function AdminReports() {
   }
 
   function openApproveCamera() {
+    if (!verifyPhotosReady) return;
     setApprovePhotoSourceOpen(false);
     if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") {
       setApproveCameraOpen(true);
@@ -244,10 +310,18 @@ export default function AdminReports() {
 
   async function saveApprovePhotos(): Promise<boolean> {
     if (!verifyReport) return false;
+    if (loadingVerifyPhotos) {
+      showCenteredMessage("error", "Photos are still loading — please try again");
+      return false;
+    }
     const next = approvePhotos.map((photo) => photo.preview);
     const current = verifyReport.images;
     if (next.length === current.length && next.every((value, index) => value === current[index])) {
       return true;
+    }
+    if (!verifyPhotosReady) {
+      showCenteredMessage("error", "Could not load the full report photos — close and reopen the report");
+      return false;
     }
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) {
@@ -280,7 +354,7 @@ export default function AdminReports() {
   }
 
   async function goToApproveStep() {
-    if (savingPhotos) return;
+    if (savingPhotos || loadingVerifyPhotos) return;
     const saved = await saveApprovePhotos();
     if (!saved) return;
     if (!verifyForm.itemName.trim() || !verifyForm.location.trim()) {
@@ -653,11 +727,11 @@ export default function AdminReports() {
                         </VButton>
                       )}
                       {report.type === "FOUND" ? (
-                        <VButton className="flex-1" onClick={() => openVerify(report)}>
+                        <VButton className="flex-1" onClick={() => void openVerify(report)}>
                           <CheckCircle2 size={14} /> Verify
                         </VButton>
                       ) : (
-                        <VButton className="flex-1" onClick={() => { setMatchTarget(report); setMatchQuery(""); setShowMatchSearch(false); }}>
+                        <VButton className="flex-1" onClick={() => { setMatchTarget(report); setMatchQuery(""); setShowMatchSearch(false); if (foundItems.length === 0) void fetchSupporting(); }}>
                           <Search size={14} /> Match
                         </VButton>
                       )}
@@ -927,7 +1001,7 @@ export default function AdminReports() {
                     </label>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px]" style={{ color: c.textLight }}>{approvePhotos.length}/3</span>
-                      {approvePhotos.length > 0 && approvePhotos.length < 3 && (
+                      {verifyPhotosReady && approvePhotos.length > 0 && approvePhotos.length < 3 && (
                         <button type="button" onClick={() => setApprovePhotoSourceOpen(true)}
                           className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
                           style={{ borderColor: c.border, color: c.primary }}>
@@ -939,7 +1013,15 @@ export default function AdminReports() {
                   <input ref={approveUploadRef} type="file" accept="image/*" multiple className="hidden" onChange={handleApprovePhotoChange} />
                   <input ref={approveCameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleApprovePhotoChange} />
 
-                  {approvePhotos.length === 0 ? (
+                  {!verifyPhotosReady ? (
+                    <div className="rounded-xl border px-4 py-5 text-center text-xs" style={{ borderColor: c.border, backgroundColor: c.fill, color: c.textMuted }}>
+                      {loadingVerifyPhotos ? (
+                        <span className="inline-flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Loading full photos…</span>
+                      ) : (
+                        "Photo editing is unavailable. You can still approve or reject this report."
+                      )}
+                    </div>
+                  ) : approvePhotos.length === 0 ? (
                     <div>
                       <PhotoPicker
                         onUpload={() => approveUploadRef.current?.click()}
@@ -993,9 +1075,9 @@ export default function AdminReports() {
                 onClick={() => { setRejectReport(verifyReport); setRejectNote(""); setVerifyReport(null); }}>
                 <XCircle size={14} /> Reject
               </VButton>
-              <VButton onClick={() => void goToApproveStep()} disabled={verifying || savingPhotos}>
-                {savingPhotos ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                {savingPhotos ? "Saving..." : "Approve"}
+              <VButton onClick={() => void goToApproveStep()} disabled={verifying || savingPhotos || loadingVerifyPhotos}>
+                {savingPhotos || loadingVerifyPhotos ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {loadingVerifyPhotos ? "Loading..." : savingPhotos ? "Saving..." : "Approve"}
               </VButton>
             </div>
           </VCard>

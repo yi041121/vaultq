@@ -147,7 +147,7 @@ export default function StudentSearch() {
     setLoadError(null);
     try {
       const [itemsRes, claimsRes] = await Promise.all([
-        fetch("/api/items", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
+        fetch("/api/items?light=1", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
         fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
       ]);
       const itemsJson = await itemsRes.json().catch(() => null);
