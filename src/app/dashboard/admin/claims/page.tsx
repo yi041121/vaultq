@@ -19,6 +19,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { suggestMatches, suggestionLabel } from "@/lib/report-match";
 import { categoryIcon } from "@/lib/category-icons";
 import { clearClientSession } from "@/lib/idle-session";
+import { MobileOnly, DesktopOnly } from "@/components/responsive";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VSearchInput, VPagination,
   VDropdown, VDropdownItem, VFilterButton, vcolors as c,
@@ -434,6 +436,94 @@ export default function AdminClaims() {
   const currentPage = Math.min(page, totalPages);
   const paginatedRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+  const queueColumns: DataTableColumn<VerificationRow>[] = [
+    {
+      key: "item",
+      header: "Item",
+      cell: (row) => {
+        const Icon = categoryIcon(row.category);
+        return (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.primary}10` }}>
+              <Icon size={17} style={{ color: c.primary }} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold truncate max-w-[240px]" style={{ color: c.text }}>{row.itemName}</p>
+              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{row.category}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "student",
+      header: "Student",
+      cell: (row) => (
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate max-w-[180px]" style={{ color: c.text }}>{row.student}</p>
+          <p className="text-[11px] truncate max-w-[180px]" style={{ color: c.textMuted }}>{row.studentEmail || row.studentId || "—"}</p>
+        </div>
+      ),
+    },
+    {
+      key: "type",
+      header: "Type",
+      cell: (row) => (
+        <VBadge color={row.kind === "CLAIM" ? "#64748b" : c.primary}
+          style={{ backgroundColor: "transparent", border: `1px solid ${row.kind === "CLAIM" ? "#cbd5e1" : `${c.primary}55`}` }}>
+          {row.kind === "CLAIM" ? "Claim" : "Lost report"}
+        </VBadge>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (row) => <VBadge color={statusColor(row.status)}>{reportStatusLabel(row.status)}</VBadge>,
+    },
+    {
+      key: "date",
+      header: "Submitted",
+      cell: (row) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{fmtDateValue(row.date)}</span>,
+    },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (row) => (
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          {row.kind === "CLAIM" && row.claim && (
+            <>
+              <VButton variant="outline" size="sm" onClick={() => setCompareClaim(row.claim!)}><Eye size={12} /> View</VButton>
+              {row.status === "PENDING" && (
+                <>
+                  <VButton size="sm" onClick={() => { setApproveNote(""); setApproveTarget({ id: row.claim!.id, itemName: row.claim!.itemName }); }}>
+                    <CheckCircle2 size={12} /> Approve
+                  </VButton>
+                  <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "CLAIM", id: row.claim!.id, itemName: row.claim!.itemName }); }}>
+                    <XCircle size={12} /> Reject
+                  </VButton>
+                </>
+              )}
+            </>
+          )}
+          {row.kind === "LOST" && row.report && (
+            <>
+              <VButton variant="outline" size="sm" onClick={() => { setDetailPhotoIndex(0); setLostDetail(row.report!); }}><Eye size={12} /> View</VButton>
+              {row.status === "PENDING" && (
+                <>
+                  <VButton size="sm" onClick={() => void openMatchFor(row.report!)}><PackageSearch size={12} /> Match</VButton>
+                  <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "LOST", id: row.report!.id, itemName: row.report!.itemName }); }}>
+                    <XCircle size={12} /> Reject
+                  </VButton>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   const claimItemDetailPhotos = claimItemDetail
     ? claimItemDetail.itemImageUrls?.length
       ? claimItemDetail.itemImageUrls
@@ -619,17 +709,11 @@ export default function AdminClaims() {
             }
             filters={
               <>
-                <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
-                  {statusOptions.map((s) => (
-                    <button key={s} type="button"
-                      className="px-2 sm:px-3 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                      style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
-                      onClick={() => { setStatusFilter(s); setPage(1); }}>
-                      {s === "All" ? "All" : reportStatusLabel(s)}
-                    </button>
-                  ))}
-                </div>
-
+                {statusOptions.map((s) => (
+                  <VFilterButton key={s} active={statusFilter === s} onClick={() => { setStatusFilter(s); setPage(1); }}>
+                    {s === "All" ? "All" : reportStatusLabel(s)}
+                  </VFilterButton>
+                ))}
                 <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-40"
                   trigger={
                     <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
@@ -701,7 +785,8 @@ export default function AdminClaims() {
                   <Loader2 size={12} className="animate-spin" /> Loading lost reports…
                 </p>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 content-start flex-1 min-w-0">
+              <MobileOnly className="flex-1 min-w-0">
+              <div className="grid grid-cols-1 gap-4 content-start flex-1 min-w-0">
                 {paginatedRows.map((row) => {
                   if (row.kind === "CLAIM" && row.claim) {
                     const cl = row.claim;
@@ -969,6 +1054,19 @@ export default function AdminClaims() {
                   );
                 })}
               </div>
+              </MobileOnly>
+              <DesktopOnly>
+                <DataTable
+                  rows={paginatedRows}
+                  columns={queueColumns}
+                  rowKey={(row) => `${row.kind}-${row.id}`}
+                  onRowClick={(row) => {
+                    if (row.kind === "CLAIM" && row.claim) setCompareClaim(row.claim);
+                    else if (row.report) { setDetailPhotoIndex(0); setLostDetail(row.report); }
+                  }}
+                  empty="No claims or lost reports found"
+                />
+              </DesktopOnly>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sortedRows.length)} of {sortedRows.length} results

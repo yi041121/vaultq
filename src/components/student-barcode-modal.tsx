@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Check, Copy, QrCode, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Barcode, Check, Copy, X } from "lucide-react";
 import { vcolors as c } from "@/components/ui/vault";
 import { useEscapeKey } from "@/lib/use-escape-key";
 
@@ -13,33 +13,39 @@ interface StudentBarcodeModalProps {
 }
 
 /**
- * Digital version of the student card barcode. The locker's step-1 scanner
- * accepts either the card barcode or the student ID, so this gives students
- * a way to unlock their locker when they forgot the physical card.
+ * Digital version of the student card barcode. Code 128 is used instead of a
+ * QR code because the locker's first step is a barcode scanner. The value is
+ * either the card barcode or the student ID, both accepted by identify API.
  */
 export function StudentBarcodeModal({ barcode, studentId, name, onClose }: StudentBarcodeModalProps) {
   const value = (barcode || studentId || "").trim();
   const usingStudentId = !barcode && !!studentId;
   const label = usingStudentId ? "Student ID barcode" : "Card barcode";
-  const [qr, setQr] = useState<string | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [renderError, setRenderError] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEscapeKey(true, onClose);
 
   useEffect(() => {
-    if (!value) return;
+    if (!value || !svgRef.current) return;
     let cancelled = false;
     (async () => {
       try {
-        const QRCode = await import("qrcode");
-        const url = await QRCode.toDataURL(value, {
-          width: 320,
-          margin: 2,
-          color: { dark: "#0f172a", light: "#ffffff" },
+        const JsBarcode = (await import("jsbarcode")).default;
+        if (cancelled || !svgRef.current) return;
+        JsBarcode(svgRef.current, value, {
+          format: "CODE128",
+          displayValue: true,
+          fontSize: 16,
+          height: 80,
+          width: 2,
+          margin: 10,
+          background: "#ffffff",
+          lineColor: "#0f172a",
         });
-        if (!cancelled) setQr(url);
       } catch {
-        // The barcode number is still shown as a fallback.
+        if (!cancelled) setRenderError(true);
       }
     })();
     return () => { cancelled = true; };
@@ -70,20 +76,20 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
 
         <div className="w-11 h-11 rounded-xl mx-auto flex items-center justify-center mb-3"
           style={{ backgroundColor: `${c.primary}15`, color: c.primary }}>
-          <QrCode size={22} />
+          <Barcode size={22} />
         </div>
         <h3 className="text-base font-semibold" style={{ color: c.text }}>Your student barcode</h3>
         {name && <p className="text-xs mt-0.5" style={{ color: c.textMuted }}>{name}</p>}
 
         {value ? (
           <>
-            <div className="mt-5 rounded-xl border p-4 inline-block" style={{ borderColor: c.borderLight }}>
-              {qr ? (
-                <img src={qr} alt={`${label} QR code`} className="w-52 h-52 object-contain" />
-              ) : (
-                <div className="w-52 h-52 flex items-center justify-center text-xs" style={{ color: c.textLight }}>
-                  Preparing barcode…
+            <div className="mt-5 rounded-xl border p-3" style={{ borderColor: c.borderLight }}>
+              {renderError ? (
+                <div className="h-28 flex items-center justify-center text-xs" style={{ color: c.textLight }}>
+                  Could not draw the barcode. Use the number below.
                 </div>
+              ) : (
+                <svg ref={svgRef} className="w-full h-auto" role="img" aria-label={`${label} barcode`} />
               )}
             </div>
             <p className="text-[11px] font-semibold uppercase tracking-wider mt-4" style={{ color: c.textLight }}>{label}</p>
@@ -94,7 +100,7 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
               {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy number"}
             </button>
             <p className="text-[11px] leading-relaxed mt-4" style={{ color: c.textMuted }}>
-              Show this QR code to the locker scanner if you forgot your physical student card.
+              Show this barcode to the locker scanner if you forgot your physical student card.
             </p>
             {usingStudentId && (
               <p className="text-[11px] leading-relaxed mt-1.5" style={{ color: c.textLight }}>

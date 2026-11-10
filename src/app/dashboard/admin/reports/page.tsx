@@ -28,6 +28,8 @@ import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { compressImageFileToDataUrl } from "@/lib/image-compression";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { MobileOnly, DesktopOnly } from "@/components/responsive";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { clearClientSession } from "@/lib/idle-session";
 
 interface User { id: string; name: string; email: string; role: string; }
@@ -555,6 +557,58 @@ export default function AdminReports() {
 
   const filtered = baseFiltered.filter((report) => filterStatus === "ALL" || report.status === filterStatus);
 
+  const reportColumns: DataTableColumn<UserReport>[] = [
+    {
+      key: "item",
+      header: "Item",
+      cell: (report) => {
+        const Icon = categoryIcon(report.category);
+        return (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.primary}10` }}>
+              <Icon size={17} style={{ color: c.primary }} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold truncate max-w-[220px]" style={{ color: c.text }}>{report.itemName}</p>
+              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{report.typeLabel} · {report.category}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    { key: "student", header: "Student", cell: (report) => <span className="text-xs" style={{ color: c.textMuted }}>{report.studentName}</span> },
+    { key: "status", header: "Status", cell: (report) => <VBadge color={report.color}>{statusLabel[report.status]}</VBadge> },
+    { key: "date", header: "Date", cell: (report) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{fmtDay(report.date)}</span> },
+    { key: "locker", header: "Locker", cell: (report) => <span className="text-xs font-medium" style={{ color: c.textMuted }}>{report.item?.locker || "—"}</span> },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (report) => (
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          {report.images.length > 0 && (
+            <VButton variant="secondary" size="sm" onClick={() => setViewer({ photos: report.images, index: 0, title: report.itemName })}>
+              <Eye size={12} /> Photos
+            </VButton>
+          )}
+          {report.status === "PENDING" && report.type === "FOUND" && (
+            <VButton size="sm" onClick={() => void openVerify(report)}><CheckCircle2 size={12} /> Verify</VButton>
+          )}
+          {report.status === "PENDING" && report.type === "LOST" && (
+            <>
+              <VButton size="sm" onClick={() => { setMatchTarget(report); setMatchQuery(""); setShowMatchSearch(false); if (foundItems.length === 0) void fetchSupporting(); }}>
+                <Search size={12} /> Match
+              </VButton>
+              <VButton variant="danger" size="sm" onClick={() => { setRejectReport(report); setRejectNote(""); }}>
+                <XCircle size={12} /> Reject
+              </VButton>
+            </>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   const matchResults = foundItems.filter((item) =>
     matchesSearch(matchQuery, [
       item.itemName,
@@ -621,7 +675,9 @@ export default function AdminReports() {
               </p>
             </VCard>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
+            <>
+            <MobileOnly className="flex-1">
+            <div className="grid grid-cols-1 gap-5 flex-1">
               {filtered.map((report) => {
                 const CategoryIcon = categoryIcon(report.category);
                 return (
@@ -734,6 +790,19 @@ export default function AdminReports() {
                 );
               })}
             </div>
+            </MobileOnly>
+            <DesktopOnly>
+              <DataTable
+                rows={filtered}
+                columns={reportColumns}
+                rowKey={(report) => report.id}
+                onRowClick={(report) => {
+                  if (report.images.length) setViewer({ photos: report.images, index: 0, title: report.itemName });
+                }}
+                empty="No reports found"
+              />
+            </DesktopOnly>
+            </>
           )}
         </div>
       </main>

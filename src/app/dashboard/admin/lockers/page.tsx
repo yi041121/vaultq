@@ -11,6 +11,8 @@ import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { MobileOnly, DesktopOnly } from "@/components/responsive";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { categoryIcon } from "@/lib/category-icons";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { matchesSearch } from "@/lib/search";
@@ -162,6 +164,52 @@ export default function AdminLockers() {
     if (!matchesSearch(query, [l.number, l.status, l.item?.name, l.item?.category, l.number ? `locker ${l.number}` : ""])) return false;
     return true;
   });
+
+  const lockerColumns: DataTableColumn<Locker>[] = [
+    {
+      key: "locker",
+      header: "Locker",
+      cell: (l) => <span className="text-sm font-bold" style={{ color: c.text }}>{l.number}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (l) => <span className="text-xs font-semibold" style={{ color: statusColor(l.status) }}>{l.status.charAt(0) + l.status.slice(1).toLowerCase()}</span>,
+    },
+    {
+      key: "item",
+      header: "Item",
+      cell: (l) => l.item
+        ? <div className="min-w-0"><p className="text-sm font-medium truncate max-w-[220px]" style={{ color: c.text }}>{l.item.name}</p><p className="text-[11px]" style={{ color: c.textMuted }}>{l.item.category}</p></div>
+        : <span className="text-xs" style={{ color: c.textLight }}>{l.status === "MAINTENANCE" ? "Under maintenance" : "Available"}</span>,
+    },
+    { key: "student", header: "Student", cell: (l) => <span className="text-xs" style={{ color: c.textMuted }}>{l.item?.student || "—"}</span> },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (l) => (
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          {l.item && <VButton variant="secondary" size="sm" onClick={() => void openItemDetails(l)}><Eye size={12} /> View</VButton>}
+          {l.status === "AVAILABLE" && (
+            <>
+              <VButton variant="secondary" size="sm" onClick={() => updateStatus(l.id, "MAINTENANCE")}><Wrench size={12} /> Maintenance</VButton>
+              <VButton size="sm" onClick={() => setAssignLocker(l)}><Plus size={12} /> Assign</VButton>
+            </>
+          )}
+          {l.status === "MAINTENANCE" && (
+            <VButton size="sm" onClick={() => updateStatus(l.id, "AVAILABLE")}>Set available</VButton>
+          )}
+          {l.status === "OCCUPIED" && (
+            <>
+              <VButton variant="secondary" size="sm" onClick={() => openChangeLocker(l)}><ArrowLeftRight size={12} /> Change</VButton>
+              <VButton size="sm" onClick={() => setReleaseTarget(l)}><Unlock size={12} /> Release</VButton>
+            </>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   async function refresh() {
     await fetchLockers();
@@ -404,7 +452,9 @@ export default function AdminLockers() {
 
           {/* Grid */}
           {loading ? null : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1">
+          <>
+          <MobileOnly className="flex-1">
+          <div className="grid grid-cols-1 gap-4 flex-1">
             {filtered.map((l) => (
               <VCard key={l.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-md" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                 <div className="flex items-center gap-2 mb-3">
@@ -480,6 +530,17 @@ export default function AdminLockers() {
               </VCard>
             ))}
           </div>
+          </MobileOnly>
+          <DesktopOnly>
+            <DataTable
+              rows={filtered}
+              columns={lockerColumns}
+              rowKey={(l) => l.id}
+              onRowClick={(l) => { if (l.item) void openItemDetails(l); }}
+              empty="No lockers match the filter"
+            />
+          </DesktopOnly>
+          </>
           )}
           {!loading && filtered.length === 0 && (
             <VCard className="py-16 text-center mt-4">

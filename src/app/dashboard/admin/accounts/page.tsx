@@ -6,6 +6,8 @@ import { showCenteredMessage } from "@/components/centered-message";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { MobileOnly, DesktopOnly } from "@/components/responsive";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
@@ -169,6 +171,50 @@ export default function AdminAccounts() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const accountColumns: DataTableColumn<Student>[] = [
+    {
+      key: "student",
+      header: "Student",
+      cell: (st) => (
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0"
+            style={{ backgroundColor: st.status === "DISABLED" ? c.textLight : c.primary }}>
+            {st.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate max-w-[220px]" style={{ color: c.text }}>{st.name}</p>
+            <p className="text-[11px] truncate max-w-[220px]" style={{ color: c.textMuted }}>{st.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: "studentId", header: "Student ID", cell: (st) => <span className="text-xs" style={{ color: c.textMuted }}>{st.studentId}</span> },
+    {
+      key: "barcode",
+      header: "Barcode",
+      cell: (st) => st.cardBarcode
+        ? <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: "#16a34a" }}><Barcode size={11} /> {maskedBarcode(st.cardBarcode)}</span>
+        : <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: "#92400e" }}><Barcode size={11} /> None</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (st) => <VBadge color={st.status === "ACTIVE" ? "#16a34a" : "#64748b"}>{st.status === "ACTIVE" ? "Active" : "Disabled"}</VBadge>,
+    },
+    { key: "claims", header: "Claims", cell: (st) => <span className="text-xs tabular-nums" style={{ color: c.textMuted }}>{st.claims}</span> },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (st) => (
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <VButton variant="secondary" size="sm" onClick={() => openEdit(st)}><SquarePen size={12} /> Edit</VButton>
+          <VButton variant="secondary" size="sm" onClick={() => setDeleteTarget(st)}><Trash2 size={12} /> Delete</VButton>
+        </div>
+      ),
+    },
+  ];
   const hasFilters = !!(query || statusFilter !== "All");
 
   function openAdd() {
@@ -479,6 +525,7 @@ export default function AdminAccounts() {
             </VCard>
           ) : (
             <>
+              <MobileOnly className="flex-1">
               <div className="space-y-4 flex-1">
                 {paginated.map((st) => (
                   <VCard key={st.id} className="p-5 flex flex-col lg:flex-row lg:items-center gap-4" style={st.status === "DISABLED" ? { opacity: 0.75 } : {}}>
@@ -514,6 +561,10 @@ export default function AdminAccounts() {
                   </VCard>
                 ))}
               </div>
+              </MobileOnly>
+              <DesktopOnly>
+                <DataTable rows={paginated} columns={accountColumns} rowKey={(st) => st.id} onRowClick={openEdit} empty="No accounts found" />
+              </DesktopOnly>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2, Pencil, QrCode, Check } from "lucide-react";
+import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2, Pencil, Check } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentBarcodeModal } from "@/components/student-barcode-modal";
@@ -201,7 +201,7 @@ export default function StudentProfile() {
     <StudentShell active="Profile" userName={user.name} userRole={user.role} pageTitle="Profile" logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
-          <div className="w-full max-w-3xl mx-auto space-y-5">
+          <div className="w-full max-w-6xl mx-auto space-y-5">
             {/* Header card */}
             <VCard className="p-5 sm:p-6 lg:p-8 flex items-center gap-4 sm:gap-5">
               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold text-white shrink-0"
@@ -231,7 +231,8 @@ export default function StudentProfile() {
               </div>
             )}
 
-            {/* Card Barcode */}
+            {/* Card Barcode + personal information */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
             <VCard className="p-5 sm:p-6 lg:p-8">
               <div className="flex items-start justify-between gap-3 mb-5">
                 <div className="flex items-center gap-2">
@@ -248,7 +249,7 @@ export default function StudentProfile() {
                   disabled={!savedBarcode && !savedStudentId}
                   className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border bg-white text-[11px] font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   style={{ borderColor: c.border, color: c.primary }}>
-                  <QrCode size={13} /> Show
+                  Show
                 </button>
               </div>
 
@@ -375,6 +376,7 @@ export default function StudentProfile() {
                 </VButton>
               </div>
             </VCard>
+            </div>
           </div>
         </div>
       </main>

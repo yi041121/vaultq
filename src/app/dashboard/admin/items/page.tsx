@@ -15,6 +15,8 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { MobileOnly, DesktopOnly } from "@/components/responsive";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
   vcolors as c,
@@ -233,6 +235,43 @@ export default function AdminItems() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const itemColumns: DataTableColumn<Item>[] = [
+    {
+      key: "item",
+      header: "Item",
+      cell: (it) => {
+        const Icon = filterIcons[it.category] || Package;
+        return (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center shrink-0" style={{ backgroundColor: c.fill }}>
+              {it.imageUrl ? <img src={it.imageUrl} alt="" className="w-full h-full object-cover" /> : <Icon size={18} style={{ color: c.primary }} />}
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold truncate max-w-[220px]" style={{ color: c.text }}>{it.name}</p>
+              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{it.category}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    { key: "status", header: "Status", cell: (it) => <VBadge color={statusColor(it.status)}>{it.status}</VBadge> },
+    { key: "location", header: "Location", cell: (it) => <span className="text-xs truncate block max-w-[180px]" style={{ color: c.textMuted }}>{it.location}</span> },
+    { key: "date", header: "Date", cell: (it) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{new Date(it.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span> },
+    { key: "locker", header: "Locker", cell: (it) => <span className="text-xs font-medium" style={{ color: c.textMuted }}>{it.locker || "—"}</span> },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (it) => (
+        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <VButton variant="secondary" size="sm" onClick={() => void openItemPhotos(it)}><Eye size={12} /> View</VButton>
+          <VButton variant="secondary" size="sm" onClick={() => openEdit(it)}><Pencil size={12} /> Edit</VButton>
+          <VButton variant="secondary" size="sm" onClick={() => openDelete(it)}><Trash2 size={12} /> Delete</VButton>
+        </div>
+      ),
+    },
+  ];
   const hasFilters = !!(query || statusFilter !== "All" || categoryFilter);
 
   function openAdd() {
@@ -509,7 +548,8 @@ export default function AdminItems() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1 content-start">
+              <MobileOnly className="flex-1">
+              <div className="grid grid-cols-1 gap-5 flex-1 content-start">
                 {paginated.map((it) => {
                   const Icon = filterIcons[it.category] || Package;
                   return (
@@ -568,6 +608,10 @@ export default function AdminItems() {
                   );
                 })}
               </div>
+              </MobileOnly>
+              <DesktopOnly>
+                <DataTable rows={paginated} columns={itemColumns} rowKey={(it) => it.id} onRowClick={(it) => openEdit(it)} empty="No items found" />
+              </DesktopOnly>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results

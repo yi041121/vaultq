@@ -13,6 +13,8 @@ import { showCenteredMessage } from "@/components/centered-message";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { StudentShell } from "@/components/student-shell";
 import { ResetFiltersButton } from "@/components/filter-panel";
+import { MobileOnly, DesktopOnly } from "@/components/responsive";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
@@ -232,6 +234,46 @@ export default function StudentSearch() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const itemColumns: DataTableColumn<FoundItem>[] = [
+    {
+      key: "item",
+      header: "Item",
+      cell: (item) => {
+        const Icon = filterIcons[item.category] || Package;
+        return (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center shrink-0" style={{ backgroundColor: c.fill }}>
+              {item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" /> : <Icon size={18} style={{ color: c.primary }} />}
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold truncate max-w-[220px]" style={{ color: c.text }}>{item.name}</p>
+              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{item.category}</p>
+            </div>
+          </div>
+        );
+      },
+    },
+    { key: "location", header: "Location", cell: (item) => <span className="text-xs truncate block max-w-[180px]" style={{ color: c.textMuted }}>{item.location || "—"}</span> },
+    { key: "date", header: "Date", cell: (item) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{fmtItemDate(item.date)}</span> },
+    { key: "status", header: "Status", cell: (item) => <VBadge color={item.color}>{item.statusLabel}</VBadge> },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      cell: (item) => {
+        const unavailable = claimedItemIds.has(item.id) || item.reportedByMe || item.status !== "FOUND";
+        return (
+          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <VButton variant="secondary" size="sm" onClick={() => setViewItem(item)}><Eye size={12} /> Details</VButton>
+            <VButton size="sm" disabled={unavailable} onClick={() => openClaim(item)}>
+              {claimedItemIds.has(item.id) ? "Claim submitted" : item.reportedByMe ? "You reported this" : "Claim"}
+            </VButton>
+          </div>
+        );
+      },
+    },
+  ];
 
   function parseDate(d: string) {
     return new Date(d + "T00:00:00");
@@ -643,7 +685,9 @@ export default function StudentSearch() {
 
           {/* Items grid */}
           {loading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <>
+            <MobileOnly>
+            <div className="grid grid-cols-1 gap-5">
               {Array.from({ length: 8 }).map((_, i) => (
                 <VCard key={i} className="p-5 animate-pulse">
                   <div className="w-full h-40 rounded-xl mb-4" style={{ backgroundColor: c.fill }} />
@@ -653,6 +697,11 @@ export default function StudentSearch() {
                 </VCard>
               ))}
             </div>
+            </MobileOnly>
+            <DesktopOnly>
+              <DataTable rows={[]} columns={itemColumns} rowKey={(item) => item.id} loading empty="No items found" />
+            </DesktopOnly>
+            </>
           ) : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
@@ -670,7 +719,8 @@ export default function StudentSearch() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1 content-start">
+              <MobileOnly className="flex-1">
+              <div className="grid grid-cols-1 gap-5 flex-1 content-start">
                 {paginated.map((item) => {
                   const Icon = filterIcons[item.category] || Package;
                   const claimed = claimedItemIds.has(item.id);
@@ -727,6 +777,10 @@ export default function StudentSearch() {
                   );
                 })}
               </div>
+              </MobileOnly>
+              <DesktopOnly>
+                <DataTable rows={paginated} columns={itemColumns} rowKey={(item) => item.id} onRowClick={setViewItem} empty="No items found" />
+              </DesktopOnly>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
