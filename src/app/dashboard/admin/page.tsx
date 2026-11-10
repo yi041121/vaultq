@@ -124,7 +124,7 @@ export default function AdminDashboard() {
             {stats.map((s) => (
               <VCard key={s.label} className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
                 <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: `${s.color}15` }}>
+                  style={{ backgroundColor: `color-mix(in srgb, ${s.color} 8%, transparent)` }}>
                   <s.icon size={16} style={{ color: s.color }} />
                 </div>
                 <div>
@@ -198,7 +198,7 @@ export default function AdminDashboard() {
                   {quickActions.map((a) => (
                     <button key={a.label} type="button"
                       className="flex flex-col items-center justify-center gap-1 rounded-xl text-xs font-medium h-28 border relative overflow-hidden transition-all duration-200 cursor-pointer"
-                      style={{ borderColor: c.borderLight, background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)`, color: c.textMuted, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
+                      style={{ borderColor: c.borderLight, background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})`, color: c.textMuted, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
                       onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.06)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.03)"; }}
                       onClick={() => a.path && router.push(a.path)}>
@@ -223,7 +223,7 @@ export default function AdminDashboard() {
                   {availableLockers.map((l) => (
                     <button key={l.number} type="button" onClick={() => { setAssignLocker(l); setAssignItemId(""); }}
                       className="rounded-xl border p-5 text-center flex flex-col items-center justify-center relative overflow-hidden transition-all duration-200 cursor-pointer hover:shadow-md"
-                      style={{ borderColor: c.borderLight, background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)`, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
+                      style={{ borderColor: c.borderLight, background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})`, boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
                       title={`Assign item to ${l.number}`}>
                       <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.2), transparent 60%)" }} />
                       <div className="relative w-2 h-2 rounded-full mb-2" style={{ backgroundColor: l.color }} />

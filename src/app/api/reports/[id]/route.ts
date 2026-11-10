@@ -209,7 +209,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         report.userId,
         "Report Rejected",
         `Your ${report.type === "LOST" ? "lost" : "found"} item report for ${report.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
-        { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
+        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=" + report.type },
       );
 
       return NextResponse.json({ success: true, data: updated });
@@ -232,7 +232,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         report.userId,
         "Lost Report Closed",
         `Your lost item report for ${report.itemName} has been closed. Contact the Lost & Found office if you still need help.`,
-        { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
+        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=" + report.type },
       );
 
       return NextResponse.json({ success: true, data: updated });

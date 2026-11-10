@@ -7,6 +7,7 @@ import { colors } from "@/lib/design";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { NOTIFICATION_META, relativeTime, type NotificationType } from "@/lib/notification-ui";
 import { getCachedNotifications, getCachedUnread } from "@/lib/student-cache";
+import { resolveNotificationLink } from "@/lib/notification-link";
 
 interface BellNotification {
   id: string;
@@ -31,7 +32,7 @@ function NotificationRow({ n, onOpen }: { n: BellNotification; onOpen: (n: BellN
     >
       <span
         className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${meta.color}15` }}
+        style={{ backgroundColor: `color-mix(in srgb, ${meta.color} 8%, transparent)` }}
       >
         <Icon size={15} style={{ color: meta.color }} />
       </span>
@@ -173,7 +174,8 @@ export function NotificationBell({ role }: { role: string }) {
   function openNotification(n: BellNotification) {
     void markAsRead(n);
     setOpen(false);
-    if (n.link) router.push(n.link);
+    const link = resolveNotificationLink(n.link, n.title, n.message);
+    if (link) router.push(link);
   }
 
   async function markAllRead() {

@@ -28,8 +28,6 @@ import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { compressImageFileToDataUrl } from "@/lib/image-compression";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { MobileOnly, DesktopOnly } from "@/components/responsive";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { clearClientSession } from "@/lib/idle-session";
 
 interface User { id: string; name: string; email: string; role: string; }
@@ -557,58 +555,6 @@ export default function AdminReports() {
 
   const filtered = baseFiltered.filter((report) => filterStatus === "ALL" || report.status === filterStatus);
 
-  const reportColumns: DataTableColumn<UserReport>[] = [
-    {
-      key: "item",
-      header: "Item",
-      cell: (report) => {
-        const Icon = categoryIcon(report.category);
-        return (
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.primary}10` }}>
-              <Icon size={17} style={{ color: c.primary }} />
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold truncate max-w-[220px]" style={{ color: c.text }}>{report.itemName}</p>
-              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{report.typeLabel} · {report.category}</p>
-            </div>
-          </div>
-        );
-      },
-    },
-    { key: "student", header: "Student", cell: (report) => <span className="text-xs" style={{ color: c.textMuted }}>{report.studentName}</span> },
-    { key: "status", header: "Status", cell: (report) => <VBadge color={report.color}>{statusLabel[report.status]}</VBadge> },
-    { key: "date", header: "Date", cell: (report) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{fmtDay(report.date)}</span> },
-    { key: "locker", header: "Locker", cell: (report) => <span className="text-xs font-medium" style={{ color: c.textMuted }}>{report.item?.locker || "—"}</span> },
-    {
-      key: "actions",
-      header: "",
-      className: "text-right",
-      cell: (report) => (
-        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-          {report.images.length > 0 && (
-            <VButton variant="secondary" size="sm" onClick={() => setViewer({ photos: report.images, index: 0, title: report.itemName })}>
-              <Eye size={12} /> Photos
-            </VButton>
-          )}
-          {report.status === "PENDING" && report.type === "FOUND" && (
-            <VButton size="sm" onClick={() => void openVerify(report)}><CheckCircle2 size={12} /> Verify</VButton>
-          )}
-          {report.status === "PENDING" && report.type === "LOST" && (
-            <>
-              <VButton size="sm" onClick={() => { setMatchTarget(report); setMatchQuery(""); setShowMatchSearch(false); if (foundItems.length === 0) void fetchSupporting(); }}>
-                <Search size={12} /> Match
-              </VButton>
-              <VButton variant="danger" size="sm" onClick={() => { setRejectReport(report); setRejectNote(""); }}>
-                <XCircle size={12} /> Reject
-              </VButton>
-            </>
-          )}
-        </div>
-      ),
-    },
-  ];
-
   const matchResults = foundItems.filter((item) =>
     matchesSearch(matchQuery, [
       item.itemName,
@@ -633,7 +579,8 @@ export default function AdminReports() {
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
           <FilterPanel
             search={
-              <VSearchInput value={query} onChange={setQuery} placeholder="Search item or student..." className="w-full" />
+              <VSearchInput value={query} onChange={setQuery} className="w-full"
+                size="lg" clearable placeholder="Search item or student..." />
             }
             filters={
               <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
@@ -675,9 +622,7 @@ export default function AdminReports() {
               </p>
             </VCard>
           ) : (
-            <>
-            <MobileOnly className="flex-1">
-            <div className="grid grid-cols-1 gap-5 flex-1">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
               {filtered.map((report) => {
                 const CategoryIcon = categoryIcon(report.category);
                 return (
@@ -686,14 +631,14 @@ export default function AdminReports() {
                     aria-label={report.images.length ? `View ${report.itemName} photos` : `${report.itemName} has no photos`}
                     disabled={report.images.length === 0}
                     className={`w-full h-40 rounded-xl mb-4 relative overflow-hidden flex items-center justify-center shrink-0 group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
-                    style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}
+                    style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                     onClick={() => {
                       if (report.images.length) {
                         setViewer({ photos: report.images, index: 0, title: report.itemName });
                       }
                     }}>
                     {report.imageUrl ? (
-                      <img src={report.imageUrl} alt={report.itemName} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-contain bg-[#f8fafc]" />
+                      <img src={report.imageUrl} alt={report.itemName} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover bg-[#f8fafc]" />
                     ) : (
                       <>
                         <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
@@ -725,7 +670,7 @@ export default function AdminReports() {
                       {report.typeLabel}
                     </VBadge>
                     <VBadge color={report.color} className="ml-auto"
-                      style={{ border: `1px solid ${report.color}40` }}>
+                      style={{ border: `1px solid color-mix(in srgb, ${report.color} 25%, transparent)` }}>
                       {statusLabel[report.status]}
                     </VBadge>
                   </div>
@@ -790,19 +735,6 @@ export default function AdminReports() {
                 );
               })}
             </div>
-            </MobileOnly>
-            <DesktopOnly>
-              <DataTable
-                rows={filtered}
-                columns={reportColumns}
-                rowKey={(report) => report.id}
-                onRowClick={(report) => {
-                  if (report.images.length) setViewer({ photos: report.images, index: 0, title: report.itemName });
-                }}
-                empty="No reports found"
-              />
-            </DesktopOnly>
-            </>
           )}
         </div>
       </main>
@@ -842,7 +774,7 @@ export default function AdminReports() {
                           : { backgroundColor: c.fill, color: c.textMuted };
                     return (
                       <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
-                        style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}
+                        style={{ borderColor: c.borderLight, backgroundColor: c.card }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
                           <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
@@ -1098,7 +1030,7 @@ export default function AdminReports() {
                             className="block w-full cursor-pointer"
                             onClick={() => setApproveEditingPhoto(index)}>
                             <img src={photo.preview} alt={`Report photo ${index + 1}`}
-                              className={`w-full object-contain bg-[#f8fafc] ${approvePhotos.length === 1 ? "h-32" : "h-20"}`} />
+                              className={`w-full object-cover bg-[#f8fafc] ${approvePhotos.length === 1 ? "h-32" : "h-20"}`} />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                 View &amp; crop
@@ -1225,7 +1157,7 @@ export default function AdminReports() {
                     }}
                     onClick={() => setSelectedLockerId(locker.id)}>
                     <div className="w-full h-14 rounded-lg flex items-center justify-center"
-                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                       {selected
                         ? <CheckCircle2 size={22} style={{ color: c.primary }} />
                         : <Lock size={22} style={{ color: c.textMuted }} />}
@@ -1285,7 +1217,7 @@ export default function AdminReports() {
                     }}
                     onClick={() => setAssignLockerId(locker.id)}>
                     <div className="w-full h-14 rounded-lg flex items-center justify-center"
-                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                       {selected
                         ? <CheckCircle2 size={22} style={{ color: c.primary }} />
                         : <Lock size={22} style={{ color: c.textMuted }} />}

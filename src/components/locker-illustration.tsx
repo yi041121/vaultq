@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Cloud } from "lucide-react";
+import { colors } from "@/lib/design";
 
 export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolean }) {
   const [timer, setTimer] = useState(0);
@@ -18,8 +19,8 @@ export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolea
   const showIdCard = !hideIdCard && timer < 55;
   const doorOpen = autoOpen;
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-gradient-to-br from-[#f7f6f3] to-[#edebe7] scale-100 md:scale-125"
-      style={{ perspective: "1000px", transformStyle: "preserve-3d" }}>
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden scale-100 md:scale-125"
+      style={{ background: `linear-gradient(135deg, ${colors.bg}, ${colors.fill})`, perspective: "1000px", transformStyle: "preserve-3d" }}>
       {/* Floating particles with 3D depth */}
       <div className="absolute inset-0" style={{ transformStyle: "preserve-3d" }}>
         {Array.from({ length: 180 }, (_, i) => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
+import { colors } from "@/lib/design";
 import { markSessionActivity } from "@/lib/idle-session";
 
 // Landing point after Google OAuth succeeds. The API callback hands us the
@@ -37,17 +38,17 @@ export default function AuthCallback() {
   }, [router]);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#F7F6F3" }}>
+    <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
       {/* Centered "Login successful" popup — identical style to the sign-in form */}
       {succeeded && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
-            style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
-            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: "#f0fdf4" }}>
+            style={{ background: colors.card, boxShadow: "0 20px 48px rgba(0,0,0,0.28)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
               <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
             </div>
-            <p className="text-base font-semibold" style={{ color: "#0f172a" }}>Login successful</p>
-            <p className="text-xs mt-1" style={{ color: "#64748b" }}>Redirecting...</p>
+            <p className="text-base font-semibold" style={{ color: colors.text }}>Login successful</p>
+            <p className="text-xs mt-1" style={{ color: colors.textMuted }}>Redirecting...</p>
           </div>
         </div>
       )}

@@ -17,9 +17,7 @@ import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { VCard, VBadge, VPagination, VButton, VTextarea, VSearchInput, VFilterButton, vcolors as c } from "@/components/ui/vault";
-import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
-import { MobileOnly, DesktopOnly } from "@/components/responsive";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { FilterPanel } from "@/components/filter-panel";
 import { matchesSearch } from "@/lib/search";
 import {
   mapUserClaim, CLAIM_STATUS_COLOR,
@@ -321,74 +319,9 @@ export default function StudentClaims() {
     if (p !== 0) return p;
     return new Date(b.claimedAt).getTime() - new Date(a.claimedAt).getTime();
   });
-  const hasFilters = !!query.trim() || filter !== "All";
-  const resetFilters = () => { setQuery(""); setFilter("All"); setPage(1); };
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  const claimColumns: DataTableColumn<UserClaim>[] = [
-    {
-      key: "item",
-      header: "Item",
-      cell: (cl) => {
-        const Icon = filterIcons[cl.category] || Package;
-        return (
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.primary}10` }}>
-              <Icon size={17} style={{ color: c.primary }} />
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold truncate max-w-[240px]" style={{ color: c.text }}>{cl.itemName}</p>
-              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{cl.category}</p>
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (cl) => <VBadge color={CLAIM_STATUS_COLOR[cl.displayStatus]}>{cl.displayStatus}</VBadge>,
-    },
-    {
-      key: "claimed",
-      header: "Claimed",
-      cell: (cl) => (
-        <span className="text-xs" style={{ color: c.textMuted }}>
-          {fmtDate(cl.claimedAt)}
-          <span className="block text-[11px]" style={{ color: c.textLight }}>{fmtClock(cl.claimedAt)}</span>
-        </span>
-      ),
-    },
-    {
-      key: "locker",
-      header: "Locker",
-      cell: (cl) => <span className="text-xs font-medium" style={{ color: c.textMuted }}>{cl.locker || "—"}</span>,
-    },
-    {
-      key: "actions",
-      header: "",
-      className: "text-right",
-      cell: (cl) => (
-        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <VButton variant="outline" size="sm" onClick={() => setDetailsClaim(cl)}><Eye size={12} /> Details</VButton>
-          {cl.displayStatus === "QR Ready" && (
-            <VButton size="sm" onClick={() => void openQR(cl)} disabled={qrLoadingId === cl.id}>
-              {qrLoadingId === cl.id ? <Loader2 size={12} className="animate-spin" /> : <QrCode size={12} />}
-              {cl.hasValidQr ? "View QR" : "Get QR"}
-            </VButton>
-          )}
-          {cl.displayStatus === "Pending" && (
-            <VButton variant="danger" size="sm" onClick={() => setCancelTarget(cl)}><X size={12} /> Cancel</VButton>
-          )}
-          {cl.displayStatus === "Rejected" && (
-            <VButton size="sm" onClick={() => openResubmit(cl)}><RefreshCw size={12} /> Resubmit</VButton>
-          )}
-        </div>
-      ),
-    },
-  ];
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="My Claims" logout={handleLogout}>
@@ -396,7 +329,8 @@ export default function StudentClaims() {
         <div className="px-4 sm:px-6 lg:px-12 pt-6 lg:pt-8 w-full flex-1 flex flex-col">
           <FilterPanel
             search={
-              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full" placeholder="Search claims..." />
+              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
+                size="lg" clearable placeholder="Search claims..." />
             }
             filters={
               <>
@@ -412,13 +346,10 @@ export default function StudentClaims() {
                 })}
               </>
             }
-            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
           />
 
           {loading ? (
-            <>
-            <MobileOnly>
-            <div className="grid grid-cols-1 gap-4 xl:gap-5 content-start flex-1" aria-busy="true" aria-label="Loading claims">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1" aria-busy="true" aria-label="Loading claims">
               {Array.from({ length: 6 }).map((_, i) => (
                 <VCard key={i} className="h-full p-5 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
                   <div className="flex items-start gap-4 min-h-[105px]">
@@ -430,11 +361,11 @@ export default function StudentClaims() {
                       <div className="h-3 w-1/2 rounded-md" style={{ backgroundColor: c.fill }} />
                     </div>
                   </div>
-                  <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: "#d7e3ef" }}>
-                    <div className="h-3 w-24 rounded-md mb-1.5" style={{ backgroundColor: "#cbd9e6" }} />
+                  <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: c.borderLight }}>
+                    <div className="h-3 w-24 rounded-md mb-1.5" style={{ backgroundColor: c.border }} />
                     <div className="space-y-2 min-h-[42px]">
-                      <div className="h-3 w-full rounded-md" style={{ backgroundColor: "#d7e3ee" }} />
-                      <div className="h-3 w-5/6 rounded-md" style={{ backgroundColor: "#d7e3ee" }} />
+                      <div className="h-3 w-full rounded-md" style={{ backgroundColor: c.borderLight }} />
+                      <div className="h-3 w-5/6 rounded-md" style={{ backgroundColor: c.borderLight }} />
                     </div>
                   </div>
                   <div className="mt-auto pt-5">
@@ -446,11 +377,6 @@ export default function StudentClaims() {
                 </VCard>
               ))}
             </div>
-            </MobileOnly>
-            <DesktopOnly>
-              <DataTable rows={[]} columns={claimColumns} rowKey={(cl) => cl.id} loading empty="No claims" />
-            </DesktopOnly>
-            </>
           ) : loadError ? (
             <VCard className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
               <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ backgroundColor: "#fef2f2" }}>
@@ -491,8 +417,7 @@ export default function StudentClaims() {
             </VCard>
           ) : (
             <>
-              <MobileOnly>
-              <div className="grid grid-cols-1 gap-4 xl:gap-5 content-start flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1">
                 {paginated.map((cl) => {
                   const Icon = filterIcons[cl.category] || Package;
                   const statusColor = CLAIM_STATUS_COLOR[cl.displayStatus];
@@ -501,7 +426,7 @@ export default function StudentClaims() {
                     <VCard key={cl.id} className="h-full p-5 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
                       <div className="flex items-start gap-4">
                         <div className="w-24 h-24 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center"
-                          style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+                          style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                           {cl.itemImageUrl ? (
                             <img src={cl.itemImageUrl} alt={cl.itemName} className="w-full h-full object-cover" />
                           ) : (
@@ -537,7 +462,7 @@ export default function StudentClaims() {
                         </div>
                       </div>
 
-                      <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: "#d7e3ef" }}>
+                      <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: c.borderLight }}>
                         <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: c.primary }}>Description</p>
                         <p className="text-[13px] leading-relaxed line-clamp-2 min-h-[42px]" style={{ color: "#475569" }}>
                           {cl.description || "No description provided."}
@@ -588,10 +513,6 @@ export default function StudentClaims() {
                   );
                 })}
               </div>
-              </MobileOnly>
-              <DesktopOnly>
-                <DataTable rows={paginated} columns={claimColumns} rowKey={(cl) => cl.id} onRowClick={setDetailsClaim} empty="No claims" />
-              </DesktopOnly>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length} results
@@ -674,7 +595,7 @@ export default function StudentClaims() {
             )}
 
             {detailsClaim.displayStatus === "Rejected" && (
-              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#fef2f2", border: `1px solid ${c.danger}30` }}>
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: `color-mix(in srgb, ${c.danger} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${c.danger} 19%, transparent)` }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: c.danger }}>Rejected reason</p>
                 <p className="text-sm leading-relaxed" style={{ color: c.danger }}>
                   {detailsClaim.adminNote || "No reason was provided by the admin."}
@@ -805,7 +726,7 @@ export default function StudentClaims() {
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Pickup QR Code</h3>
               <button type="button" onClick={() => setQrModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
-            <div className="w-full aspect-square rounded-2xl border-2 flex items-center justify-center p-4 mb-4" style={{ borderColor: c.border, backgroundColor: "#fff" }}>
+            <div className="w-full aspect-square rounded-2xl border-2 flex items-center justify-center p-4 mb-4" style={{ borderColor: c.border, backgroundColor: c.card }}>
               {qrModal.qrDataUrl ? <img src={qrModal.qrDataUrl} alt="QR Code" className="w-full h-full object-contain" /> : <QrCode size={48} style={{ color: c.textMuted }} />}
             </div>
             <p className="text-sm font-semibold flex items-center justify-center gap-1.5" style={{ color: c.text }}>

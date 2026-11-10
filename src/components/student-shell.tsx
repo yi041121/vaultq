@@ -8,6 +8,7 @@ import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NotificationBell } from "@/components/notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useAdminNavCounts } from "@/lib/use-admin-nav-counts";
 import { prefetchStudentData } from "@/lib/student-cache";
 import { useIdleSession } from "@/lib/use-idle-session";
@@ -168,6 +169,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
             <h1 className="hidden lg:block text-lg font-bold absolute left-1/2 -translate-x-1/2" style={{ color: colors.text }}>{pageTitle}</h1>
           )}
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             {bell ?? <NotificationBell role={userRole} />}
           </div>
         </header>
@@ -259,7 +261,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
           const className = "flex flex-col items-center justify-center gap-0.5 w-full min-w-0 min-h-[44px] px-0.5 py-1 rounded-xl transition-colors duration-200 cursor-pointer touch-manipulation";
           const style = {
             color: item.active ? colors.primary : colors.textLight,
-            backgroundColor: item.active ? `${colors.primary}12` : "transparent",
+            backgroundColor: item.active ? colors.primarySoft : "transparent",
           };
           return item.path ? (
             <Link

@@ -49,7 +49,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         report.userId,
         "Found Item Verified",
         `Your found item report for ${report.itemName} was verified and linked to an existing item. Thank you for handing it in.`,
-        { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
+        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" },
       );
 
       return NextResponse.json({ success: true, data: updated });
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       report.userId,
       "Found Item Verified",
       `Your found item report for ${report.itemName} was verified and added to the Lost & Found inventory. Thank you for handing it in.`,
-      { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
+      { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" },
     );
 
     return NextResponse.json({ success: true, data: result.report });

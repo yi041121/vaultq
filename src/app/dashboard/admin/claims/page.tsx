@@ -19,8 +19,6 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { suggestMatches, suggestionLabel } from "@/lib/report-match";
 import { categoryIcon } from "@/lib/category-icons";
 import { clearClientSession } from "@/lib/idle-session";
-import { MobileOnly, DesktopOnly } from "@/components/responsive";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VSearchInput, VPagination,
   VDropdown, VDropdownItem, VFilterButton, vcolors as c,
@@ -436,94 +434,6 @@ export default function AdminClaims() {
   const currentPage = Math.min(page, totalPages);
   const paginatedRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const queueColumns: DataTableColumn<VerificationRow>[] = [
-    {
-      key: "item",
-      header: "Item",
-      cell: (row) => {
-        const Icon = categoryIcon(row.category);
-        return (
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.primary}10` }}>
-              <Icon size={17} style={{ color: c.primary }} />
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold truncate max-w-[240px]" style={{ color: c.text }}>{row.itemName}</p>
-              <p className="text-[11px] truncate" style={{ color: c.textMuted }}>{row.category}</p>
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      key: "student",
-      header: "Student",
-      cell: (row) => (
-        <div className="min-w-0">
-          <p className="text-sm font-medium truncate max-w-[180px]" style={{ color: c.text }}>{row.student}</p>
-          <p className="text-[11px] truncate max-w-[180px]" style={{ color: c.textMuted }}>{row.studentEmail || row.studentId || "—"}</p>
-        </div>
-      ),
-    },
-    {
-      key: "type",
-      header: "Type",
-      cell: (row) => (
-        <VBadge color={row.kind === "CLAIM" ? "#64748b" : c.primary}
-          style={{ backgroundColor: "transparent", border: `1px solid ${row.kind === "CLAIM" ? "#cbd5e1" : `${c.primary}55`}` }}>
-          {row.kind === "CLAIM" ? "Claim" : "Lost report"}
-        </VBadge>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (row) => <VBadge color={statusColor(row.status)}>{reportStatusLabel(row.status)}</VBadge>,
-    },
-    {
-      key: "date",
-      header: "Submitted",
-      cell: (row) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{fmtDateValue(row.date)}</span>,
-    },
-    {
-      key: "actions",
-      header: "",
-      className: "text-right",
-      cell: (row) => (
-        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-          {row.kind === "CLAIM" && row.claim && (
-            <>
-              <VButton variant="outline" size="sm" onClick={() => setCompareClaim(row.claim!)}><Eye size={12} /> View</VButton>
-              {row.status === "PENDING" && (
-                <>
-                  <VButton size="sm" onClick={() => { setApproveNote(""); setApproveTarget({ id: row.claim!.id, itemName: row.claim!.itemName }); }}>
-                    <CheckCircle2 size={12} /> Approve
-                  </VButton>
-                  <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "CLAIM", id: row.claim!.id, itemName: row.claim!.itemName }); }}>
-                    <XCircle size={12} /> Reject
-                  </VButton>
-                </>
-              )}
-            </>
-          )}
-          {row.kind === "LOST" && row.report && (
-            <>
-              <VButton variant="outline" size="sm" onClick={() => { setDetailPhotoIndex(0); setLostDetail(row.report!); }}><Eye size={12} /> View</VButton>
-              {row.status === "PENDING" && (
-                <>
-                  <VButton size="sm" onClick={() => void openMatchFor(row.report!)}><PackageSearch size={12} /> Match</VButton>
-                  <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "LOST", id: row.report!.id, itemName: row.report!.itemName }); }}>
-                    <XCircle size={12} /> Reject
-                  </VButton>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      ),
-    },
-  ];
-
   const claimItemDetailPhotos = claimItemDetail
     ? claimItemDetail.itemImageUrls?.length
       ? claimItemDetail.itemImageUrls
@@ -705,7 +615,7 @@ export default function AdminClaims() {
           <FilterPanel
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
-                placeholder="Search item, student, email or claim ID..." />
+                size="lg" clearable placeholder="Search item, student, or claim ID" />
             }
             filters={
               <>
@@ -714,6 +624,7 @@ export default function AdminClaims() {
                     {s === "All" ? "All" : reportStatusLabel(s)}
                   </VFilterButton>
                 ))}
+
                 <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-40"
                   trigger={
                     <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
@@ -785,8 +696,7 @@ export default function AdminClaims() {
                   <Loader2 size={12} className="animate-spin" /> Loading lost reports…
                 </p>
               )}
-              <MobileOnly className="flex-1 min-w-0">
-              <div className="grid grid-cols-1 gap-4 content-start flex-1 min-w-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 content-start flex-1 min-w-0">
                 {paginatedRows.map((row) => {
                   if (row.kind === "CLAIM" && row.claim) {
                     const cl = row.claim;
@@ -809,14 +719,14 @@ export default function AdminClaims() {
                       <VCard key={`claim-${cl.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => setCompareClaim(cl)}>
                         <div className="p-4 flex items-start gap-3">
                           <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
-                            style={{ borderColor: c.borderLight, backgroundColor: `${c.primary}0f` }}>
+                            style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
                             <CatIcon size={22} style={{ color: c.primary }} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
                               <h3 className="text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{cl.itemName}</h3>
                               {(cl.source === "MATCH" || cl.matchedReportDescription) ? (
-                                <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid ${c.primary}55` }}>Lost report</VBadge>
+                                <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${c.primary} 33%, transparent)` }}>Lost report</VBadge>
                               ) : (
                                 <VBadge color="#64748b" style={{ backgroundColor: "transparent", border: "1px solid #cbd5e1" }}>Claim</VBadge>
                               )}
@@ -964,7 +874,7 @@ export default function AdminClaims() {
 
                         {cl.status === "PENDING" && (
                           <div className="mt-auto pt-4">
-                            <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: "#fbfcfe" }} onClick={(e) => e.stopPropagation()}>
+                            <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: c.card }} onClick={(e) => e.stopPropagation()}>
                               <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "CLAIM", id: cl.id, itemName: cl.itemName }); }}>
                                 <XCircle size={13} /> Reject
                               </VButton>
@@ -984,13 +894,13 @@ export default function AdminClaims() {
                     <VCard key={`lost-${report.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
                       <div className="p-4 flex items-start gap-3">
                         <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
-                          style={{ borderColor: c.borderLight, backgroundColor: `${c.primary}0f` }}>
+                          style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
                           <Icon size={22} style={{ color: c.primary }} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
                             <h3 className="text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{report.itemName}</h3>
-                            <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid ${c.primary}55` }}>Lost report</VBadge>
+                            <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${c.primary} 33%, transparent)` }}>Lost report</VBadge>
                           </div>
                           <div className="flex items-center gap-2 mt-1 min-w-0">
                             <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
@@ -1025,7 +935,7 @@ export default function AdminClaims() {
                             className="relative block w-full aspect-[4/3] rounded-xl overflow-hidden border group cursor-pointer mt-1.5"
                             style={{ borderColor: c.border, backgroundColor: c.fill }}
                             onClick={() => setPhotoViewer({ photos: report.images, index: 0, title: `${report.itemName} report` })}>
-                            <img src={report.images[0]} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain bg-[#f8fafc]" />
+                            <img src={report.images[0]} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover bg-[#f8fafc]" />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                 <Eye size={12} /> View full size
@@ -1042,7 +952,7 @@ export default function AdminClaims() {
 
                       {report.status === "PENDING" && (
                         <div className="mt-auto pt-4">
-                          <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: "#fbfcfe" }} onClick={(e) => e.stopPropagation()}>
+                          <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: c.card }} onClick={(e) => e.stopPropagation()}>
                             <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "LOST", id: report.id, itemName: report.itemName }); }}>
                               <XCircle size={13} /> Reject
                             </VButton>
@@ -1054,19 +964,6 @@ export default function AdminClaims() {
                   );
                 })}
               </div>
-              </MobileOnly>
-              <DesktopOnly>
-                <DataTable
-                  rows={paginatedRows}
-                  columns={queueColumns}
-                  rowKey={(row) => `${row.kind}-${row.id}`}
-                  onRowClick={(row) => {
-                    if (row.kind === "CLAIM" && row.claim) setCompareClaim(row.claim);
-                    else if (row.report) { setDetailPhotoIndex(0); setLostDetail(row.report); }
-                  }}
-                  empty="No claims or lost reports found"
-                />
-              </DesktopOnly>
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
                 <span className="text-xs" style={{ color: c.textMuted }}>
                   Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sortedRows.length)} of {sortedRows.length} results
@@ -1260,7 +1157,7 @@ export default function AdminClaims() {
                           : { backgroundColor: c.fill, color: c.textMuted };
                     return (
                       <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
-                        style={{ borderColor: c.borderLight, backgroundColor: "#fbfdfd" }}
+                        style={{ borderColor: c.borderLight, backgroundColor: c.card }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
                           <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
@@ -1398,7 +1295,7 @@ export default function AdminClaims() {
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
                   {compareClaim.itemImageUrl ? (
-                    <img src={compareClaim.itemImageUrl} alt="Found item" loading="eager" decoding="async" className="w-full h-64 object-contain bg-[#f8fafc]" />
+                    <img src={compareClaim.itemImageUrl} alt="Found item" loading="eager" decoding="async" className="w-full h-64 object-cover bg-[#f8fafc]" />
                   ) : (
                     <div className="w-full h-64 flex flex-col items-center justify-center gap-2 bg-[#f8fafc]" style={{ color: c.textLight }}>
                       <Package size={36} />
@@ -1450,7 +1347,7 @@ export default function AdminClaims() {
             )}
 
             {compareClaim.status === "REJECTED" && (
-              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: "#fef2f2", border: `1px solid ${c.danger}30` }}>
+              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: `color-mix(in srgb, ${c.danger} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${c.danger} 19%, transparent)` }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: c.danger }}>Rejected reason</p>
                 <p className="text-sm leading-relaxed" style={{ color: c.danger }}>
                   {compareClaim.adminNote || "No reason was provided."}

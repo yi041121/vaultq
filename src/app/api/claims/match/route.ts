@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
           title: "Lost Report Closed",
           message: `The item you reported lost (${item.itemName}) has been claimed by another student, so your report was closed.`,
           type: "REPORT" as const,
-          link: "/dashboard/student/report?tab=reports",
+          link: "/dashboard/student/report?tab=reports&kind=LOST",
         })),
     );
 

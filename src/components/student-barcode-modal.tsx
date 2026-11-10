@@ -75,7 +75,7 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
         </button>
 
         <div className="w-11 h-11 rounded-xl mx-auto flex items-center justify-center mb-3"
-          style={{ backgroundColor: `${c.primary}15`, color: c.primary }}>
+          style={{ backgroundColor: c.primarySoft, color: c.primary }}>
           <Barcode size={22} />
         </div>
         <h3 className="text-base font-semibold" style={{ color: c.text }}>Your student barcode</h3>

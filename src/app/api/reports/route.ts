@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
       type === "LOST"
         ? `Your lost item report for ${cleanName} has been received. We will notify you if a matching item is found.`
         : `Your found item report for ${cleanName} has been received. Please hand the item to the Lost & Found office so it can be verified.`,
-      { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
+      { type: "REPORT", link: `/dashboard/student/report?tab=reports&kind=${type}` },
     );
 
     return NextResponse.json({ success: true, data: report }, { status: 201 });

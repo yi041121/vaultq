@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { colors, radius, size, font, iconSize } from "@/lib/design";
 
 /* ---------------------------------- Button --------------------------------- */
@@ -18,15 +18,15 @@ export function VButton({ variant = "primary", size: btnSize = "md", className =
     primary: { backgroundColor: colors.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" },
     secondary: { backgroundColor: colors.borderLight, color: colors.textMuted },
     outline: { backgroundColor: colors.card, color: colors.textMuted, border: `1px solid ${colors.border}` },
-    danger: { backgroundColor: "#fef2f2", color: colors.danger, border: `1px solid #fecaca` },
+    danger: { backgroundColor: `color-mix(in srgb, ${colors.danger} 10%, transparent)`, color: colors.danger, border: `1px solid color-mix(in srgb, ${colors.danger} 25%, transparent)` },
     success: { backgroundColor: "#16a34a", color: "#fff", boxShadow: "0 2px 6px rgba(22,163,74,0.25)" },
     ghost: { backgroundColor: "transparent", color: colors.textMuted },
   };
   const hovers: Record<string, React.CSSProperties> = {
     primary: { backgroundColor: colors.primaryDark, boxShadow: "0 3px 10px rgba(41,72,106,0.3)" },
-    secondary: { backgroundColor: "#cbd5e1" },
+    secondary: { backgroundColor: colors.border },
     outline: { backgroundColor: colors.primarySoft, borderColor: colors.primary, color: colors.primary },
-    danger: { backgroundColor: "#fee2e2" },
+    danger: { backgroundColor: `color-mix(in srgb, ${colors.danger} 18%, transparent)` },
     success: { backgroundColor: "#15803d", boxShadow: "0 3px 10px rgba(21,128,61,0.3)" },
     ghost: { backgroundColor: colors.borderLight },
   };
@@ -100,7 +100,7 @@ export function VBadge({ color, children, className = "", style }: { color: stri
   return (
     <span
       className={`text-[11px] lg:text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${className}`}
-      style={{ backgroundColor: `${color}15`, color, ...style }}
+      style={{ backgroundColor: `color-mix(in srgb, ${color} 8%, transparent)`, color, ...style }}
     >
       {children}
     </span>
@@ -120,7 +120,7 @@ export function VFilterButton({ children, style, active, onClick, className = ""
     <button
       type="button"
       className={`flex items-center gap-1.5 ${size.filter} ${radius.button} text-sm font-medium border bg-white transition-shadow duration-200 cursor-pointer ${className}`}
-      style={{ borderColor: active ? colors.primary : colors.border, color: colors.text, ...style }}
+      style={{ borderColor: active ? colors.primary : colors.border, color: active ? colors.primary : colors.text, backgroundColor: active ? colors.primarySoft : undefined, ...style }}
       onClick={onClick}
     >
       {children}
@@ -130,25 +130,39 @@ export function VFilterButton({ children, style, active, onClick, className = ""
 
 /* ------------------------------- Search input ------------------------------ */
 
-export function VSearchInput({ value, onChange, placeholder = "Search items...", className = "" }: {
+export function VSearchInput({ value, onChange, placeholder = "Search items...", className = "", size: inputSize = "md", clearable = false }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  size?: "md" | "lg";
+  clearable?: boolean;
 }) {
+  const large = inputSize === "lg";
   return (
     <div className={`relative ${className}`}>
-      <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: colors.textMuted }} />
+      <Search size={large ? 18 : 16} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: colors.textMuted }} />
       <input
         type="text"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full h-11 pl-10 pr-4 text-sm border bg-white ${radius.input} transition-shadow duration-200`}
+        className={`w-full ${large ? "h-12 text-[15px]" : "h-11 text-sm"} pl-10 ${clearable ? "pr-11" : "pr-4"} border bg-white ${radius.input} transition-shadow duration-200`}
         style={{ borderColor: colors.border, color: colors.text, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
-        onFocus={(e) => { e.target.style.borderColor = colors.primary; e.target.style.boxShadow = "0 0 0 3px rgba(53,92,138,0.08)"; }}
+        onFocus={(e) => { e.target.style.borderColor = colors.primary; e.target.style.boxShadow = "0 0 0 3px rgba(53,92,138,0.12)"; }}
         onBlur={(e) => { e.target.style.borderColor = colors.border; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.02)"; }}
       />
+      {clearable && value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onChange("")}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer hover:bg-[#f1f5f9]"
+          style={{ color: colors.textMuted }}
+        >
+          <X size={15} />
+        </button>
+      )}
     </div>
   );
 }
@@ -192,7 +206,7 @@ export function VDropdownItem({ children, active, onSelect, style }: {
     <button
       type="button"
       className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors duration-150"
-      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: hover ? "#e2e8f0" : active ? `${colors.primary}08` : "transparent", ...style }}
+      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: hover ? "#e2e8f0" : active ? colors.primarySoft : "transparent", fontWeight: active ? 600 : 400, ...style }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onSelect}

@@ -293,14 +293,14 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] relative overflow-hidden" style={{ backgroundColor: "#F7F6F3" }}>
+    <div className="min-h-[100dvh] relative overflow-hidden" style={{ backgroundColor: c.bg }}>
       {/* Full-screen locker animation - becomes blurred background */}
       <div className="absolute inset-0 transition-transform duration-700 ease-in-out"
         style={{
           filter: phase !== "intro" ? "blur(6px) brightness(0.7)" : "none",
           transform: phase !== "intro" ? "scale(1.05)" : "scale(1)",
         }}>
-        <div className="absolute inset-0 bg-gradient-to-br from-[#f7f6f3] to-[#edebe7]" />
+        <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${c.bg}, ${c.fill})` }} />
         <LockerIllustration hideIdCard={phase !== "intro"} />
       </div>
 
@@ -308,7 +308,7 @@ export default function RegisterPage() {
       <div className="absolute inset-0 transition-opacity duration-500 ease-in-out pointer-events-none"
         style={{
           opacity: phase !== "intro" ? 0.45 : 0,
-          background: "linear-gradient(135deg, rgba(247,246,243,0.3), rgba(237,235,231,0.6))",
+          background: `linear-gradient(135deg, color-mix(in srgb, ${c.bg} 30%, transparent), color-mix(in srgb, ${c.bg} 60%, transparent))`,
         }} />
 
       {/* Skip hint */}
@@ -326,7 +326,7 @@ export default function RegisterPage() {
       <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-700 ease-in-out">
         <div className="w-full max-w-[420px] rounded-[20px] p-6 sm:p-8 relative max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
           style={{
-            background: "white",
+            background: c.card,
             boxShadow: "0 0 0 1px rgba(255,255,255,0.9), 0 0 20px rgba(255,255,255,0.15), 0 4px 12px rgba(0,0,0,0.04), 0 20px 48px rgba(53,92,138,0.08)",
           }}>
           {/* Logo centered */}
@@ -338,9 +338,9 @@ export default function RegisterPage() {
           {/* Continue with Google */}
           <button type="button"
             className="w-full h-11 rounded-xl text-sm font-medium flex items-center justify-center gap-2.5 transition-all duration-200 active:scale-[0.98] mb-4"
-            style={{ border: "1px solid #cbd5e1", backgroundColor: "white", color: "#0f172a" }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "white"}
+            style={{ border: `1px solid ${c.border}`, backgroundColor: c.card, color: c.text }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = c.borderLight}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = c.card}
             onClick={() => {
               const bc = /^[0-9]{10}$/.test(barcode) ? `&bc=${barcode}` : "";
               window.location.href = `/api/auth/google?intent=signup${bc}`;
@@ -350,9 +350,9 @@ export default function RegisterPage() {
           </button>
 
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 h-px" style={{ backgroundColor: "#cbd5e1" }} />
-            <span className="text-xs font-medium" style={{ color: "#64748b" }}>or</span>
-            <div className="flex-1 h-px" style={{ backgroundColor: "#cbd5e1" }} />
+            <div className="flex-1 h-px" style={{ backgroundColor: c.border }} />
+            <span className="text-xs font-medium" style={{ color: c.textMuted }}>or</span>
+            <div className="flex-1 h-px" style={{ backgroundColor: c.border }} />
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -360,7 +360,7 @@ export default function RegisterPage() {
               <label htmlFor="name" className="text-sm font-medium block" style={{ color: c.text }}>Name <span style={{ color: c.danger }}>*</span></label>
               <VInput
                 id="name" type="text" placeholder="John Doe" required autoFocus maxLength={NAME_MAX_LENGTH}
-                style={{ borderColor: nameError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                style={{ borderColor: nameError ? c.danger : c.textLight, backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                 value={form.name}
                 onChange={(e) => { setForm({ ...form, name: sanitizePersonNameInput(e.target.value) }); setNameError(null); }}
               />
@@ -377,7 +377,7 @@ export default function RegisterPage() {
                   id="email" type="email" placeholder="name@student.tarc.edu.my" required
                   readOnly={googlePrefill}
                   className={googlePrefill ? "pr-10" : ""}
-                  style={{ borderColor: emailError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none", opacity: googlePrefill ? 0.75 : 1 }}
+                  style={{ borderColor: emailError ? c.danger : c.textLight, backgroundColor: c.borderLight, color: c.text, boxShadow: "none", opacity: googlePrefill ? 0.75 : 1 }}
                   value={form.email}
                   onChange={(e) => { setForm({ ...form, email: e.target.value }); setEmailError(null); }}
                 />
@@ -414,7 +414,7 @@ export default function RegisterPage() {
                     inputMode="numeric"
                     maxLength={10}
                     readOnly={barcodeDetected}
-                    style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                    style={{ borderColor: barcodeError || barcodeExists ? c.danger : barcodeAvailable ? "#16a34a" : c.textLight, backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                     value={barcode}
                     onChange={(e) => updateBarcode(e.target.value)}
                   />
@@ -426,13 +426,13 @@ export default function RegisterPage() {
                   )}
                 </div>
                 <label className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
-                  style={{ borderColor: readingImage ? c.primary : "#94a3b8", backgroundColor: "white", color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
+                  style={{ borderColor: readingImage ? c.primary : c.textLight, backgroundColor: c.card, color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
                   {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                   <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={readingImage} />
                 </label>
                 <button type="button" onClick={() => setShowCamera(true)}
                   className="w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
-                  style={{ borderColor: "#94a3b8", backgroundColor: "white", color: c.primary }} title="Scan with camera">
+                  style={{ borderColor: c.textLight, backgroundColor: c.card, color: c.primary }} title="Scan with camera">
                   <Camera size={16} />
                 </button>
               </div>
@@ -465,7 +465,7 @@ export default function RegisterPage() {
                 <VInput
                   id="password" type={showPassword ? "text" : "password"} placeholder="At least 8 characters" required minLength={8}
                   className="pr-12"
-                  style={{ borderColor: "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                  style={{ borderColor: c.textLight, backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                   value={form.password}
                   onChange={(e) => { setForm({ ...form, password: e.target.value }); setPasswordError(null); }}
                 />
@@ -485,7 +485,7 @@ export default function RegisterPage() {
                 <VInput
                   id="confirmPassword" type={showConfirmPassword ? "text" : "password"} placeholder="Repeat your password" required
                   className="pr-12"
-                  style={{ borderColor: passwordError ? c.danger : "#94a3b8", backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
+                  style={{ borderColor: passwordError ? c.danger : c.textLight, backgroundColor: c.borderLight, color: c.text, boxShadow: "none" }}
                   value={form.confirmPassword}
                   onChange={(e) => { setForm({ ...form, confirmPassword: e.target.value }); setPasswordError(null); }}
                 />
@@ -519,18 +519,18 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          <div className="mt-6 pt-5 border-t" style={{ borderColor: "#cbd5e1" }}>
-            <div className="flex items-center justify-center gap-5 text-xs font-medium tracking-wide" style={{ color: "#64748b" }}>
+          <div className="mt-6 pt-5 border-t" style={{ borderColor: c.border }}>
+            <div className="flex items-center justify-center gap-5 text-xs font-medium tracking-wide" style={{ color: c.textMuted }}>
               <span className="flex items-center gap-1.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 Secure
               </span>
-              <span style={{ color: "#cbd5e1" }}>·</span>
+              <span style={{ color: c.border }}>·</span>
               <span className="flex items-center gap-1.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                 2FA Ready
               </span>
-              <span style={{ color: "#cbd5e1" }}>·</span>
+              <span style={{ color: c.border }}>·</span>
               <span className="flex items-center gap-1.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-2.5a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3H8"/><path d="M12 6v12"/></svg>
                 IoT Enabled
@@ -581,12 +581,12 @@ export default function RegisterPage() {
       {succeeded && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
-            style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
-            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: "#f0fdf4" }}>
+            style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
               <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
             </div>
-            <p className="text-base font-semibold" style={{ color: "#0f172a" }}>Account created successfully</p>
-            <p className="text-xs mt-1" style={{ color: "#64748b" }}>Redirecting...</p>
+            <p className="text-base font-semibold" style={{ color: c.text }}>Account created successfully</p>
+            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Redirecting...</p>
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
+import { colors } from "@/lib/design";
 
 // Shared centered message popup — the single style used for every success
 // and error notice across the app (same look as the login page popups).
@@ -48,14 +49,14 @@ export function CenteredMessageHost() {
       style={{ backgroundColor: "rgba(15,23,42,0.35)" }}
       onClick={() => setMsg(null)}>
       <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
-        style={{ background: "white", boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+        style={{ background: colors.card, boxShadow: "0 20px 48px rgba(0,0,0,0.28)" }}>
         <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3"
-          style={{ backgroundColor: isError ? "#fef2f2" : "#f0fdf4" }}>
-          {isError ? <XCircle size={30} style={{ color: "#dc2626" }} /> : <CheckCircle2 size={30} style={{ color: "#16a34a" }} />}
+          style={{ backgroundColor: `color-mix(in srgb, ${isError ? colors.danger : "#16a34a"} 14%, transparent)` }}>
+          {isError ? <XCircle size={30} style={{ color: colors.danger }} /> : <CheckCircle2 size={30} style={{ color: "#16a34a" }} />}
         </div>
-        <p className="text-base font-semibold text-center" style={{ color: "#0f172a" }}>{msg.title}</p>
+        <p className="text-base font-semibold text-center" style={{ color: colors.text }}>{msg.title}</p>
         {msg.subtitle && (
-          <p className="text-xs mt-1 text-center" style={{ color: "#64748b" }}>{msg.subtitle}</p>
+          <p className="text-xs mt-1 text-center" style={{ color: colors.textMuted }}>{msg.subtitle}</p>
         )}
       </div>
     </div>

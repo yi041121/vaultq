@@ -92,7 +92,7 @@ export default function StudentDashboard() {
             {stats.map((s) => (
               <VCard key={s.label} className="p-5 flex items-center gap-4">
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: `${s.color}15` }}>
+                  style={{ backgroundColor: `color-mix(in srgb, ${s.color} 8%, transparent)` }}>
                   <s.icon size={20} style={{ color: s.color }} />
                 </div>
                 <div>
@@ -118,7 +118,7 @@ export default function StudentDashboard() {
                 {foundItems.map((item) => (
                   <VCard key={item.name} className="p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
                     <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center cursor-pointer relative overflow-hidden"
-                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}
+                      style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                       onClick={() => setViewItem(item)}>
                       <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
                       <Package size={32} style={{ color: c.primary, opacity: 0.6 }} />

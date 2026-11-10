@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   PackageSearch, PackageCheck, Clock, X, CheckCircle2,
   Loader2, RefreshCw, Plus, FileText, RotateCcw,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
-  ChevronDown, ZoomIn, MapPin, Eye,
+  ChevronDown, ZoomIn, MapPin, Eye, Sparkles,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
@@ -46,6 +46,19 @@ type ItemDetail = {
   color: string;
   reviewedAt?: string | null;
   isRejected?: boolean;
+};
+
+type ReportSuggestion = {
+  id: string;
+  itemName: string;
+  category: string | null;
+  description: string | null;
+  foundLocation: string | null;
+  foundDate: string | null;
+  imageUrl: string | null;
+  score: number;
+  label: "Strong" | "Possible" | "Weak";
+  reasons: string[];
 };
 
 const categoryIcons: Record<string, any> = {
@@ -102,11 +115,13 @@ function fmtReportTime(value: string | null) {
 
 let studentReportsCache: UserReport[] | null = null;
 
-export default function StudentReport() {
+function StudentReportContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<"new" | "reports">("new");
+  const [reportKind, setReportKind] = useState<ReportType>("LOST");
 
   const [type, setType] = useState<ReportType | null>(null);
   const [itemName, setItemName] = useState("");
@@ -125,6 +140,11 @@ export default function StudentReport() {
   const [editDateAnchor, setEditDateAnchor] = useState<HTMLElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<ReportType | null>(null);
+  const [submittedReportId, setSubmittedReportId] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<ReportSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const [suggestionDetail, setSuggestionDetail] = useState<ReportSuggestion | null>(null);
 
   const [reports, setReports] = useState<UserReport[]>(studentReportsCache ?? []);
   const [reportsLoading, setReportsLoading] = useState(studentReportsCache === null);
@@ -170,6 +190,44 @@ export default function StudentReport() {
     }
   }
 
+  async function loadSuggestions(reportId: string, token: string) {
+    setSuggestionsLoading(true);
+    setSuggestionsError(null);
+    setSuggestions([]);
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}/suggestions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Could not check for matches");
+      }
+      setSuggestions(Array.isArray(data.data) ? data.data : []);
+    } catch (e) {
+      setSuggestionsError(e instanceof Error ? e.message : "Could not check for matches");
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  }
+
+  function clearSubmission() {
+    setSubmitted(null);
+    setSubmittedReportId(null);
+    setSuggestions([]);
+    setSuggestionsError(null);
+    setSuggestionDetail(null);
+  }
+
+  function claimSuggestion(suggestion: ReportSuggestion) {
+    if (!submittedReportId) return;
+    const params = new URLSearchParams({
+      item: suggestion.id,
+      report: submittedReportId,
+    });
+    router.push(`/dashboard/student/search?${params.toString()}`);
+  }
+
   useEffect(() => {
     setMounted(true);
     const stored = localStorage.getItem("user");
@@ -187,8 +245,19 @@ export default function StudentReport() {
     const queryType = params.get("type");
     if (queryType === "lost") setType("LOST");
     if (queryType === "found") setType("FOUND");
+    const queryKind = params.get("kind");
+    if (queryKind === "LOST" || queryKind === "FOUND") setReportKind(queryKind);
     if (params.get("tab") === "reports") setTab("reports");
   }, []);
+
+  // Client-side notification navigation changes only the query string, so
+  // react to it instead of forcing a full page reload.
+  useEffect(() => {
+    if (!mounted) return;
+    const kind = searchParams.get("kind");
+    if (kind === "LOST" || kind === "FOUND") setReportKind(kind);
+    if (searchParams.get("tab") === "reports") setTab("reports");
+  }, [searchParams, mounted]);
 
   function switchTab(next: "new" | "reports") {
     setTab(next);
@@ -220,7 +289,7 @@ export default function StudentReport() {
 
   function selectType(next: ReportType) {
     setType(next);
-    setSubmitted(null);
+    clearSubmission();
   }
 
   function openCameraFor(target: "new" | "edit") {
@@ -319,12 +388,20 @@ export default function StudentReport() {
       }
 
       const submittedType = type;
+      const newReportId = typeof data.data?.id === "string" ? data.data.id : null;
       resetForm();
       setSubmitted(submittedType);
+      setSubmittedReportId(newReportId);
+      setSuggestions([]);
+      setSuggestionsError(null);
+      setSuggestionDetail(null);
       showCenteredMessage(
         "success",
         submittedType === "LOST" ? "Lost item report submitted" : "Found item report submitted",
       );
+      if (submittedType === "LOST" && newReportId) {
+        void loadSuggestions(newReportId, token);
+      }
       await loadReports(token);
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to submit report");
@@ -563,6 +640,10 @@ export default function StudentReport() {
 
   if (!user || !mounted) return null;
 
+  const lostReportCount = reports.filter((report) => report.type === "LOST").length;
+  const foundReportCount = reports.filter((report) => report.type === "FOUND").length;
+  const visibleReports = reports.filter((report) => report.type === reportKind);
+
   return (
     <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report Items" logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
@@ -605,7 +686,37 @@ export default function StudentReport() {
                 </VCard>
               ) : (
                 <div className="space-y-4">
-                  {reports.map((report) => {
+                  <div className="flex flex-wrap items-center gap-2">
+                    <VFilterButton active={reportKind === "LOST"} onClick={() => setReportKind("LOST")}>
+                      <PackageSearch size={14} style={{ color: reportKind === "LOST" ? c.primary : c.textMuted }} />
+                      Lost ({lostReportCount})
+                    </VFilterButton>
+                    <VFilterButton active={reportKind === "FOUND"} onClick={() => setReportKind("FOUND")}>
+                      <PackageCheck size={14} style={{ color: reportKind === "FOUND" ? c.primary : c.textMuted }} />
+                      Found ({foundReportCount})
+                    </VFilterButton>
+                  </div>
+
+                  {visibleReports.length === 0 ? (
+                    <VCard className="py-16 text-center flex flex-col items-center justify-center">
+                      {reportKind === "LOST"
+                        ? <PackageSearch size={36} className="mb-4" style={{ color: c.textLight }} />
+                        : <PackageCheck size={36} className="mb-4" style={{ color: c.textLight }} />}
+                      <p className="text-base font-medium" style={{ color: c.textMuted }}>
+                        No {reportKind === "LOST" ? "lost" : "found"} reports
+                      </p>
+                      <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>
+                        {reportKind === "LOST"
+                          ? "Report a lost item to start tracking it."
+                          : "Report something you found so it can be returned."}
+                      </p>
+                      <VButton onClick={() => { switchTab("new"); selectType(reportKind); }}>
+                        <Plus size={14} /> Report {reportKind === "LOST" ? "lost item" : "found item"}
+                      </VButton>
+                    </VCard>
+                  ) : (
+                  <div className="space-y-4">
+                  {visibleReports.map((report) => {
                     const Icon = categoryIcons[report.category] || FileText;
                     const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
                     const matchedWithItem = report.status === "MATCHED" && !!report.item;
@@ -659,7 +770,7 @@ export default function StudentReport() {
                                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
                                   {(report.status === "VERIFIED" || report.status === "MATCHED" || rejected) && (
                                     <VBadge color={reportTypeColor(report.type)}
-                                      style={{ backgroundColor: "transparent", border: `1px solid ${reportTypeColor(report.type)}55` }}>
+                                      style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${reportTypeColor(report.type)} 33%, transparent)` }}>
                                       {report.typeLabel}
                                     </VBadge>
                                   )}
@@ -702,7 +813,7 @@ export default function StudentReport() {
                           </div>
                           <div className="flex items-center gap-2">
                             <VBadge color={reportTypeColor(report.type)}
-                              style={{ backgroundColor: "transparent", border: `1px solid ${reportTypeColor(report.type)}55` }}>
+                              style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${reportTypeColor(report.type)} 33%, transparent)` }}>
                               {report.typeLabel}
                             </VBadge>
                             {/* A verified report shows its badge on the logged item below, so hide the duplicate here. */}
@@ -757,7 +868,7 @@ export default function StudentReport() {
 
 
                         {report.type === "FOUND" && report.status === "PENDING" && (
-                          <div className="rounded-xl p-3.5 mb-3 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `${c.accent}12`, color: c.textMuted }}>
+                          <div className="rounded-xl p-3.5 mb-3 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 7%, transparent)`, color: c.textMuted }}>
                             <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: c.accent }} />
                             <span>Please hand this item to the Lost &amp; Found office. An admin will verify it and assign a locker.</span>
                           </div>
@@ -776,31 +887,137 @@ export default function StudentReport() {
                       </VCard>
                     );
                   })}
+                  </div>
+                  )}
                 </div>
               )}
             </div>
           ) : (
             <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
               {submitted ? (
-                <VCard className="p-10 lg:p-12 text-center flex-1 flex flex-col items-center justify-center">
-                  <CheckCircle2 size={56} className="mb-5" style={{ color: c.accent }} />
-                  <h2 className="text-2xl font-bold mb-2" style={{ color: c.text }}>
-                    {submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
-                  </h2>
-                  <p className="text-base mb-4 max-w-lg" style={{ color: c.textMuted }}>
-                    {submitted === "LOST"
-                      ? "We'll notify you if a matching item is found. You can track the status under My reports."
-                      : "Please hand the item to the Lost & Found office so it can be verified and stored in a locker."}
-                  </p>
-                  <div className="flex flex-wrap items-center justify-center gap-3">
-                    <VButton variant="secondary" size="lg" onClick={() => { setSubmitted(null); resetForm(); }}>
-                      Report another
-                    </VButton>
-                    <VButton size="lg" onClick={() => { setSubmitted(null); switchTab("reports"); }}>
-                      View my reports
-                    </VButton>
-                  </div>
-                </VCard>
+                <div className="space-y-5">
+                  <VCard className="p-8 lg:p-10 text-center">
+                    <CheckCircle2 size={56} className="mb-5 mx-auto" style={{ color: c.accent }} />
+                    <h2 className="text-2xl font-bold mb-2" style={{ color: c.text }}>
+                      {submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
+                    </h2>
+                    <p className="text-base mb-4 max-w-lg mx-auto" style={{ color: c.textMuted }}>
+                      {submitted === "LOST"
+                        ? "We compared your report with the current Lost & Found inventory. Review the possible matches below."
+                        : "Please hand the item to the Lost & Found office so it can be verified and stored in a locker."}
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      <VButton variant="secondary" size="lg" onClick={() => { clearSubmission(); resetForm(); }}>
+                        Report another
+                      </VButton>
+                      <VButton size="lg" onClick={() => { const kind = submitted; clearSubmission(); if (kind) setReportKind(kind); switchTab("reports"); }}>
+                        View my reports
+                      </VButton>
+                    </div>
+                  </VCard>
+
+                  {submitted === "LOST" && (
+                    <VCard className="p-5 lg:p-6 text-left">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold flex items-center gap-2" style={{ color: c.text }}>
+                            <Sparkles size={16} style={{ color: c.primary }} />
+                            Possible matches
+                          </h3>
+                          <p className="text-xs mt-1" style={{ color: c.textMuted }}>
+                            Based on your item name, category, date, and location.
+                          </p>
+                        </div>
+                        {!suggestionsLoading && !suggestionsError && suggestions.length > 0 && (
+                          <VBadge color={c.primary}>{suggestions.length} found</VBadge>
+                        )}
+                      </div>
+
+                      {suggestionsLoading ? (
+                        <div className="mt-4 rounded-xl border px-4 py-8 text-center" style={{ borderColor: c.borderLight }}>
+                          <Loader2 size={22} className="animate-spin mx-auto mb-2" style={{ color: c.primary }} />
+                          <p className="text-xs" style={{ color: c.textMuted }}>Checking the inventory...</p>
+                        </div>
+                      ) : suggestionsError ? (
+                        <div className="mt-4 rounded-xl border px-4 py-6 text-center" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
+                          <p className="text-sm font-medium" style={{ color: c.textMuted }}>Could not check matches right now</p>
+                          <p className="text-xs mt-1 mb-3" style={{ color: c.textLight }}>{suggestionsError}</p>
+                          <VButton variant="secondary" size="sm"
+                            onClick={() => {
+                              const token = localStorage.getItem("token");
+                              if (token && submittedReportId) void loadSuggestions(submittedReportId, token);
+                            }}>
+                            <RefreshCw size={13} /> Try again
+                          </VButton>
+                        </div>
+                      ) : suggestions.length === 0 ? (
+                        <div className="mt-4 rounded-xl border px-4 py-7 text-center" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
+                          <PackageSearch size={28} className="mx-auto mb-2" style={{ color: c.textLight }} />
+                          <p className="text-sm font-medium" style={{ color: c.textMuted }}>No close matches yet</p>
+                          <p className="text-xs mt-1 leading-relaxed" style={{ color: c.textLight }}>
+                            Your report stays pending. We&apos;ll notify you if a matching item is added to the inventory.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 mt-4">
+                          {suggestions.map((suggestion) => (
+                            <div key={suggestion.id}
+                              className="rounded-xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3"
+                              style={{ borderColor: c.borderLight, backgroundColor: c.card }}>
+                              {suggestion.imageUrl ? (
+                                <img src={suggestion.imageUrl} alt={suggestion.itemName}
+                                  className="w-full sm:w-14 h-32 sm:h-14 rounded-lg object-cover shrink-0" />
+                              ) : (
+                                <div className="w-full sm:w-14 h-20 sm:h-14 rounded-lg flex items-center justify-center shrink-0"
+                                  style={{ backgroundColor: c.fill }}>
+                                  <PackageSearch size={20} style={{ color: c.primary }} />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold" style={{ color: c.text }}>{suggestion.itemName}</p>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                    style={suggestion.score >= 70
+                                      ? { backgroundColor: "#dcfce7", color: "#15803d" }
+                                      : suggestion.score >= 50
+                                        ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
+                                        : { backgroundColor: c.fill, color: c.textMuted }}>
+                                    {suggestion.label} match · {suggestion.score}%
+                                  </span>
+                                </div>
+                                <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>
+                                  {suggestion.category || "Others"} · {fmtDay(suggestion.foundDate || "")}
+                                  {suggestion.foundLocation ? ` · ${suggestion.foundLocation}` : ""}
+                                </p>
+                                {suggestion.reasons.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                    {suggestion.reasons.map((reason) => (
+                                      <span key={reason} className="text-[10px] px-1.5 py-0.5 rounded-md"
+                                        style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                                        {reason}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <VButton size="sm" onClick={() => claimSuggestion(suggestion)}>
+                                  Claim
+                                </VButton>
+                                <VButton variant="secondary" size="sm" onClick={() => setSuggestionDetail(suggestion)}>
+                                  Reference
+                                </VButton>
+                              </div>
+                            </div>
+                          ))}
+                          <p className="text-[11px] leading-relaxed pt-1" style={{ color: c.textLight }}>
+                            Review the item before claiming. Claiming opens the normal evidence form and links this lost report.
+                          </p>
+                        </div>
+                      )}
+                    </VCard>
+                  )}
+                </div>
               ) : !type ? (
                 <div className="flex-1 flex flex-col justify-center py-8">
                   <div className="text-center mb-8">
@@ -811,7 +1028,7 @@ export default function StudentReport() {
                     <button type="button" onClick={() => selectType("LOST")}
                       className="group flex h-full flex-col text-left p-6 lg:p-8 rounded-2xl border bg-white transition-all duration-200 hover:shadow-lg cursor-pointer"
                       style={{ borderColor: c.border }}>
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `${c.primary}15` }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: c.primarySoft }}>
                         <PackageSearch size={24} style={{ color: c.primary }} />
                       </div>
                       <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Lost Item</h3>
@@ -823,7 +1040,7 @@ export default function StudentReport() {
                     <button type="button" onClick={() => selectType("FOUND")}
                       className="group flex h-full flex-col text-left p-6 lg:p-8 rounded-2xl border bg-white transition-all duration-200 hover:shadow-lg cursor-pointer"
                       style={{ borderColor: c.border }}>
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `${c.accent}18` }}>
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 9%, transparent)` }}>
                         <PackageCheck size={24} style={{ color: c.accent }} />
                       </div>
                       <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Found Item</h3>
@@ -847,7 +1064,7 @@ export default function StudentReport() {
                   </div>
 
                   {type === "FOUND" && (
-                    <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `${c.accent}12`, color: c.textMuted }}>
+                    <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 7%, transparent)`, color: c.textMuted }}>
                       <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: c.accent }} />
                       <span>After submitting, hand the item to the Lost &amp; Found office. An admin will verify it and assign a locker.</span>
                     </div>
@@ -1295,6 +1512,34 @@ export default function StudentReport() {
         </div>
       )}
 
+      {suggestionDetail && (
+        <ItemDetailsModal
+          title={suggestionDetail.itemName}
+          statusLabel="Found"
+          statusColor={c.primary}
+          category={suggestionDetail.category || "Others"}
+          location={suggestionDetail.foundLocation}
+          date={fmtDay(suggestionDetail.foundDate || "")}
+          description={suggestionDetail.description}
+          photos={suggestionDetail.imageUrl ? [suggestionDetail.imageUrl] : []}
+          photoIndex={0}
+          onClose={() => setSuggestionDetail(null)}
+          footerNote="Reference only — no claim yet."
+          footer={
+            <>
+              <VButton variant="secondary" onClick={() => setSuggestionDetail(null)}>Close</VButton>
+              <VButton onClick={() => {
+                const item = suggestionDetail;
+                setSuggestionDetail(null);
+                claimSuggestion(item);
+              }}>
+                Claim this item
+              </VButton>
+            </>
+          }
+        />
+      )}
+
       <ConfirmDialog
         open={!!withdrawTarget}
         title="Withdraw this report?"
@@ -1305,5 +1550,13 @@ export default function StudentReport() {
         onConfirm={handleWithdraw}
       />
     </StudentShell>
+  );
+}
+
+export default function StudentReport() {
+  return (
+    <Suspense fallback={null}>
+      <StudentReportContent />
+    </Suspense>
   );
 }

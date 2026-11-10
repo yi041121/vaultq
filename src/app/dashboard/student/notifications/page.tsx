@@ -4,19 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, AlertCircle, Loader2, RefreshCw, CheckCheck } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, VSearchInput, VFilterButton, VBadge, VPagination, vcolors as c } from "@/components/ui/vault";
-import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
-import { MobileOnly, DesktopOnly } from "@/components/responsive";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { VCard, VSearchInput, VFilterButton, VPagination, vcolors as c } from "@/components/ui/vault";
+import { FilterPanel } from "@/components/filter-panel";
 import {
   NOTIFICATION_META, relativeTime,
   type NotificationCategory, type NotificationType,
 } from "@/lib/notification-ui";
 import { matchesSearch } from "@/lib/search";
-import {
-  clearStudentCache, getCachedNotifications, getCachedUnread,
-  setCachedNotifications, type CachedNotification,
-} from "@/lib/student-cache";
+import { clearStudentCache, getCachedNotifications, getCachedUnread, setCachedNotifications, type CachedNotification } from "@/lib/student-cache";
+import { resolveNotificationLink } from "@/lib/notification-link";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -202,7 +198,8 @@ export default function StudentNotifications() {
 
   function openNotification(n: Notif) {
     void markAsRead(n.id);
-    if (n.link) router.push(n.link);
+    const link = resolveNotificationLink(n.link, n.title, n.message);
+    if (link) router.push(link);
   }
 
   const filtered = useMemo(
@@ -219,45 +216,6 @@ export default function StudentNotifications() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const hasFilters = !!query.trim() || filter !== "All" || showUnreadOnly;
-  const resetFilters = () => { setQuery(""); setFilter("All"); setShowUnreadOnly(false); setPage(1); };
-
-  const notificationColumns: DataTableColumn<Notif>[] = [
-    {
-      key: "type",
-      header: "Type",
-      cell: (n) => (
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${n.color}15` }}>
-            <n.icon size={15} style={{ color: n.color }} />
-          </div>
-          <span className="text-xs font-medium" style={{ color: c.textMuted }}>{n.category}</span>
-        </div>
-      ),
-    },
-    {
-      key: "notification",
-      header: "Notification",
-      cell: (n) => (
-        <div className="min-w-0 max-w-[420px]">
-          <p className="text-sm font-semibold truncate" style={{ color: c.text }}>{n.title}</p>
-          <p className="text-xs mt-0.5 truncate" style={{ color: c.textMuted }}>{n.message}</p>
-        </div>
-      ),
-    },
-    {
-      key: "date",
-      header: "Date",
-      cell: (n) => <span className="text-xs whitespace-nowrap" style={{ color: c.textMuted }}>{relativeTime(n.createdAt)}</span>,
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (n) => n.isRead
-        ? <span className="text-xs" style={{ color: c.textLight }}>Read</span>
-        : <VBadge color={c.primary}>Unread</VBadge>,
-    },
-  ];
 
   if (!user || !mounted) return null;
 
@@ -267,7 +225,8 @@ export default function StudentNotifications() {
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
           <FilterPanel
             search={
-              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full" placeholder="Search notifications..." />
+              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
+                size="lg" clearable placeholder="Search notifications..." />
             }
             filters={
               <>
@@ -276,44 +235,34 @@ export default function StudentNotifications() {
                     {f}
                   </VFilterButton>
                 ))}
-                <VFilterButton active={showUnreadOnly} onClick={() => { setShowUnreadOnly(!showUnreadOnly); setPage(1); }}>
-                  <span className="relative flex h-2 w-2">
-                    <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: showUnreadOnly ? c.primary : c.textLight }} />
-                  </span>
-                  Unread only
-                </VFilterButton>
               </>
             }
-            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
           />
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 mb-6"
-            style={{ borderColor: c.border }}>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: c.textMuted }}>
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping" style={{ backgroundColor: c.accent }} />
-                  <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: c.accent }} />
-                </span>
-                Auto-updating
+          <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+            <button type="button"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer"
+              style={{
+                borderColor: showUnreadOnly ? c.primary : c.border,
+                color: showUnreadOnly ? c.primary : c.textMuted,
+                backgroundColor: showUnreadOnly ? c.primarySoft : "#fff",
+              }}
+              onClick={() => { setShowUnreadOnly(!showUnreadOnly); setPage(1); }}>
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: showUnreadOnly ? c.primary : c.textLight }} />
               </span>
-              <span className="text-xs" style={{ color: c.textMuted }}>
-                {unreadCount} unread · {notifs.length} total
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button"
-                className="h-9 px-3 rounded-lg text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ borderColor: c.border, color: c.primary }}
-                onClick={() => void markAllRead()} disabled={markingAll || unreadCount === 0}>
-                {markingAll ? <Loader2 size={13} className="inline mr-1 animate-spin" /> : <CheckCheck size={13} className="inline mr-1" />}
-                Mark all read
-              </button>
-            </div>
+              Unread only
+            </button>
+            <button type="button"
+              className="h-9 px-3 rounded-lg text-xs font-semibold border bg-white transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ borderColor: c.border, color: c.primary }}
+              onClick={() => void markAllRead()} disabled={markingAll || unreadCount === 0}>
+              {markingAll ? <Loader2 size={13} className="inline mr-1 animate-spin" /> : <CheckCheck size={13} className="inline mr-1" />}
+              Mark all read
+            </button>
           </div>
 
           {/* List */}
-          <MobileOnly className="flex-1 flex flex-col">
           <VCard className="flex-1 overflow-hidden flex flex-col">
             {loading ? (
               <div className="divide-y" style={{ borderColor: c.borderLight }}>
@@ -359,7 +308,7 @@ export default function StudentNotifications() {
                       <span className="absolute left-2 top-5 w-2 h-2 rounded-full" style={{ backgroundColor: c.primary }} />
                     )}
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ml-1"
-                      style={{ backgroundColor: `${n.color}15` }}>
+                      style={{ backgroundColor: `color-mix(in srgb, ${n.color} 8%, transparent)` }}>
                       <n.icon size={18} style={{ color: n.color }} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -382,51 +331,17 @@ export default function StudentNotifications() {
                   </div>
                 ))}
                 </div>
-                {totalPages > 1 && (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-4 border-t"
-                    style={{ borderColor: c.borderLight }}>
-                    <p className="text-xs" style={{ color: c.textMuted }}>
-                      Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length}
-                    </p>
-                    <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-                  </div>
-                )}
               </>
             )}
           </VCard>
-          </MobileOnly>
-          <DesktopOnly>
-            {error && notifs.length === 0 ? (
-              <div className="rounded-2xl border bg-white py-16 px-6 text-center" style={{ borderColor: c.border }}>
-                <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-                <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>
-                <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{error}</p>
-                <button type="button"
-                  className="h-10 px-4 rounded-xl text-sm font-semibold border bg-white cursor-pointer"
-                  style={{ borderColor: c.border, color: c.primary }}
-                  onClick={() => void load()}>
-                  <RefreshCw size={14} className="inline mr-1.5" /> Try again
-                </button>
-              </div>
-            ) : (
-              <DataTable
-                rows={paginated}
-                columns={notificationColumns}
-                rowKey={(n) => n.id}
-                loading={loading}
-                onRowClick={openNotification}
-                empty={notifs.length === 0 ? "You're all caught up." : "Nothing matches these filters."}
-              />
-            )}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between gap-3 mt-3">
-                <p className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length}
-                </p>
-                <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-              </div>
-            )}
-          </DesktopOnly>
+          {!loading && !error && filtered.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
+              <span className="text-xs" style={{ color: c.textMuted }}>
+                Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
+              </span>
+              <VPagination current={currentPage} total={totalPages} onPage={setPage} />
+            </div>
+          )}
         </div>
       </main>
     </StudentShell>

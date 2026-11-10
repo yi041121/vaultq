@@ -58,7 +58,7 @@ export function ItemDetailsModal({
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <VCard className={`relative w-full ${maxWidth} max-h-[90vh] overflow-auto`}>
         <div className="w-full h-64 lg:h-72 rounded-t-2xl flex items-center justify-center relative overflow-hidden"
-          style={{ background: `linear-gradient(135deg, ${c.borderLight}, #eef2f7)` }}>
+          style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
           {hasPhotos ? (
             <>
               {onViewPhoto ? (
@@ -66,7 +66,7 @@ export function ItemDetailsModal({
                   aria-label={`View ${title} photo`}
                   className="absolute inset-0 group cursor-pointer"
                   onClick={onViewPhoto}>
-                  <img src={photos[safeIndex]} alt={title} className="w-full h-full object-contain bg-[#f8fafc]" />
+                  <img src={photos[safeIndex]} alt={title} className="w-full h-full object-cover bg-[#f8fafc]" />
                   <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-center justify-center">
                     <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                       <Eye size={13} /> View photo
@@ -74,7 +74,7 @@ export function ItemDetailsModal({
                   </span>
                 </button>
               ) : (
-                <img src={photos[safeIndex]} alt={title} className="w-full h-full object-contain bg-[#f8fafc]" />
+                <img src={photos[safeIndex]} alt={title} className="w-full h-full object-cover bg-[#f8fafc]" />
               )}
               {photos.length > 1 && (
                 <>

@@ -201,7 +201,7 @@ export default function StudentProfile() {
     <StudentShell active="Profile" userName={user.name} userRole={user.role} pageTitle="Profile" logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
-          <div className="w-full max-w-6xl mx-auto space-y-5">
+          <div className="w-full max-w-3xl mx-auto space-y-5">
             {/* Header card */}
             <VCard className="p-5 sm:p-6 lg:p-8 flex items-center gap-4 sm:gap-5">
               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold text-white shrink-0"
@@ -231,12 +231,11 @@ export default function StudentProfile() {
               </div>
             )}
 
-            {/* Card Barcode + personal information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+            {/* Card Barcode */}
             <VCard className="p-5 sm:p-6 lg:p-8">
               <div className="flex items-start justify-between gap-3 mb-5">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${c.primary}15` }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
                     <Barcode size={16} style={{ color: c.primary }} />
                   </div>
                   <div>
@@ -279,18 +278,18 @@ export default function StudentProfile() {
                   <button type="button"
                     onClick={() => { setBarcodeEditing((editing) => !editing); setBarcodeError(null); }}
                     className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
-                    style={{ borderColor: barcodeEditing ? c.primary : c.border, backgroundColor: "#fff", color: barcodeEditing ? c.primary : c.textMuted }}
+                    style={{ borderColor: barcodeEditing ? c.primary : c.border, backgroundColor: c.card, color: barcodeEditing ? c.primary : c.textMuted }}
                     title={barcodeEditing ? "Done editing barcode" : "Enter barcode manually"}>
                     {barcodeEditing ? <Check size={16} /> : <Pencil size={16} />}
                   </button>
                   <label className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
-                    style={{ borderColor: readingImage ? c.primary : c.border, backgroundColor: "#fff", color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
+                    style={{ borderColor: readingImage ? c.primary : c.border, backgroundColor: c.card, color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
                     {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                     <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={readingImage} />
                   </label>
                   <button type="button" onClick={() => setShowCamera(true)}
                     className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
-                    style={{ borderColor: c.border, backgroundColor: "#fff", color: c.primary }} title="Scan with camera">
+                    style={{ borderColor: c.border, backgroundColor: c.card, color: c.primary }} title="Scan with camera">
                     <Camera size={16} />
                   </button>
                 </div>
@@ -317,7 +316,7 @@ export default function StudentProfile() {
             {/* Personal info */}
             <VCard className="p-5 sm:p-6 lg:p-8">
               <div className="flex items-center gap-2 mb-5">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${c.primary}15` }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
                   <User size={16} style={{ color: c.primary }} />
                 </div>
                 <h3 className="text-sm font-semibold" style={{ color: c.text }}>Personal Information</h3>
@@ -376,7 +375,6 @@ export default function StudentProfile() {
                 </VButton>
               </div>
             </VCard>
-            </div>
           </div>
         </div>
       </main>

@@ -20,13 +20,18 @@ export const metadata: Metadata = {
   description: "Smart IoT Lost & Found Locker Management System for University Campuses",
 };
 
+const themeScript = `(function(){try{var t=localStorage.getItem("vaultq-theme");if(t==="dark"){document.documentElement.classList.add("dark");document.documentElement.style.colorScheme="dark";}}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} antialiased`}>
+    <html lang="en" className={`${inter.variable} antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         {children}
         <Toaster position="top-center" richColors closeButton />
