@@ -61,7 +61,19 @@ export async function GET(request: NextRequest) {
         const urls = sources
           .map((source, index) => signedImageUrl("report", report.id, index, source))
           .filter(Boolean);
-        return { ...report, imageUrl: urls[0] || null, imageUrls: urls };
+        return {
+          ...report,
+          imageUrl: urls[0] || null,
+          imageUrls: urls,
+          item: report.item
+            ? {
+                ...report.item,
+                imageUrl: report.item.imageUrl
+                  ? signedImageUrl("item", report.item.id, 0, report.item.imageUrl)
+                  : null,
+              }
+            : null,
+        };
       });
     }
 
