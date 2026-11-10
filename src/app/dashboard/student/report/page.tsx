@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
+import { clearStudentCache, getCachedReports, setCachedReports } from "@/lib/student-cache";
 import { startsWithNumber } from "@/lib/text-validation";
 import { useEscapeKey } from "@/lib/use-escape-key";
 
@@ -113,8 +114,6 @@ function fmtReportTime(value: string | null) {
   });
 }
 
-let studentReportsCache: UserReport[] | null = null;
-
 function StudentReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -146,8 +145,8 @@ function StudentReportContent() {
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
   const [suggestionDetail, setSuggestionDetail] = useState<ReportSuggestion | null>(null);
 
-  const [reports, setReports] = useState<UserReport[]>(studentReportsCache ?? []);
-  const [reportsLoading, setReportsLoading] = useState(studentReportsCache === null);
+  const [reports, setReports] = useState<UserReport[]>(() => getCachedReports() ?? []);
+  const [reportsLoading, setReportsLoading] = useState(() => getCachedReports() === null);
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<UserReport | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -158,6 +157,8 @@ function StudentReportContent() {
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
   const [editDateOpen, setEditDateOpen] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editPhotosLoading, setEditPhotosLoading] = useState(false);
+  const editRequestRef = useRef(0);
   const [editPhotos, setEditPhotos] = useState<EditPhoto[]>([]);
   const [editingEditPhoto, setEditingEditPhoto] = useState<number | null>(null);
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -170,10 +171,10 @@ function StudentReportContent() {
   );
 
   async function loadReports(token: string) {
-    if (!studentReportsCache) setReportsLoading(true);
+    if (!getCachedReports()) setReportsLoading(true);
     setReportsError(null);
     try {
-      const res = await fetch("/api/reports", {
+      const res = await fetch("/api/reports?light=1", {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -181,10 +182,10 @@ function StudentReportContent() {
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load reports");
       const mapped = (data.data as any[]).map(mapReport);
       setReports(mapped);
-      studentReportsCache = mapped;
+      setCachedReports(mapped);
     } catch (e) {
       setReportsError(e instanceof Error ? e.message : "Failed to load reports");
-      if (!studentReportsCache) setReports([]);
+      if (!getCachedReports()) setReports([]);
     } finally {
       setReportsLoading(false);
     }
@@ -268,7 +269,7 @@ function StudentReportContent() {
   }
 
   function handleLogout() {
-    studentReportsCache = null;
+    clearStudentCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
@@ -430,7 +431,9 @@ function StudentReportContent() {
         showCenteredMessage("error", data?.error || "Failed to withdraw report");
         return;
       }
-      setReports((prev) => prev.filter((r) => r.id !== target.id));
+      const nextReports = reports.filter((r) => r.id !== target.id);
+      setReports(nextReports);
+      setCachedReports(nextReports);
       showCenteredMessage("success", "Report withdrawn");
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to withdraw report");
@@ -440,7 +443,8 @@ function StudentReportContent() {
     }
   }
 
-  function openEdit(report: UserReport) {
+  async function openEdit(report: UserReport) {
+    const requestId = ++editRequestRef.current;
     setEditTarget(report);
     setEditForm({
       itemName: report.itemName,
@@ -453,6 +457,30 @@ function StudentReportContent() {
     setEditDateOpen(false);
     setEditingEditPhoto(null);
     setEditPhotos(report.images.map((src) => ({ preview: src, originalPreview: src })));
+    setEditPhotosLoading(true);
+
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setEditPhotosLoading(false);
+      return;
+    }
+
+    // The list uses signed URLs so it stays small. Editing needs the original
+    // image data, so fetch the full report only when the edit dialog opens.
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(report.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || requestId !== editRequestRef.current) return;
+      const full = mapReport(data.data);
+      setEditPhotos(full.images.map((src) => ({ preview: src, originalPreview: src })));
+    } catch {
+      // Keep the signed previews; saving stays blocked until full data loads.
+    } finally {
+      if (requestId === editRequestRef.current) setEditPhotosLoading(false);
+    }
   }
 
   async function handleEditPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -481,6 +509,15 @@ function StudentReportContent() {
 
   async function handleSaveEdit() {
     if (!editTarget || savingEdit) return;
+    if (editPhotosLoading) {
+      showCenteredMessage("error", "Photos are still loading — please try again");
+      return;
+    }
+    const photoPreviews = editPhotos.map((photo) => photo.preview);
+    if (photoPreviews.some((src) => !src.startsWith("data:image/"))) {
+      showCenteredMessage("error", "Photos are still loading — please try again");
+      return;
+    }
     const token = localStorage.getItem("token");
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
@@ -527,7 +564,7 @@ function StudentReportContent() {
           description: editForm.description.trim(),
           location: editForm.location.trim(),
           date: editForm.date,
-          imageUrls: editPhotos.map((photo) => photo.preview),
+          imageUrls: photoPreviews,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -536,7 +573,9 @@ function StudentReportContent() {
         return;
       }
       const updated = mapReport(data.data);
-      setReports((prev) => prev.map((report) => (report.id === updated.id ? updated : report)));
+      const nextReports = reports.map((report) => (report.id === updated.id ? updated : report));
+      setReports(nextReports);
+      setCachedReports(nextReports);
       setEditTarget(null);
       showCenteredMessage("success", "Report updated");
     } catch (e) {
@@ -666,7 +705,22 @@ function StudentReportContent() {
 
           {tab === "reports" ? (
             <div className="w-full max-w-3xl mx-auto flex-1">
-              {reportsLoading ? null : reportsError ? (
+              {reportsLoading ? (
+                <div className="space-y-4" aria-busy="true" aria-label="Loading your reports">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <VCard key={i} className="p-5 lg:p-6 animate-pulse">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-11 h-11 rounded-xl shrink-0" style={{ backgroundColor: c.fill }} />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-1/2 rounded" style={{ backgroundColor: c.fill }} />
+                          <div className="h-3 w-2/3 rounded" style={{ backgroundColor: c.fill }} />
+                        </div>
+                      </div>
+                      <div className="h-16 rounded-xl" style={{ backgroundColor: c.fill }} />
+                    </VCard>
+                  ))}
+                </div>
+              ) : reportsError ? (
                 <VCard className="py-20 text-center flex flex-col items-center justify-center">
                   <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
                   <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
@@ -1503,9 +1557,9 @@ function StudentReportContent() {
 
             <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t" style={{ borderColor: c.borderLight }}>
               <VButton variant="secondary" onClick={() => { if (!savingEdit) setEditTarget(null); }}>Cancel</VButton>
-              <VButton onClick={handleSaveEdit} disabled={savingEdit}>
-                {savingEdit ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                {savingEdit ? "Saving..." : "Save changes"}
+              <VButton onClick={handleSaveEdit} disabled={savingEdit || editPhotosLoading}>
+                {savingEdit || editPhotosLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {savingEdit ? "Saving..." : editPhotosLoading ? "Loading photos..." : "Save changes"}
               </VButton>
             </div>
           </VCard>

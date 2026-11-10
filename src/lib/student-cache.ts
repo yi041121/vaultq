@@ -2,6 +2,7 @@
 
 import { mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
+import { mapReport, type UserReport } from "@/lib/report-mapper";
 import type { NotificationType } from "@/lib/notification-ui";
 
 export interface CachedNotification {
@@ -19,6 +20,10 @@ let notificationsCache: CachedNotification[] | null = null;
 let notificationsUnread = 0;
 let itemsCache: FoundItem[] | null = null;
 let claimedIdsCache: Set<string> | null = null;
+let reportsCache: UserReport[] | null = null;
+
+const REPORTS_CACHE_KEY = "vaultq:reports-cache";
+const REPORTS_CACHE_TTL = 10 * 60 * 1000;
 
 let lastPrefetch = 0;
 let prefetching: Promise<void> | null = null;
@@ -31,6 +36,36 @@ export const getCachedUnread = () => notificationsUnread;
 export const setCachedUnread = (value: number) => { notificationsUnread = value; };
 export const getCachedSearchItems = () => itemsCache;
 export const getCachedClaimedIds = () => claimedIdsCache;
+export const getCachedReports = () => {
+  if (reportsCache) return reportsCache;
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(REPORTS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at?: number; reports?: UserReport[] };
+    if (!parsed.at || Date.now() - parsed.at > REPORTS_CACHE_TTL || !Array.isArray(parsed.reports)) {
+      window.sessionStorage.removeItem(REPORTS_CACHE_KEY);
+      return null;
+    }
+    reportsCache = parsed.reports;
+    return reportsCache;
+  } catch {
+    return null;
+  }
+};
+export const setCachedReports = (value: UserReport[] | null) => {
+  reportsCache = value;
+  if (typeof window === "undefined") return;
+  try {
+    if (!value) {
+      window.sessionStorage.removeItem(REPORTS_CACHE_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(REPORTS_CACHE_KEY, JSON.stringify({ at: Date.now(), reports: value }));
+  } catch {
+    // Session storage can be unavailable in private browsing.
+  }
+};
 
 export function setCachedSearchItems(value: FoundItem[] | null, claimedIds?: Set<string>) {
   itemsCache = value;
@@ -48,7 +83,15 @@ export function clearStudentCache() {
   notificationsUnread = 0;
   itemsCache = null;
   claimedIdsCache = null;
+  reportsCache = null;
   lastPrefetch = 0;
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.removeItem(REPORTS_CACHE_KEY);
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }
 }
 
 async function getJson(url: string, token: string) {
@@ -71,10 +114,11 @@ export function prefetchStudentData(token: string): Promise<void> {
   if (prefetching) return prefetching;
 
   prefetching = (async () => {
-    const [claims, notifications, items] = await Promise.allSettled([
+    const [claims, notifications, items, reports] = await Promise.allSettled([
       getJson("/api/claims", token),
       getJson("/api/notifications", token),
       getJson("/api/items?light=1", token),
+      getJson("/api/reports?light=1", token),
     ]);
 
     if (claims.status === "fulfilled" && Array.isArray(claims.value.data)) {
@@ -92,6 +136,10 @@ export function prefetchStudentData(token: string): Promise<void> {
 
     if (items.status === "fulfilled" && Array.isArray(items.value.data)) {
       itemsCache = (items.value.data as any[]).map(mapApiItem);
+    }
+
+    if (reports.status === "fulfilled" && Array.isArray(reports.value.data)) {
+      reportsCache = (reports.value.data as any[]).map(mapReport);
     }
 
     lastPrefetch = Date.now();
