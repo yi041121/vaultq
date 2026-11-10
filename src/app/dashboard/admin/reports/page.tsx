@@ -253,13 +253,6 @@ export default function AdminReports() {
         const full = mapReport(data.data);
         setVerifyReport(full);
         setApprovePhotos(full.images.map((src) => ({ preview: src, originalPreview: src })));
-        setVerifyForm({
-          itemName: full.itemName,
-          category: full.category,
-          location: full.location,
-          date: full.date,
-          description: full.description,
-        });
         setVerifyPhotosReady(true);
       }
     } catch {
