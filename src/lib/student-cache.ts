@@ -113,39 +113,44 @@ export function prefetchStudentData(token: string): Promise<void> {
   if (Date.now() - lastPrefetch < PREFETCH_TTL) return Promise.resolve();
   if (prefetching) return prefetching;
 
-  prefetching = (async () => {
-    const [claims, notifications, items, reports] = await Promise.allSettled([
-      getJson("/api/claims", token),
-      getJson("/api/notifications", token),
-      getJson("/api/items?light=1", token),
-      getJson("/api/reports?light=1", token),
-    ]);
+  async function populate(url: string, apply: (json: any) => void) {
+    try {
+      const json = await getJson(url, token);
+      apply(json);
+    } catch {
+      // Prefetching is best-effort; each tab still refreshes normally.
+    }
+  }
 
-    if (claims.status === "fulfilled" && Array.isArray(claims.value.data)) {
-      const raw = claims.value.data as any[];
+  // Populate each cache as soon as its own request finishes. Waiting for the
+  // slowest tab here would make the reports cache arrive late.
+  prefetching = Promise.allSettled([
+    populate("/api/claims", (json) => {
+      if (!Array.isArray(json.data)) return;
+      const raw = json.data as any[];
       claimsCache = raw.map(mapUserClaim);
       claimedIdsCache = new Set(raw.map((cl) => cl.itemId).filter(Boolean));
-    }
-
-    if (notifications.status === "fulfilled" && Array.isArray(notifications.value.data)) {
-      notificationsCache = notifications.value.data as CachedNotification[];
+    }),
+    populate("/api/notifications", (json) => {
+      if (!Array.isArray(json.data)) return;
+      notificationsCache = json.data as CachedNotification[];
       notificationsUnread = Number(
-        notifications.value.unreadCount ?? notificationsCache.filter((n) => !n.isRead).length,
+        json.unreadCount ?? notificationsCache.filter((n) => !n.isRead).length,
       );
-    }
-
-    if (items.status === "fulfilled" && Array.isArray(items.value.data)) {
-      itemsCache = (items.value.data as any[]).map(mapApiItem);
-    }
-
-    if (reports.status === "fulfilled" && Array.isArray(reports.value.data)) {
-      reportsCache = (reports.value.data as any[]).map(mapReport);
-    }
-
+    }),
+    populate("/api/items?light=1", (json) => {
+      if (!Array.isArray(json.data)) return;
+      itemsCache = (json.data as any[]).map(mapApiItem);
+    }),
+    populate("/api/reports?light=1", (json) => {
+      if (!Array.isArray(json.data)) return;
+      setCachedReports((json.data as any[]).map(mapReport));
+    }),
+  ]).then(() => {
     lastPrefetch = Date.now();
     // Let the bell and notifications page pick up the freshly cached count.
     window.dispatchEvent(new Event("vaultq:notifications"));
-  })().finally(() => {
+  }).finally(() => {
     prefetching = null;
   });
 

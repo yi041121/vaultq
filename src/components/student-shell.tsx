@@ -77,8 +77,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
     if (window.location.pathname !== "/dashboard/student") return;
     const token = localStorage.getItem("token");
     if (!token) return;
-    const timer = window.setTimeout(() => void prefetchStudentData(token), 400);
-    return () => window.clearTimeout(timer);
+    void prefetchStudentData(token);
   }, [userRole]);
 
   // The mobile drawer overlays the page, so freeze the page behind it and
