@@ -3,6 +3,7 @@
 // until the item is collected.
 
 import { toDateOnly } from "./item-mapper";
+import { uniquePhotos } from "./photo-gallery";
 
 export type ClaimStatus = "PENDING" | "APPROVED" | "REJECTED";
 export type ClaimDisplayStatus = "Pending" | "QR Ready" | "Collected" | "Rejected";
@@ -81,12 +82,12 @@ export function mapUserClaim(raw: any): UserClaim {
     adminNote: raw?.adminNote || null,
     lostReportDescription: raw?.matchedReportDescription || null,
     itemImageUrl: raw?.item?.imageUrl || null,
-    itemImageUrls: Array.from(new Set([
+    itemImageUrls: uniquePhotos(Array.isArray(raw?.item?.imageUrls) ? raw.item.imageUrls : [
       raw?.item?.imageUrl,
       ...(Array.isArray(raw?.item?.reports)
         ? raw.item.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
         : []),
-    ].filter((value: unknown): value is string => typeof value === "string" && value.length > 0))),
+    ]),
     itemStatus: raw?.item?.status || "",
     itemCreatedAt: raw?.item?.createdAt ? String(raw.item.createdAt) : "",
     hasValidQr,

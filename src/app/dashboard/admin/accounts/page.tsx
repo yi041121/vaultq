@@ -5,7 +5,9 @@ import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail
 import { showCenteredMessage } from "@/components/centered-message";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { StudentShell } from "@/components/student-shell";
-import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { AdminStatusFilters, FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { AdminListSkeleton } from "@/components/admin-list-skeleton";
+import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
@@ -31,14 +33,6 @@ type Student = {
   claims: number;
 };
 
-const initialStudents: Student[] = [
-  { id: "1", name: "Alex Tan", email: "alex.tan@student.edu", role: "STUDENT", studentId: "S12345", cardBarcode: "2000132602", status: "ACTIVE", claims: 2 },
-  { id: "2", name: "Sarah Lim", email: "sarah.lim@student.edu", role: "STUDENT", studentId: "S12346", cardBarcode: "2000133175", status: "ACTIVE", claims: 1 },
-  { id: "3", name: "John Doe", email: "john.doe@student.edu", role: "STUDENT", studentId: "S12347", cardBarcode: null, status: "ACTIVE", claims: 1 },
-  { id: "4", name: "Emily Chen", email: "emily.chen@student.edu", role: "STUDENT", studentId: "S12348", cardBarcode: "2000133301", status: "ACTIVE", claims: 0 },
-  { id: "5", name: "Mike Lee", email: "mike.lee@student.edu", role: "STUDENT", studentId: "S12349", cardBarcode: null, status: "DISABLED", claims: 1 },
-  { id: "6", name: "Lisa Wong", email: "lisa.wong@student.edu", role: "STUDENT", studentId: "S12350", cardBarcode: "2000133412", status: "ACTIVE", claims: 0 },
-];
 
 const statusOptions = ["All", "HAS_CLAIMS", "NO_CLAIMS", "NO_BARCODE"] as const;
 
@@ -46,6 +40,7 @@ const statusOptions = ["All", "HAS_CLAIMS", "NO_CLAIMS", "NO_BARCODE"] as const;
 // of flashing the loading state on every navigation.
 let accountsCache: Student[] | null = null;
 let accountsCacheLive = false;
+registerAdminCacheReset(() => { accountsCache = null; accountsCacheLive = false; });
 
 function maskedBarcode(code: string) {
   return `•••••${code.slice(-4)}`;
@@ -55,7 +50,7 @@ export default function AdminAccounts() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [students, setStudents] = useState<Student[]>(accountsCache ?? initialStudents);
+  const [students, setStudents] = useState<Student[]>(accountsCache ?? []);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
   const [page, setPage] = useState(1);
@@ -82,7 +77,8 @@ export default function AdminAccounts() {
   const [editBarcode, setEditBarcode] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(accountsCache === null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [apiLive, setApiLive] = useState(accountsCacheLive);
 
   function authHeaders(): Record<string, string> {
@@ -124,9 +120,11 @@ export default function AdminAccounts() {
     }
   }
 
-  async function fetchAccounts() {
+  async function fetchAccounts(force = false) {
+    if (!accountsCache) setLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetch("/api/accounts", { headers: authHeaders() });
+      const res = await fetchAdminData("/api/accounts", localStorage.getItem("token") || "", force);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load accounts");
       // Admin accounts never appear on this page
@@ -138,9 +136,9 @@ export default function AdminAccounts() {
       accountsCache = list;
       accountsCacheLive = true;
     } catch (e: any) {
-      console.warn("Accounts API unreachable, using mock data:", e?.message);
+      setLoadError(e?.message || "Could not load accounts");
       if (!accountsCache) {
-        setStudents(initialStudents);
+        setStudents([]);
         setApiLive(false);
       }
     } finally {
@@ -245,31 +243,7 @@ export default function AdminAccounts() {
       return;
     }
     if (!apiLive) {
-      if (students.some((s) => s.email.toLowerCase() === formEmail.trim().toLowerCase())) {
-        setFormError("Email already registered");
-        return;
-      }
-      if (students.some((s) => s.cardBarcode === formBarcode)) {
-        setFormError("Barcode already registered");
-        return;
-      }
-      if (formStudentId.trim() && students.some((s) => s.studentId.toUpperCase() === formStudentId.trim().toUpperCase())) {
-        setFormError("Student ID already registered");
-        return;
-      }
-      const newStudent: Student = {
-        id: String(Date.now()),
-        name: formName.trim(),
-        email: formEmail.trim(),
-        role: "STUDENT",
-        studentId: formStudentId.trim() || "—",
-        cardBarcode: formBarcode,
-        status: "ACTIVE",
-        claims: 0,
-      };
-      setStudents([newStudent, ...students]);
-      setShowModal(false);
-      showCenteredMessage("success", `Account created for ${newStudent.name}`);
+      setFormError("Accounts are not connected yet. Please wait or retry loading the page.");
       return;
     }
     setSaving(true);
@@ -309,7 +283,8 @@ export default function AdminAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to create account");
       setShowModal(false);
       showCenteredMessage("success", `Account created for ${formName.trim()}`);
-      await fetchAccounts();
+      invalidateAdminData();
+      await fetchAccounts(true);
     } catch (e: any) {
       setFormError(e?.message || "Create failed");
     } finally {
@@ -345,21 +320,7 @@ export default function AdminAccounts() {
       return;
     }
     if (!apiLive) {
-      if (students.some((s) => s.id !== editTarget.id && s.email.toLowerCase() === editEmail.trim().toLowerCase())) {
-        setEditError("Email already registered");
-        return;
-      }
-      if (students.some((s) => s.id !== editTarget.id && s.cardBarcode === editBarcode)) {
-        setEditError("Barcode already registered");
-        return;
-      }
-      if (editStudentId.trim() && students.some((s) => s.id !== editTarget.id && s.studentId.toUpperCase() === editStudentId.trim().toUpperCase())) {
-        setEditError("Student ID already registered");
-        return;
-      }
-      setStudents(students.map((s) => s.id === editTarget.id ? { ...s, name: editName.trim(), email: editEmail.trim(), studentId: editStudentId.trim() || "—", cardBarcode: editBarcode } : s));
-      setEditTarget(null);
-      showCenteredMessage("success", `${editName.trim()} updated`);
+      setEditError("Accounts are not connected yet. Please retry loading the page.");
       return;
     }
     setEditSaving(true);
@@ -398,7 +359,8 @@ export default function AdminAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to update account");
       showCenteredMessage("success", `${editName.trim()} updated`);
       setEditTarget(null);
-      await fetchAccounts();
+      invalidateAdminData();
+      await fetchAccounts(true);
     } catch (e: any) {
       setEditError(e?.message || "Update failed");
     } finally {
@@ -417,9 +379,7 @@ export default function AdminAccounts() {
 
   async function handleDelete(st: Student) {
     if (!apiLive) {
-      setStudents(students.filter((s) => s.id !== st.id));
-      setDeleteTarget(null);
-      showCenteredMessage("success", `${st.name} deleted`);
+      showCenteredMessage("error", "Accounts are not connected. Please retry loading the page.");
       return;
     }
     setDeleting(true);
@@ -432,7 +392,8 @@ export default function AdminAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to delete account");
       showCenteredMessage("success", `${st.name} deleted`);
       setDeleteTarget(null);
-      await fetchAccounts();
+      invalidateAdminData();
+      await fetchAccounts(true);
     } catch (e: any) {
       setDeleteTarget(null);
       showCenteredMessage("error", e?.message || "Delete failed");
@@ -446,33 +407,27 @@ export default function AdminAccounts() {
       <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           <FilterPanel
+            actions={<VButton size="md" onClick={openAdd}><Plus size={15} /> Add Student</VButton>}
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
                 size="lg" clearable placeholder="Search name, email, ID, barcode" />
             }
-            actions={
-              <VButton size="md" onClick={openAdd} className="w-full sm:w-auto">
-                <Plus size={15} /> Add Student
-              </VButton>
-            }
             filters={
-              <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
-                {statusOptions.map((s) => (
-                  <button key={s} type="button"
-                    className="px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                    style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
-                    onClick={() => { setStatusFilter(s); setPage(1); }}>
-                    {s === "All" ? "All" : s === "NO_BARCODE" ? "No barcode" : s === "HAS_CLAIMS" ? "Has claims" : "No claims"}
-                  </button>
-                ))}
-              </div>
+              <AdminStatusFilters
+                options={statusOptions.map((value) => ({ value, label: value === "All" ? "All" : value === "NO_BARCODE" ? "No barcode" : value === "HAS_CLAIMS" ? "Has claims" : "No claims" }))}
+                value={statusFilter}
+                onChange={(value) => { setStatusFilter(value); setPage(1); }}
+              />
             }
-            reset={hasFilters ? (
-              <ResetFiltersButton onClick={() => { setQuery(""); setStatusFilter("All"); setPage(1); }} />
-            ) : null}
+            reset={<ResetFiltersButton disabled={!hasFilters} onClick={() => { setQuery(""); setStatusFilter("All"); setPage(1); }} />}
           />
 
-          {loading ? null : filtered.length === 0 ? (
+          {loading ? <AdminListSkeleton /> : loadError ? (
+            <VCard className="p-8 text-center">
+              <p className="text-sm mb-3" style={{ color: c.textMuted }}>{loadError}</p>
+              <VButton variant="secondary" onClick={() => void fetchAccounts(true)}>Try again</VButton>
+            </VCard>
+          ) : filtered.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No accounts found</p>
@@ -573,7 +528,6 @@ export default function AdminAccounts() {
                     <input ref={barcodeFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleBarcodeImage(e, "add")} disabled={barcodeReading} />
                   </label>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Identifies the student at the locker; lockers are assigned to items, not to cards. Type the 10 digits or upload a previous card photo.</p>
               </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Temporary password <span style={{ color: c.danger }}>*</span></label>
@@ -660,7 +614,6 @@ export default function AdminAccounts() {
                     <input ref={barcodeFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleBarcodeImage(e, "edit")} disabled={barcodeReading} />
                   </label>
                 </div>
-                <p className="text-[11px] mt-1" style={{ color: c.textLight }}>Identifies the student at the locker; lockers are assigned to items, not to cards. Type the 10 digits or upload a previous card photo.</p>
               </div>
               {editError && (
                 <p className="text-xs font-medium p-2.5 rounded-lg" style={{ backgroundColor: "#fef2f2", color: c.danger }}>{editError}</p>

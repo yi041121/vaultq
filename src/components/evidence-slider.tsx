@@ -5,11 +5,12 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { vcolors as c } from "@/components/ui/vault";
 
 /** Read-only evidence gallery used by the claim review/details dialogs. */
-export function EvidenceSlider({ photos, alt, caption, label = "evidence" }: {
+export function EvidenceSlider({ photos, alt, caption, label = "evidence", photoClassName = "h-64" }: {
   photos: string[];
   alt: string;
   caption?: string;
   label?: string;
+  photoClassName?: string;
 }) {
   const [index, setIndex] = useState(0);
   const key = photos.join("|");
@@ -24,7 +25,7 @@ export function EvidenceSlider({ photos, alt, caption, label = "evidence" }: {
   return (
     <div className="rounded-xl overflow-hidden border relative" style={{ borderColor: c.border }}>
       <div className="relative">
-        <img src={photos[safe]} alt={alt} loading="lazy" decoding="async" className="w-full h-64 object-cover bg-[#f8fafc]" />
+        <img src={photos[safe]} alt={alt} loading="lazy" decoding="async" className={`block w-full object-cover bg-[#f8fafc] ${photoClassName}`} />
         {photos.length > 1 && (
           <>
             <button type="button" aria-label={`Previous ${label} photo`}
@@ -49,7 +50,7 @@ export function EvidenceSlider({ photos, alt, caption, label = "evidence" }: {
         )}
       </div>
       {caption && (
-        <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>{caption}</p>
+        <p className="text-[10px] text-center truncate px-1 py-2" title={caption} style={{ backgroundColor: c.fill, color: c.textMuted }}>{caption}</p>
       )}
     </div>
   );

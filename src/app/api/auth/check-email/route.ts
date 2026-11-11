@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { withDbRetry } from "@/lib/db-retry";
 
 // GET /api/auth/check-email?email=name@student.tarc.edu.my — public live check
 // for the register form. Returns { exists }; fail-open (exists:false) so a
@@ -10,10 +11,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: { exists: false } });
   }
   try {
-    const existing = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
-      select: { id: true },
-    });
+    const existing = await withDbRetry(() =>
+      prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+        select: { id: true },
+      })
+    );
     return NextResponse.json({ success: true, data: { exists: !!existing } });
   } catch {
     return NextResponse.json({ success: true, data: { exists: false } });

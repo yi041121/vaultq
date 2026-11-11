@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { colors, radius, size, font, iconSize } from "@/lib/design";
 
@@ -109,17 +109,15 @@ export function VBadge({ color, children, className = "", style }: { color: stri
 
 /* ------------------------------- Filter button ------------------------------ */
 
-export function VFilterButton({ children, style, active, onClick, className = "" }: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
+export function VFilterButton({ children, style, active, onClick, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   active?: boolean;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  className?: string;
 }) {
   return (
     <button
+      {...props}
       type="button"
-      className={`flex items-center gap-1.5 ${size.filter} ${radius.button} text-sm font-medium border bg-white transition-shadow duration-200 cursor-pointer ${className}`}
+      aria-pressed={active}
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap ${size.filter} ${radius.button} text-sm font-medium border bg-white transition-colors duration-200 cursor-pointer ${className}`}
       style={{ borderColor: active ? colors.primary : colors.border, color: active ? colors.primary : colors.text, backgroundColor: active ? colors.primarySoft : undefined, ...style }}
       onClick={onClick}
     >
@@ -177,12 +175,27 @@ export function VDropdown({ trigger, children, open, onOpenChange, align = "left
   align?: "left" | "right";
   width?: string;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) onOpenChange(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open, onOpenChange]);
   return (
-    <div className="relative shrink-0">
+    <div ref={containerRef} className="relative shrink-0">
       {trigger}
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => onOpenChange(false)} />
           <div
             className={`absolute top-11 z-20 ${align === "right" ? "right-0" : "left-0"} ${width} bg-white ${radius.dropdown} border py-1.5 shadow-lg max-h-[min(60vh,15rem)] overflow-y-auto overscroll-contain`}
             style={{ borderColor: colors.border }}

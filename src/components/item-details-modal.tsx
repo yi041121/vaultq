@@ -123,9 +123,9 @@ export function ItemDetailsModal({
             {extra}
           </div>
 
-          <div className="rounded-xl p-4 mb-5" style={{ backgroundColor: c.fill }}>
+          <div className="min-w-0 rounded-xl border p-4 mb-5" style={{ backgroundColor: c.fill, borderColor: c.border }}>
             <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-            <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{description || "No description provided."}</p>
+            <p className="text-sm leading-relaxed [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>{description || "No description provided."}</p>
           </div>
 
           {(footer || footerNote) && (

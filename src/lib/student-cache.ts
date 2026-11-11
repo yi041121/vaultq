@@ -4,6 +4,7 @@ import { mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
 import type { NotificationType } from "@/lib/notification-ui";
+import { clearAdminData } from "@/lib/admin-data";
 
 export interface CachedNotification {
   id: string;
@@ -27,6 +28,7 @@ const REPORTS_CACHE_TTL = 10 * 60 * 1000;
 
 let lastPrefetch = 0;
 let prefetching: Promise<void> | null = null;
+let prefetchController: AbortController | null = null;
 const PREFETCH_TTL = 45_000;
 
 export const getCachedClaims = () => claimsCache;
@@ -78,6 +80,10 @@ export function setCachedNotifications(value: CachedNotification[] | null, unrea
 }
 
 export function clearStudentCache() {
+  clearAdminData();
+  prefetchController?.abort();
+  prefetchController = null;
+  prefetching = null;
   claimsCache = null;
   notificationsCache = null;
   notificationsUnread = 0;
@@ -94,10 +100,16 @@ export function clearStudentCache() {
   }
 }
 
-async function getJson(url: string, token: string) {
+async function getJson(url: string, token: string, signal: AbortSignal): Promise<{
+  success?: boolean;
+  error?: string;
+  data?: unknown;
+  unreadCount?: unknown;
+}> {
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
+    signal,
   });
   const json = await res.json().catch(() => null);
   if (!res.ok || !json?.success) throw new Error(json?.error || `Failed to load ${url}`);
@@ -105,17 +117,23 @@ async function getJson(url: string, token: string) {
 }
 
 /**
- * Warm the three data-heavy student tabs after login so opening them for the
- * first time does not wait for the tunnel. The shell calls this once per
+ * Warm student tabs after login so opening them does not wait for data.
+ * The shell calls this once per
  * `PREFETCH_TTL`; tabs still refresh in the background normally.
  */
 export function prefetchStudentData(token: string): Promise<void> {
   if (Date.now() - lastPrefetch < PREFETCH_TTL) return Promise.resolve();
   if (prefetching) return prefetching;
+  const controller = new AbortController();
+  prefetchController = controller;
 
-  async function populate(url: string, apply: (json: any) => void) {
+  async function populate(
+    url: string,
+    apply: (json: { data?: unknown; unreadCount?: unknown }) => void,
+  ) {
     try {
-      const json = await getJson(url, token);
+      const json = await getJson(url, token, controller.signal);
+      if (controller.signal.aborted || localStorage.getItem("token") !== token) return;
       apply(json);
     } catch {
       // Prefetching is best-effort; each tab still refreshes normally.
@@ -127,9 +145,13 @@ export function prefetchStudentData(token: string): Promise<void> {
   prefetching = Promise.allSettled([
     populate("/api/claims", (json) => {
       if (!Array.isArray(json.data)) return;
-      const raw = json.data as any[];
+      const raw = json.data as Record<string, unknown>[];
       claimsCache = raw.map(mapUserClaim);
-      claimedIdsCache = new Set(raw.map((cl) => cl.itemId).filter(Boolean));
+      claimedIdsCache = new Set(
+        raw
+          .map((claim) => claim.itemId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      );
     }),
     populate("/api/notifications", (json) => {
       if (!Array.isArray(json.data)) return;
@@ -140,18 +162,22 @@ export function prefetchStudentData(token: string): Promise<void> {
     }),
     populate("/api/items?light=1", (json) => {
       if (!Array.isArray(json.data)) return;
-      itemsCache = (json.data as any[]).map(mapApiItem);
+      itemsCache = (json.data as Record<string, unknown>[]).map(mapApiItem);
     }),
     populate("/api/reports?light=1", (json) => {
       if (!Array.isArray(json.data)) return;
-      setCachedReports((json.data as any[]).map(mapReport));
+      setCachedReports((json.data as Record<string, unknown>[]).map(mapReport));
     }),
   ]).then(() => {
+    if (controller.signal.aborted) return;
     lastPrefetch = Date.now();
     // Let the bell and notifications page pick up the freshly cached count.
     window.dispatchEvent(new Event("vaultq:notifications"));
   }).finally(() => {
-    prefetching = null;
+    if (prefetchController === controller) {
+      prefetchController = null;
+      prefetching = null;
+    }
   });
 
   return prefetching;

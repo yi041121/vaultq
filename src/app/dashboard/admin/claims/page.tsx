@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Package, Grid3X3, Lock, FileText, Users, Search, Clock,
+  Package, Grid3X3, Lock, FileText, Users, Search,
   CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, Sparkles,
   ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Loader2,
 } from "lucide-react";
@@ -13,6 +14,10 @@ import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { EvidenceSlider } from "@/components/evidence-slider";
+import { DescriptionBox } from "@/components/description-box";
+import { uniquePhotos } from "@/lib/photo-gallery";
+import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
+import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -75,6 +80,8 @@ type LostReport = {
   student: string;
   studentId: string;
   studentEmail?: string;
+  createdAt?: string;
+  reviewedAt?: string | null;
 };
 
 function fmtDateValue(value?: string) {
@@ -89,6 +96,26 @@ function fmtClockValue(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+function VerificationCardFooter({ submittedAt, reviewLabel, reviewedAt, children }: {
+  submittedAt?: string;
+  reviewLabel?: string;
+  reviewedAt?: string | null;
+  children?: ReactNode;
+}) {
+  const timestamp = reviewLabel ? reviewedAt : submittedAt;
+  const dateTime = timestamp ? [fmtDateValue(timestamp), fmtClockValue(timestamp)].filter(Boolean).join(" · ") : "";
+  return (
+    <div className="mt-auto pt-3" data-verification-footer>
+      <div className="h-[84px] px-4 py-3 border-t flex flex-wrap content-center items-center gap-2" style={{ borderColor: c.borderLight }}>
+        <div className="flex-1 min-w-[130px] text-[10px] leading-relaxed" style={{ color: c.textMuted }}>
+          <p className="[overflow-wrap:anywhere]">{[reviewLabel, dateTime].filter(Boolean).join(" · ") || "Date unavailable"}</p>
+        </div>
+        {children && <div className="ml-auto flex shrink-0 items-center gap-1.5">{children}</div>}
+      </div>
+    </div>
+  );
 }
 
 const statusOptions = ["All", "PENDING", "APPROVED", "REJECTED"] as const;
@@ -159,6 +186,7 @@ type FoundItem = {
 type MatchPreview = { item: FoundItem; images: string[]; index: number };
 
 let claimsCache: Claim[] | null = null;
+registerAdminCacheReset(() => { claimsCache = null; lostReportsCache = null; });
 let lostReportsCache: LostReport[] | null = null;
 
 export default function AdminClaims() {
@@ -168,6 +196,11 @@ export default function AdminClaims() {
   const [claims, setClaims] = useState<Claim[]>(claimsCache ?? []);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("PENDING");
+  const [kindFilter, setKindFilter] = useState<"ALL" | "CLAIM" | "LOST">("ALL");
+  const [kindOpen, setKindOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  useEscapeKey(kindOpen, () => setKindOpen(false));
+  useEscapeKey(statusOpen, () => setStatusOpen(false));
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -224,10 +257,9 @@ export default function AdminClaims() {
       evidencePreview: raw.evidenceImageUrl || null,
       evidenceImageUrls: Array.isArray(raw.evidenceImageUrls) ? raw.evidenceImageUrls : raw.evidenceImageUrl ? [raw.evidenceImageUrl] : [],
       itemImageUrl: raw.item?.imageUrl || null,
-      itemImageUrls: Array.from(new Set([
-        raw.item?.imageUrl,
-        ...(Array.isArray(raw.item?.reports?.[0]?.imageUrls) ? raw.item.reports[0].imageUrls : []),
-      ].filter((value): value is string => typeof value === "string" && value.length > 0))),
+      itemImageUrls: uniquePhotos(Array.isArray(raw.item?.imageUrls)
+        ? raw.item.imageUrls
+        : [raw.item?.imageUrl, ...(raw.item?.reports?.[0]?.imageUrls || [])]),
       itemDescription: raw.item?.description || "",
       itemStatus: raw.item?.status || "FOUND",
       itemFoundDate: raw.item?.foundDate ? String(raw.item.foundDate).slice(0, 10) : "",
@@ -248,7 +280,7 @@ export default function AdminClaims() {
       return;
     }
     try {
-      const res = await fetch("/api/reports?type=LOST&light=1", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetchAdminData("/api/reports?light=1", localStorage.getItem("token") || "");
       if (res.status === 401) {
         redirectUnauthorized();
         return;
@@ -275,6 +307,8 @@ export default function AdminClaims() {
             student: r.user?.name || "Unknown",
             studentId: r.user?.studentId || "—",
             studentEmail: r.user?.email || "",
+            createdAt: r.createdAt ? String(r.createdAt) : "",
+            reviewedAt: r.reviewedAt ? String(r.reviewedAt) : null,
           };
         });
       setLostReports(mapped);
@@ -295,7 +329,7 @@ export default function AdminClaims() {
     if (!claimsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/claims?light=1", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetchAdminData("/api/claims?light=1", localStorage.getItem("token") || "");
       if (res.status === 401) {
         redirectUnauthorized();
         return;
@@ -405,20 +439,24 @@ export default function AdminClaims() {
     : [];
 
   const filteredRows = rows.filter((row) => {
+    if (kindFilter !== "ALL" && row.kind !== kindFilter) return false;
     if (itemFilter && (row.kind !== "CLAIM" || row.claim?.itemId !== itemFilter.id)) return false;
     if (statusFilter !== "All" && row.status !== statusFilter) return false;
     return matchesSearch(query, row.searchFields);
   });
 
   const hasFilters = Boolean(
-    query || statusFilter !== "PENDING" || sortOrder !== "newest" || itemFilter,
+    query || statusFilter !== "PENDING" || sortOrder !== "newest" || itemFilter || kindFilter !== "ALL",
   );
 
   function resetFilters() {
+    setKindOpen(false);
+    setStatusOpen(false);
     setQuery("");
     setStatusFilter("PENDING");
     setSortOrder("newest");
     setItemFilter(null);
+    setKindFilter("ALL");
     setPage(1);
   }
 
@@ -433,6 +471,11 @@ export default function AdminClaims() {
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginatedRows = sortedRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // Reserve the extra comparison row only when a visible card needs it.
+  // All cards on the current page still share the same section positions.
+  const verificationHeaderHeight = paginatedRows.some((row) =>
+    row.claim?.status === "PENDING" && (pendingClaimCount.get(row.claim.itemId) || 0) > 1,
+  ) ? "h-[108px]" : "h-[80px]";
 
   const claimItemDetailPhotos = claimItemDetail
     ? claimItemDetail.itemImageUrls?.length
@@ -442,11 +485,14 @@ export default function AdminClaims() {
         : []
     : [];
   const lostDetailPhotos = lostDetail?.images ?? [];
+  const compareItemPhotos = uniquePhotos(compareClaim?.itemImageUrls?.length
+    ? compareClaim.itemImageUrls : [compareClaim?.itemImageUrl]);
 
 
   function movePhoto(key: string, delta: number, total: number) {
     setPhotoIndices((prev) => {
-      const current = prev[key] ?? 0;
+      if (total < 1) return prev;
+      const current = Math.min(Math.max(0, prev[key] ?? 0), total - 1);
       return { ...prev, [key]: (current + delta + total) % total };
     });
   }
@@ -478,6 +524,7 @@ export default function AdminClaims() {
       if (!res.ok) throw new Error(data.error || "Approve failed");
       const assigned = lockerNumber || target?.locker;
       showCenteredMessage("success", assigned ? `Claim approved — locker ${assigned} assigned` : "Claim approved");
+      invalidateAdminData();
       await Promise.all([fetchClaims(), fetchLostReports()]);
       // The rivalry is resolved once a winner is approved.
       setItemFilter(null);
@@ -548,6 +595,7 @@ export default function AdminClaims() {
       if (!res.ok || !data?.success) throw new Error(data.error || "Match failed");
       showCenteredMessage("success", "Report matched — claim approved and pickup QR ready");
       setMatchTarget(null);
+      invalidateAdminData();
       await fetchLostReports();
       await fetchClaims();
     } catch (e: any) {
@@ -572,6 +620,7 @@ export default function AdminClaims() {
       showCenteredMessage("success", rejectTarget.kind === "CLAIM" ? "Claim rejected" : "Lost report rejected");
       setRejectTarget(null);
       setRejectNote("");
+      invalidateAdminData();
       if (rejectTarget.kind === "CLAIM") await Promise.all([fetchClaims(), fetchLostReports()]);
       else await fetchLostReports();
     } catch (e: any) {
@@ -619,30 +668,57 @@ export default function AdminClaims() {
             }
             filters={
               <>
-                {statusOptions.map((s) => (
-                  <VFilterButton key={s} active={statusFilter === s} onClick={() => { setStatusFilter(s); setPage(1); }}>
-                    {s === "All" ? "All" : reportStatusLabel(s)}
+                <VDropdown open={statusOpen} onOpenChange={setStatusOpen} width="w-36" trigger={
+                  <VFilterButton aria-label="Verification status" aria-expanded={statusOpen} aria-controls="verification-status-options"
+                    active={statusFilter !== "All" && statusFilter !== "PENDING"} onClick={() => { setKindOpen(false); setSortOpen(false); setStatusOpen(!statusOpen); }}>
+                    <span>{statusFilter === "All" ? "All statuses" : reportStatusLabel(statusFilter)}</span>
+                    <ChevronDown size={12} />
                   </VFilterButton>
-                ))}
+                }>
+                  {(close) => (
+                    <div id="verification-status-options" role="group" aria-label="Verification status options">
+                      {statusOptions.map(value => (
+                        <VDropdownItem key={value} active={statusFilter === value} onSelect={() => { setStatusFilter(value); setPage(1); close(); }}>
+                          {value === "All" ? "All statuses" : reportStatusLabel(value)}
+                        </VDropdownItem>
+                      ))}
+                    </div>
+                  )}
+                </VDropdown>
+                <VDropdown open={kindOpen} onOpenChange={setKindOpen} width="w-36" trigger={
+                  <VFilterButton aria-label="Report type" aria-expanded={kindOpen} aria-controls="verification-type-options"
+                    active={kindFilter !== "ALL"} onClick={() => { setStatusOpen(false); setSortOpen(false); setKindOpen(!kindOpen); }}>
+                    <span>{kindFilter === "ALL" ? "All types" : kindFilter === "CLAIM" ? "Claim" : "Lost"}</span>
+                    <ChevronDown size={12} />
+                  </VFilterButton>
+                }>
+                  {(close) => (
+                    <div id="verification-type-options" role="group" aria-label="Report type options">
+                      {([ ["ALL", "All types"], ["CLAIM", "Claim"], ["LOST", "Lost"] ] as const).map(([value, label]) => (
+                        <VDropdownItem key={value} active={kindFilter === value} onSelect={() => { setKindFilter(value); setItemFilter(null); setPage(1); close(); }}>{label}</VDropdownItem>
+                      ))}
+                    </div>
+                  )}
+                </VDropdown>
 
-                <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-40"
+                <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-32"
                   trigger={
-                    <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
+                    <VFilterButton active={sortOrder !== "newest"} onClick={() => { setKindOpen(false); setStatusOpen(false); setSortOpen(!sortOpen); }}>
                       <ArrowUpDown size={13} style={{ color: c.textMuted }} />
-                      <span>{sortOrder === "newest" ? "Newest first" : "Oldest first"}</span>
+                      <span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
                       <ChevronDown size={12} style={{ color: c.textMuted }} />
                     </VFilterButton>
                   }>
                   {(close) => (
                     <>
-                      <VDropdownItem active={sortOrder === "newest"} onSelect={() => { setSortOrder("newest"); setPage(1); close(); }}>Newest first</VDropdownItem>
-                      <VDropdownItem active={sortOrder === "oldest"} onSelect={() => { setSortOrder("oldest"); setPage(1); close(); }}>Oldest first</VDropdownItem>
+                      <VDropdownItem active={sortOrder === "newest"} onSelect={() => { setSortOrder("newest"); setPage(1); close(); }}>Newest</VDropdownItem>
+                      <VDropdownItem active={sortOrder === "oldest"} onSelect={() => { setSortOrder("oldest"); setPage(1); close(); }}>Oldest</VDropdownItem>
                     </>
                   )}
                 </VDropdown>
               </>
             }
-            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
+            reset={<ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} />}
           />
 
           {itemFilter && (
@@ -663,10 +739,7 @@ export default function AdminClaims() {
           )}
 
           {loading ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Loader2 size={30} className="animate-spin mb-3" style={{ color: c.primary }} />
-              <p className="text-sm font-medium" style={{ color: c.textMuted }}>Loading verification queue…</p>
-            </VCard>
+            <AdminListSkeleton />
           ) : loadError && claims.length === 0 ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
@@ -696,7 +769,7 @@ export default function AdminClaims() {
                   <Loader2 size={12} className="animate-spin" /> Loading lost reports…
                 </p>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 content-start flex-1 min-w-0">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 content-start min-w-0">
                 {paginatedRows.map((row) => {
                   if (row.kind === "CLAIM" && row.claim) {
                     const cl = row.claim;
@@ -716,76 +789,60 @@ export default function AdminClaims() {
                     const itemPhotoIndex = Math.min(photoIndices[itemKey] ?? 0, Math.max(0, itemPhotos.length - 1));
                     const evidenceIndex = Math.min(photoIndices[evidenceKey] ?? 0, Math.max(0, evidencePhotos.length - 1));
                     return (
-                      <VCard key={`claim-${cl.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => setCompareClaim(cl)}>
-                        <div className="p-4 flex items-start gap-3">
-                          <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
+                      <VCard key={`claim-${cl.id}`} className="p-0 min-w-0 flex flex-col h-full overflow-hidden">
+                        <div className={`${verificationHeaderHeight} shrink-0 px-4 py-3 flex items-start gap-2.5`} data-verification-header>
+                          <div className="w-9 h-9 rounded-xl border flex items-center justify-center shrink-0"
                             style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
-                            <CatIcon size={22} style={{ color: c.primary }} />
+                            <CatIcon size={18} style={{ color: c.primary }} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <h3 className="text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{cl.itemName}</h3>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <h3 className="flex-1 text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{cl.itemName}</h3>
                               {(cl.source === "MATCH" || cl.matchedReportDescription) ? (
-                                <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${c.primary} 33%, transparent)` }}>Lost report</VBadge>
+                                <VBadge className="shrink-0" color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${c.primary} 33%, transparent)` }}>Lost</VBadge>
                               ) : (
-                                <VBadge color="#64748b" style={{ backgroundColor: "transparent", border: "1px solid #cbd5e1" }}>Claim</VBadge>
+                                <VBadge className="shrink-0" color="#64748b" style={{ backgroundColor: "transparent", border: "1px solid #cbd5e1" }}>Claim</VBadge>
                               )}
                             </div>
                             <div className="flex items-center gap-2 mt-1 min-w-0">
                               <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
-                                {cl.student} · {cl.studentEmail || (cl.studentId !== "—" ? cl.studentId : "—")}
+                                {cl.studentEmail || (cl.studentId !== "—" ? cl.studentId : cl.student)}
                               </p>
                               <VBadge color={statusColor(cl.status)} style={{ flexShrink: 0 }}>{reportStatusLabel(cl.status)}</VBadge>
                             </div>
-                            <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: c.textMuted }}>
-                              <Clock size={12} /> Submitted {fmtDateValue(cl.createdAt || cl.date)}{cl.createdAt ? ` · ${fmtClockValue(cl.createdAt)}` : ""}
-                            </p>
                             {cl.status === "PENDING" && (pendingClaimCount.get(cl.itemId) || 0) > 1 && (
                               <button type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setItemFilter({ id: cl.itemId, name: cl.itemName });
+                                  setKindFilter("CLAIM");
                                   setStatusFilter("PENDING");
                                   setPage(1);
                                 }}
-                                className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-lg px-2 py-1 cursor-pointer"
+                                className="mt-2 max-w-full inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-lg px-2 py-1 cursor-pointer"
                                 style={{ color: "#92400e", backgroundColor: "#fef3c7", border: "1px solid #fde68a" }}>
-                                <Users size={12} /> {pendingClaimCount.get(cl.itemId)} students claimed this item — compare
+                                <Users size={12} className="shrink-0" /> <span className="text-left">Compare {pendingClaimCount.get(cl.itemId)} pending claims</span>
                               </button>
                             )}
                           </div>
                         </div>
 
                         <div className="px-4">
-                          <p className="text-[11px] font-semibold" style={{ color: c.text }}>Claim explanation</p>
-                          <p className="text-xs mt-1 leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>&quot;{cl.reason}&quot;</p>
-                          {(cl.status === "REJECTED" || cl.approvedAt) && (
-                            <p className="text-[11px] mt-1.5 flex items-center gap-1" style={{ color: c.textLight }}>
-                              {cl.status === "REJECTED" ? (
-                                (cl.approvedAt || cl.createdAt) ? (
-                                  <><XCircle size={11} /> Rejected by admin · {fmtDateValue(cl.approvedAt || cl.createdAt)} · {fmtClockValue(cl.approvedAt || cl.createdAt)}</>
-                                ) : (
-                                  <><XCircle size={11} /> Rejected</>
-                                )
-                              ) : (
-                                <><CheckCircle2 size={11} /> Approved by admin · {fmtDateValue(cl.approvedAt!)} · {fmtClockValue(cl.approvedAt!)}</>
-                              )}
-                            </p>
-                          )}
+                          <DescriptionBox title="Claim explanation" className="h-[82px] overflow-hidden">{cl.reason || "No explanation provided."}</DescriptionBox>
                         </div>
 
-                        <div className="px-4 mt-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: c.textLight }}>Found item photo</p>
+                        <div className="h-[184px] shrink-0 px-4 mt-3" data-verification-photos>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Found item</p>
                               <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
                                 {itemPhotos.length > 0 ? (
                                   <div className="relative">
                                     <button type="button" aria-label="View found item details"
-                                      className="relative block w-full aspect-[4/3] group cursor-pointer"
+                                      className="vq-admin-photo relative block group cursor-pointer"
                                       style={{ backgroundColor: c.fill }}
-                                      onClick={() => { setDetailPhotoIndex(0); setClaimItemDetail(cl); }}>
-                                      <img src={itemPhotos[itemPhotoIndex]} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                                      onClick={() => { setDetailPhotoIndex(itemPhotoIndex); setClaimItemDetail(cl); }}>
+                                      <img key={itemPhotos[itemPhotoIndex]} src={itemPhotos[itemPhotoIndex]} alt={`Found item photo ${itemPhotoIndex + 1}`} loading="lazy" decoding="async" className="block w-full h-full object-cover" />
                                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
                                         <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                           <Eye size={12} /> Item details
@@ -813,27 +870,24 @@ export default function AdminClaims() {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-1"
+                                  <div className="vq-admin-photo flex flex-col items-center justify-center gap-1"
                                     style={{ backgroundColor: c.fill, color: c.textLight }}>
                                     <Package size={22} />
                                     <span className="text-[10px]">No item photo</span>
                                   </div>
                                 )}
-                                <p className="text-[10px] text-center py-1.5" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                                  {fmtDateValue(cl.itemFoundDate)}{cl.itemCreatedAt ? ` · ${fmtClockValue(cl.itemCreatedAt)}` : ""}
-                                </p>
                               </div>
                             </div>
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wider font-semibold mb-1.5" style={{ color: c.textLight }}>Student evidence photo</p>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Student evidence</p>
                               <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
                                 {evidencePhotos.length > 0 ? (
                                   <div className="relative">
                                     <button type="button" aria-label="View student evidence photo"
-                                      className="relative block w-full aspect-[4/3] group cursor-pointer"
+                                      className="vq-admin-photo relative block group cursor-pointer"
                                       style={{ backgroundColor: c.fill }}
                                       onClick={() => setPhotoViewer({ photos: evidencePhotos, index: evidenceIndex, title: `${cl.itemName} evidence` })}>
-                                      <img src={evidencePhotos[evidenceIndex]} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                                      <img key={evidencePhotos[evidenceIndex]} src={evidencePhotos[evidenceIndex]} alt={`Student evidence photo ${evidenceIndex + 1}`} loading="lazy" decoding="async" className="block w-full h-full object-cover" />
                                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150" />
                                     </button>
                                     {evidencePhotos.length > 1 && (
@@ -857,33 +911,31 @@ export default function AdminClaims() {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="w-full aspect-[4/3] flex flex-col items-center justify-center gap-1"
+                                  <div className="vq-admin-photo flex flex-col items-center justify-center gap-1"
                                     style={{ backgroundColor: c.fill, color: c.textLight }}>
                                     <Camera size={22} />
                                     <span className="text-[10px]">No evidence photo</span>
                                   </div>
                                 )}
-                                <p className="text-[10px] text-center py-1.5" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                                  {fmtDateValue(cl.evidenceUploadedAt || cl.createdAt || cl.date)}
-                                  {(cl.evidenceUploadedAt || cl.createdAt) ? ` · ${fmtClockValue(cl.evidenceUploadedAt || cl.createdAt)}` : ""}
-                                </p>
                               </div>
                             </div>
                           </div>
                         </div>
 
-                        {cl.status === "PENDING" && (
-                          <div className="mt-auto pt-4">
-                            <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: c.card }} onClick={(e) => e.stopPropagation()}>
+                        <VerificationCardFooter submittedAt={cl.createdAt || cl.date}
+                          reviewLabel={cl.status === "APPROVED" ? "Approved by admin" : cl.status === "REJECTED" ? "Rejected by admin" : undefined}
+                          reviewedAt={cl.approvedAt}>
+                          {cl.status === "PENDING" && (
+                            <>
                               <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "CLAIM", id: cl.id, itemName: cl.itemName }); }}>
                                 <XCircle size={13} /> Reject
                               </VButton>
                               <VButton size="sm" onClick={() => { setApproveNote(""); setApproveTarget({ id: cl.id, itemName: cl.itemName }); }}>
                                 <CheckCircle2 size={13} /> Approve
                               </VButton>
-                            </div>
-                          </div>
-                        )}
+                            </>
+                          )}
+                        </VerificationCardFooter>
                       </VCard>
                     );
                   }
@@ -891,54 +943,45 @@ export default function AdminClaims() {
                   const report = row.report!;
                   const Icon = categoryIcon(report.category);
                   return (
-                    <VCard key={`lost-${report.id}`} className="p-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
-                      <div className="p-4 flex items-start gap-3">
-                        <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0"
+                    <VCard key={`lost-${report.id}`} className="p-0 min-w-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
+                      <div className={`${verificationHeaderHeight} shrink-0 px-4 py-3 flex items-start gap-2.5`} data-verification-header>
+                        <div className="w-9 h-9 rounded-xl border flex items-center justify-center shrink-0"
                           style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
-                          <Icon size={22} style={{ color: c.primary }} />
+                          <Icon size={18} style={{ color: c.primary }} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <h3 className="text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{report.itemName}</h3>
-                            <VBadge color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${c.primary} 33%, transparent)` }}>Lost report</VBadge>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <h3 className="flex-1 text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{report.itemName}</h3>
+                            <VBadge className="shrink-0" color={c.primary} style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${c.primary} 33%, transparent)` }}>Lost</VBadge>
                           </div>
                           <div className="flex items-center gap-2 mt-1 min-w-0">
                             <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
-                              {report.student} · {report.studentEmail || (report.studentId !== "—" ? report.studentId : "—")}
+                              {report.studentEmail || (report.studentId !== "—" ? report.studentId : report.student)}
                             </p>
                             <VBadge color={statusColor(report.status)} style={{ flexShrink: 0 }}>{reportStatusLabel(report.status)}</VBadge>
                           </div>
-                          <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: c.textMuted }}>
-                            <Clock size={12} /> {fmtDateValue(report.date)}
-                          </p>
                         </div>
                       </div>
 
                       <div className="px-4">
-                        <p className="text-[11px] font-semibold" style={{ color: c.text }}>Report description</p>
-                        <p className="text-xs mt-1 leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>&quot;{report.description}&quot;</p>
-                        {report.status !== "PENDING" && (
-                          <p className="text-[11px] mt-1.5 flex items-center gap-1" style={{ color: c.textLight }}>
-                            {report.status === "MATCHED" ? (
-                              <><CheckCircle2 size={11} /> Matched — claim awaiting approval</>
-                            ) : (
-                              <><XCircle size={11} /> Rejected</>
-                            )}
-                          </p>
-                        )}
+                        <DescriptionBox title="Report description" className="h-[82px] overflow-hidden">{report.description || "No description provided."}</DescriptionBox>
                       </div>
 
-                      {report.images.length > 0 && (
-                        <div className="px-4 mt-3" onClick={(e) => e.stopPropagation()}>
-                          <p className="text-[11px] font-semibold" style={{ color: c.text }}>Report photos</p>
-                          <button type="button" aria-label={`View ${report.itemName} report photos`}
-                            className="relative block w-full aspect-[4/3] rounded-xl overflow-hidden border group cursor-pointer mt-1.5"
-                            style={{ borderColor: c.border, backgroundColor: c.fill }}
-                            onClick={() => setPhotoViewer({ photos: report.images, index: 0, title: `${report.itemName} report` })}>
-                            <img src={report.images[0]} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover bg-[#f8fafc]" />
+                        <div className="h-[184px] shrink-0 px-4 mt-3" data-verification-photos onClick={(e) => e.stopPropagation()}>
+                          <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Report photos</p>
+                          <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                          <button type="button" aria-label={`View ${report.itemName} report details`}
+                            className="vq-admin-photo relative block group cursor-pointer"
+                            style={{ backgroundColor: c.fill }}
+                            onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
+                            {report.images.length > 0 ? (
+                              <img src={report.images[0]} alt="Report photo" loading="lazy" decoding="async" className="block w-full h-full object-cover" />
+                            ) : (
+                              <span className="flex h-full flex-col items-center justify-center gap-1" style={{ color: c.textLight }}><Camera size={22} /><span className="text-[10px]">No report photo</span></span>
+                            )}
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
-                                <Eye size={12} /> View full size
+                                <Eye size={12} /> Report details
                               </span>
                             </span>
                             {report.images.length > 1 && (
@@ -947,19 +990,23 @@ export default function AdminClaims() {
                               </span>
                             )}
                           </button>
-                        </div>
-                      )}
-
-                      {report.status === "PENDING" && (
-                        <div className="mt-auto pt-4">
-                          <div className="px-4 py-3 border-t flex items-center justify-end gap-1.5" style={{ borderColor: c.borderLight, backgroundColor: c.card }} onClick={(e) => e.stopPropagation()}>
-                            <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "LOST", id: report.id, itemName: report.itemName }); }}>
-                              <XCircle size={13} /> Reject
-                            </VButton>
-                            <VButton size="sm" onClick={() => void openMatchFor(report)}><PackageSearch size={13} /> Match</VButton>
                           </div>
                         </div>
-                      )}
+
+                      <div onClick={(e) => e.stopPropagation()} className="mt-auto">
+                        <VerificationCardFooter submittedAt={report.createdAt || report.date}
+                          reviewLabel={report.status === "REJECTED" ? "Rejected by admin" : report.status === "MATCHED" ? "Matched by admin" : undefined}
+                          reviewedAt={report.reviewedAt}>
+                          {report.status === "PENDING" && (
+                            <>
+                              <VButton variant="danger" size="sm" onClick={() => { setRejectNote(""); setRejectTarget({ kind: "LOST", id: report.id, itemName: report.itemName }); }}>
+                                <XCircle size={13} /> Reject
+                              </VButton>
+                              <VButton size="sm" onClick={() => void openMatchFor(report)}><PackageSearch size={13} /> Match</VButton>
+                            </>
+                          )}
+                        </VerificationCardFooter>
+                      </div>
                     </VCard>
                   );
                 })}
@@ -1269,7 +1316,7 @@ export default function AdminClaims() {
       {compareClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setCompareClaim(null)} />
-          <VCard className="relative w-full max-w-3xl max-h-[90vh] overflow-auto p-5 lg:p-6">
+          <VCard role="dialog" aria-modal="true" aria-label="Claim Details" className="relative w-full min-w-0 max-w-2xl max-h-[90dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3 mb-1">
               <div>
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Details</h3>
@@ -1279,6 +1326,7 @@ export default function AdminClaims() {
                       const target = compareClaim;
                       setCompareClaim(null);
                       setItemFilter({ id: target.itemId, name: target.itemName });
+                      setKindFilter("CLAIM");
                       setStatusFilter("PENDING");
                       setPage(1);
                     }}
@@ -1290,39 +1338,46 @@ export default function AdminClaims() {
               </div>
               <button type="button" onClick={() => setCompareClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
-            <div className="grid sm:grid-cols-2 gap-4 mb-4">
-              <div>
+            <div className="grid grid-cols-2 gap-3 my-4">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Found item photo</p>
-                <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                  {compareClaim.itemImageUrl ? (
-                    <img src={compareClaim.itemImageUrl} alt="Found item" loading="eager" decoding="async" className="w-full h-64 object-cover bg-[#f8fafc]" />
-                  ) : (
-                    <div className="w-full h-64 flex flex-col items-center justify-center gap-2 bg-[#f8fafc]" style={{ color: c.textLight }}>
+                {compareItemPhotos.length ? (
+                  <EvidenceSlider
+                    photos={compareItemPhotos}
+                    alt="Found item"
+                    label="found item"
+                    photoClassName="h-48"
+                    caption={`${fmtDateValue(compareClaim.itemFoundDate)}${compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}`}
+                  />
+                ) : (
+                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                    <div className="w-full h-48 flex flex-col items-center justify-center gap-2 bg-[#f8fafc]" style={{ color: c.textLight }}>
                       <Package size={36} />
                       <span className="text-xs">No item photo uploaded</span>
                     </div>
-                  )}
-                  <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                    {fmtDateValue(compareClaim.itemFoundDate)}
-                    {compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}
-                  </p>
-                </div>
+                    <p className="text-[10px] text-center truncate px-1 py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                      {fmtDateValue(compareClaim.itemFoundDate)}
+                      {compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}
+                    </p>
+                  </div>
+                )}
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold mb-2" style={{ color: c.text }}>Student evidence photo</p>
                 {(compareClaim.evidenceImageUrls?.length || compareClaim.evidencePreview) ? (
                   <EvidenceSlider
                     photos={compareClaim.evidenceImageUrls?.length ? compareClaim.evidenceImageUrls : [compareClaim.evidencePreview!]}
                     alt="Evidence"
+                    photoClassName="h-48"
                     caption={`${fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}${(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}`}
                   />
                 ) : (
                   <div className="rounded-xl overflow-hidden border-2 border-dashed" style={{ borderColor: c.border }}>
-                    <div className="w-full h-64 flex flex-col items-center justify-center gap-2" style={{ backgroundColor: c.fill, color: c.textLight }}>
+                    <div className="w-full h-48 flex flex-col items-center justify-center gap-2" style={{ backgroundColor: c.fill, color: c.textLight }}>
                       <Camera size={22} />
                       <span className="text-xs">No photo evidence provided</span>
                     </div>
-                    <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
+                    <p className="text-[10px] text-center truncate px-1 py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
                       {fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}
                       {(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}
                     </p>
@@ -1331,11 +1386,11 @@ export default function AdminClaims() {
               </div>
             </div>
             {(compareClaim.matchedReportDescription || compareClaim.reason) && (
-              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
+              <div className="rounded-xl border p-4 mb-4" style={{ backgroundColor: c.fill, borderColor: c.border }}>
                 <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>
                   {compareClaim.matchedReportDescription ? "Lost report description" : "Claim reason"}
                 </p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
+                <p className="text-sm leading-relaxed break-words max-h-32 overflow-y-auto" style={{ color: c.textMuted }}>
                   {compareClaim.matchedReportDescription || compareClaim.reason}
                 </p>
                 {compareClaim.matchedReportDescription && (
@@ -1349,13 +1404,13 @@ export default function AdminClaims() {
             {compareClaim.status === "REJECTED" && (
               <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: `color-mix(in srgb, ${c.danger} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${c.danger} 19%, transparent)` }}>
                 <p className="text-xs font-semibold mb-1" style={{ color: c.danger }}>Rejected reason</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.danger }}>
+                <p className="text-sm leading-relaxed break-words max-h-24 overflow-y-auto" style={{ color: c.danger }}>
                   {compareClaim.adminNote || "No reason was provided."}
                 </p>
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 mt-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center justify-end gap-2 mt-4" onClick={(e) => e.stopPropagation()}>
               <VButton variant="secondary" onClick={() => setCompareClaim(null)}>Close</VButton>
               {compareClaim.status === "PENDING" && (
                 <>

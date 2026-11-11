@@ -12,6 +12,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useAdminNavCounts } from "@/lib/use-admin-nav-counts";
 import { prefetchStudentData } from "@/lib/student-cache";
 import { useIdleSession } from "@/lib/use-idle-session";
+import { clearClientSession } from "@/lib/idle-session";
+import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
 
 interface NavItem {
   label: string;
@@ -80,6 +82,18 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
     void prefetchStudentData(token);
   }, [userRole]);
 
+  useEffect(() => {
+    if (userRole !== "ADMIN" || window.location.pathname !== "/dashboard/admin") return;
+    const token = localStorage.getItem("token");
+    if (token) void prefetchAdminData(token);
+  }, [userRole]);
+
+  function warmPage(path?: string) {
+    if (!path || userRole !== "ADMIN") return;
+    const token = localStorage.getItem("token");
+    if (token) void prefetchAdminPage(path, token);
+  }
+
   // The mobile drawer overlays the page, so freeze the page behind it and
   // allow Escape to close it like a normal dialog.
   useEffect(() => {
@@ -109,6 +123,8 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
           {navItems.map((item) => (
             <button
               key={item.label}
+              onPointerEnter={() => warmPage(item.path)}
+              onFocus={() => warmPage(item.path)}
               type="button"
               className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer ${item.active ? "font-semibold" : "font-medium"}`}
               style={{
@@ -191,6 +207,8 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
                 {navItems.map((item) => (
                   <button
                     key={item.label}
+                    onPointerEnter={() => warmPage(item.path)}
+                    onFocus={() => warmPage(item.path)}
                     type="button"
                     className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all duration-200 cursor-pointer ${item.active ? "font-semibold" : "font-medium"}`}
                     style={{
@@ -265,6 +283,9 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
           return item.path ? (
             <Link
               key={item.label}
+              onPointerEnter={() => warmPage(item.path)}
+              onFocus={() => warmPage(item.path)}
+              onTouchStart={() => warmPage(item.path)}
               href={item.path}
               aria-label={item.label}
               aria-current={item.active ? "page" : undefined}
@@ -288,7 +309,7 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
         subtitle="You will need to sign in again to access your account."
         confirmLabel="Log out"
         onCancel={() => setConfirmLogout(false)}
-        onConfirm={() => { setConfirmLogout(false); logout(); }}
+        onConfirm={() => { setConfirmLogout(false); clearClientSession(); logout(); }}
       />
     </div>
   );

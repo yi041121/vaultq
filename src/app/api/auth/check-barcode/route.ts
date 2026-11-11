@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { withDbRetry } from "@/lib/db-retry";
 
 // GET /api/auth/check-barcode?code=2000132602 — public live check for register form.
 // Returns { exists } only for exact 10-digit codes; fail-open (exists:false)
@@ -10,10 +11,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: { exists: false } });
   }
   try {
-    const existing = await prisma.user.findUnique({
-      where: { cardBarcode: code },
-      select: { id: true },
-    });
+    const existing = await withDbRetry(() =>
+      prisma.user.findUnique({
+        where: { cardBarcode: code },
+        select: { id: true },
+      })
+    );
     return NextResponse.json({ success: true, data: { exists: !!existing } });
   } catch {
     return NextResponse.json({ success: true, data: { exists: false } });

@@ -579,7 +579,7 @@ export default function StudentClaims() {
             </div>
 
             {(detailsClaim.lostReportDescription || detailsClaim.reason) && (
-              <div className="rounded-xl p-4 mb-4" style={{ backgroundColor: c.fill }}>
+              <div className="rounded-xl border p-4 mb-4" style={{ backgroundColor: c.fill, borderColor: c.border }}>
                 <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Claim reason</p>
                 <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
                   {detailsClaim.lostReportDescription || detailsClaim.reason}

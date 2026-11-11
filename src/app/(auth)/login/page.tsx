@@ -6,7 +6,8 @@ import Link from "next/link";
 import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import LockerIllustration from "@/components/locker-illustration";
-import { clearClientSession, isSessionIdle, markSessionActivity } from "@/lib/idle-session";
+import { clearClientSession, isSessionIdle, isTokenExpired, markSessionActivity } from "@/lib/idle-session";
+import { clearStudentCache } from "@/lib/student-cache";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,7 +35,7 @@ export default function LoginPage() {
         const encoded = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") || "";
         const padded = encoded.padEnd(encoded.length + ((4 - (encoded.length % 4)) % 4), "=");
         const payload = JSON.parse(atob(padded));
-        const expired = typeof payload?.exp === "number" && payload.exp * 1000 <= Date.now();
+        const expired = isTokenExpired(token);
         if (!expired) {
           const role = payload?.role === "ADMIN" || (!payload?.role && user?.role === "ADMIN") ? "ADMIN" : "STUDENT";
           document.cookie = `vq_role=${role}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
@@ -51,7 +52,7 @@ export default function LoginPage() {
     }
 
     // No active session — clear any stale role cookie before showing login.
-    document.cookie = "vq_role=; path=/; max-age=0";
+    clearClientSession();
     window.setTimeout(() => setCheckingSession(false), 0);
 
     if (window.location.search.includes("skip=1")) {
@@ -132,10 +133,12 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) { showError(data.error || "Login failed"); setLoading(false); return; }
+      clearStudentCache();
       localStorage.setItem("token", data.data.token);
       localStorage.setItem("user", JSON.stringify(data.data.user));
       markSessionActivity();
       const role = data.data.user.role;
+      document.cookie = `vq_role=${role === "ADMIN" ? "ADMIN" : "STUDENT"}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
       const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
       // Show centered success popup on this page, then redirect quickly —
       // rendered here so it never appears again on the dashboard.
@@ -163,7 +166,7 @@ export default function LoginPage() {
           filter: phase !== "intro" ? "blur(6px) brightness(0.7)" : "none",
         }}>
         <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${c.bg}, ${c.fill})` }} />
-        <LockerIllustration hideIdCard={phase !== "intro"} />
+        <LockerIllustration hideIdCard={phase !== "intro"} animated={phase === "intro"} />
       </div>
 
       {/* Overlay gradient for readability when form appears */}

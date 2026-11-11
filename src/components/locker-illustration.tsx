@@ -4,26 +4,27 @@ import { useState, useEffect } from "react";
 import { Cloud } from "lucide-react";
 import { colors } from "@/lib/design";
 
-export default function LockerIllustration({ hideIdCard }: { hideIdCard?: boolean }) {
+export default function LockerIllustration({ hideIdCard, animated = true }: { hideIdCard?: boolean; animated?: boolean }) {
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
+    if (!animated) return;
     const interval = setInterval(() => {
       setTimer(t => (t >= 56 ? 0 : t + 1));
     }, 150);
     return () => clearInterval(interval);
-  }, []);
+  }, [animated]);
 
   const showPhone = timer >= 13 && timer < 55;
   const autoOpen = timer >= 30 && timer < 55;
   const showIdCard = !hideIdCard && timer < 55;
   const doorOpen = autoOpen;
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden scale-100 md:scale-125"
+    <div className={`relative w-full h-full flex items-center justify-center overflow-hidden scale-100 md:scale-125 ${animated ? "" : "locker-static"}`}
       style={{ background: `linear-gradient(135deg, ${colors.bg}, ${colors.fill})`, perspective: "1000px", transformStyle: "preserve-3d" }}>
       {/* Floating particles with 3D depth */}
       <div className="absolute inset-0" style={{ transformStyle: "preserve-3d" }}>
-        {Array.from({ length: 180 }, (_, i) => {
+        {Array.from({ length: animated ? 180 : 24 }, (_, i) => {
           const a = i * 97.3, b = i * 53.7, c = i * 141.1;
           return {
             l: ((a * 1.7 + b * 0.3) % 96) + 2,

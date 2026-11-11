@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { comparePassword, generateToken } from "@/lib/auth";
+import { withDbRetry } from "@/lib/db-retry";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,9 +16,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid email address" }, { status: 400 });
     }
 
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
-    });
+    const user = await withDbRetry(() =>
+      prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+      })
+    );
     if (!user) {
       return NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
     }
@@ -27,7 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
     }
 
-    if (!(user as any).isActive) {
+    if (!user.isActive) {
       return NextResponse.json({ success: false, error: "Account disabled. Contact admin." }, { status: 403 });
     }
 

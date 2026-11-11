@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
   });
 
   const res = NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+  res.headers.set("Cache-Control", "no-store");
   // CSRF protection: state must match the callback request
   res.cookies.set("g_state", state, {
     httpOnly: true,
@@ -57,6 +58,8 @@ export async function GET(request: NextRequest) {
       sameSite: "lax",
       maxAge: 600,
     });
+  } else {
+    res.cookies.set("g_barcode", "", { path: "/", maxAge: 0 });
   }
   return res;
 }

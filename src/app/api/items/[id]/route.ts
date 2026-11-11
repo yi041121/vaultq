@@ -4,6 +4,8 @@ import { authenticateRequest } from "@/lib/auth";
 import { startsWithNumber } from "@/lib/text-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
+const READ_ONLY_STATUSES = ["CLAIMED", "RETRIEVED"] as const;
+class ItemWriteConflict extends Error {}
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -66,6 +68,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
     const existing = await prisma.item.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
+    if ((READ_ONLY_STATUSES as readonly string[]).includes(existing.status)) {
+      return NextResponse.json({ success: false, error: "Claimed or retrieved items are view-only" }, { status: 409 });
+    }
 
     if (status && !(VALID_STATUS as readonly string[]).includes(status)) {
       return NextResponse.json({ success: false, error: "Invalid status" }, { status: 400 });
@@ -96,22 +101,32 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         }
       }
       const updated = await prisma.$transaction(async (tx) => {
+        // Guard the write itself: a claim may be approved after the initial read.
+        const changed = await tx.item.updateMany({
+          where: { id, status: { notIn: [...READ_ONLY_STATUSES] } },
+          data: { ...data, lockerId: lockerId || null },
+        });
+        if (!changed.count) throw new ItemWriteConflict("The item was claimed and is now view-only");
         // Free old locker
         if (existing.lockerId && existing.lockerId !== lockerId) {
           await tx.locker.update({ where: { id: existing.lockerId }, data: { status: "AVAILABLE" } });
         }
-        const item = await tx.item.update({ where: { id }, data: { ...data, lockerId: lockerId || null } });
         if (lockerId) {
           await tx.locker.update({ where: { id: lockerId }, data: { status: "OCCUPIED" } });
         }
-        return item;
+        return tx.item.findUnique({ where: { id } });
       });
       return NextResponse.json({ success: true, data: updated });
     }
 
-    const item = await prisma.item.update({ where: { id }, data });
+    const item = await prisma.$transaction(async (tx) => {
+      const changed = await tx.item.updateMany({ where: { id, status: { notIn: [...READ_ONLY_STATUSES] } }, data });
+      if (!changed.count) throw new ItemWriteConflict("The item was claimed and is now view-only");
+      return tx.item.findUnique({ where: { id } });
+    });
     return NextResponse.json({ success: true, data: item });
   } catch (e) {
+    if (e instanceof ItemWriteConflict) return NextResponse.json({ success: false, error: e.message }, { status: 409 });
     console.error("Item update failed", e);
     return NextResponse.json({ success: false, error: "Failed to update item" }, { status: 500 });
   }
@@ -127,19 +142,24 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
   try {
     const existing = await prisma.item.findUnique({ where: { id }, include: { _count: { select: { claims: true } } } });
     if (!existing) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
+    if ((READ_ONLY_STATUSES as readonly string[]).includes(existing.status)) {
+      return NextResponse.json({ success: false, error: "Claimed or retrieved items are view-only" }, { status: 409 });
+    }
     if (existing._count.claims > 0) {
       return NextResponse.json({ success: false, error: "Cannot delete item with existing claims" }, { status: 409 });
     }
 
     await prisma.$transaction(async (tx) => {
+      const deleted = await tx.item.deleteMany({ where: { id, status: { notIn: [...READ_ONLY_STATUSES] }, claims: { none: {} } } });
+      if (!deleted.count) throw new ItemWriteConflict("The item has claims or is now view-only");
       if (existing.lockerId) {
         await tx.locker.update({ where: { id: existing.lockerId }, data: { status: "AVAILABLE" } });
       }
-      await tx.item.delete({ where: { id } });
     });
 
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
+    if (e instanceof ItemWriteConflict) return NextResponse.json({ success: false, error: e.message }, { status: 409 });
     console.error("Item delete failed", e);
     return NextResponse.json({ success: false, error: "Failed to delete item" }, { status: 500 });
   }

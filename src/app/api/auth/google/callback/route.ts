@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateToken } from "@/lib/auth";
+import { withDbRetry } from "@/lib/db-retry";
 import { getRequestOrigin } from "@/lib/request-origin";
 
 const CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
 const CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
 const ALLOWED_DOMAIN = "student.tarc.edu.my";
+
+// Allow the connection retries below to finish even on a cold Neon start.
+export const maxDuration = 30;
 
 // GET /api/auth/google/callback — exchanges the auth code, enforces the
 // student domain, creates the student account on first sign-in, then hands
@@ -19,17 +23,35 @@ export async function GET(request: NextRequest) {
   const intent = request.cookies.get("g_intent")?.value === "signup" ? "signup" : "login";
   const carriedBarcode = request.cookies.get("g_barcode")?.value || "";
 
-  const fail = (msg: string) =>
-    NextResponse.redirect(`${origin}/login?skip=1&googleError=${encodeURIComponent(msg)}`);
+  const finish = (response: NextResponse) => {
+    for (const name of ["g_state", "g_intent", "g_barcode"]) {
+      response.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  };
+  const fail = (msg: string) => finish(
+    NextResponse.redirect(`${origin}/login?skip=1&googleError=${encodeURIComponent(msg)}`)
+  );
+
+  if (searchParams.has("error")) {
+    return fail(searchParams.get("error") === "access_denied"
+      ? "Google sign-in permission was not granted. Please try again and allow access."
+      : "Google could not complete sign-in. Please try again.");
+  }
 
   if (!CLIENT_ID || !CLIENT_SECRET || !code || !state || state !== cookieState) {
     return fail("Google login session expired or invalid. Please try again.");
   }
 
+  let stage = "token_exchange";
+  const startedAt = Date.now();
   try {
     // Exchange authorization code for access token
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
@@ -40,16 +62,22 @@ export async function GET(request: NextRequest) {
       }),
     });
     if (!tokenRes.ok) {
-      const details = await tokenRes.text().catch(() => "");
-      console.error("Google token exchange failed", tokenRes.status, details.slice(0, 300));
+      const details = await tokenRes.json().catch(() => null);
+      console.error("Google token exchange failed", {
+        status: tokenRes.status,
+        code: typeof details?.error === "string" ? details.error : "unknown",
+      });
       return fail("Google sign-in was rejected by Google. Please try again, or use email/password.");
     }
     const tokens = (await tokenRes.json()) as { access_token?: string };
     if (!tokens.access_token) return fail("Google login failed. Please try again.");
 
     // Fetch the verified Google profile
+    stage = "google_profile";
     const infoRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     });
     if (!infoRes.ok) {
       console.error("Google userinfo failed", infoRes.status);
@@ -69,9 +97,13 @@ export async function GET(request: NextRequest) {
     const email = String(profile.email || "").trim().toLowerCase();
     if (!profile.email_verified) return fail("Your Google email is not verified. Please try again.");
 
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
-    });
+    stage = "account_lookup";
+    const user = await withDbRetry(() =>
+      prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+        select: { id: true, name: true, email: true, role: true, isActive: true, cardBarcode: true },
+      })
+    );
     if (!user) {
       if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
         return fail(
@@ -85,11 +117,7 @@ export async function GET(request: NextRequest) {
         email,
       });
       if (/^[0-9]{10}$/.test(carriedBarcode)) params.set("barcode", carriedBarcode);
-      const res = NextResponse.redirect(`${origin}/register?${params}`);
-      // The barcode has been handed over — no need to keep the cookie around
-      res.cookies.set("g_barcode", "", { path: "/", maxAge: 0 });
-      res.cookies.set("g_state", "", { path: "/", maxAge: 0 });
-      return res;
+      return finish(NextResponse.redirect(`${origin}/register?${params}`));
     }
     // Existing account + signup intent: do NOT silently log in — the user
     // tried to register with an account that already exists
@@ -98,6 +126,7 @@ export async function GET(request: NextRequest) {
     }
     if (!user.isActive) return fail("Account disabled. Contact admin.");
 
+    stage = "session_creation";
     const token = generateToken({ userId: user.id, role: user.role });
 
     const res = NextResponse.redirect(
@@ -109,10 +138,28 @@ export async function GET(request: NextRequest) {
         `&barcode=${encodeURIComponent(user.cardBarcode || "")}`
     );
     res.cookies.set("vq_role", user.role, { path: "/", sameSite: "lax", maxAge: 60 * 60 * 24 * 7 });
-    // Consume the one-time state cookie
-    res.cookies.set("g_state", "", { path: "/", maxAge: 0 });
-    return res;
-  } catch {
+    return finish(res);
+  } catch (error) {
+    // Do not log OAuth codes, tokens, profiles, or database connection strings.
+    const details = error as { name?: string; code?: string; message?: string; cause?: { code?: string } } | null;
+    // Keep production logs free of PII and query text; local development gets
+    // the message so a connection problem can be diagnosed quickly.
+    const message = process.env.NODE_ENV !== "production"
+      ? String(details?.message || "").replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]").slice(0, 200)
+      : undefined;
+    console.error("Google sign-in failed", {
+      stage,
+      elapsedMs: Date.now() - startedAt,
+      name: details?.name,
+      code: details?.code || details?.cause?.code,
+      message,
+    });
+    if (stage === "account_lookup") {
+      return fail("Could not connect to your account database. Please try signing in again shortly.");
+    }
+    if (stage === "token_exchange" || stage === "google_profile") {
+      return fail("Could not reach Google to complete sign-in. Please try again shortly.");
+    }
     return fail("Google login failed. Please try again, or use email/password.");
   }
 }

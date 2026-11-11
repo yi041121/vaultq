@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { colors } from "@/lib/design";
 import { markSessionActivity } from "@/lib/idle-session";
+import { clearStudentCache } from "@/lib/student-cache";
 
 // Landing point after Google OAuth succeeds. The API callback hands us the
 // app JWT via query params; we store it exactly like the email/password
@@ -24,9 +25,14 @@ export default function AuthCallback() {
     const barcode = sp.get("barcode");
 
     if (token && id && role) {
+      // Remove the JWT and profile data from the address bar and history
+      // entry before storing the session.
+      window.history.replaceState(null, "", "/auth/callback");
+      clearStudentCache();
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify({ id, name, email, role, cardBarcode: barcode || null }));
       markSessionActivity();
+      document.cookie = `vq_role=${role === "ADMIN" ? "ADMIN" : "STUDENT"}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
       // Same centered "Login successful" popup as the sign-in form, then redirect
       setSucceeded(true);
       setTimeout(() => {

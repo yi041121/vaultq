@@ -15,6 +15,10 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { DescriptionBox } from "@/components/description-box";
+import { AdminListSkeleton } from "@/components/admin-list-skeleton";
+import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
+import { ItemDetailsModal } from "@/components/item-details-modal";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
   vcolors as c,
@@ -81,6 +85,7 @@ function statusColor(s: string) {
 }
 
 let itemsCache: Item[] | null = null;
+registerAdminCacheReset(() => { itemsCache = null; });
 
 export default function AdminItems() {
   const router = useRouter();
@@ -88,7 +93,8 @@ export default function AdminItems() {
   const [mounted, setMounted] = useState(false);
   const [items, setItems] = useState<Item[]>(itemsCache ?? []);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("All");
+  const [statusFilter, setStatusFilter] = useState<typeof statusOptions[number]>("FOUND");
+  const [statusOpen, setStatusOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
@@ -122,6 +128,7 @@ export default function AdminItems() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
+  const [viewItem, setViewItem] = useState<Item | null>(null);
 
   function authHeaders(): Record<string, string> {
     const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -142,11 +149,11 @@ export default function AdminItems() {
     };
   }
 
-  async function fetchItems() {
+  async function fetchItems(force = false) {
     if (!itemsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/items", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetchAdminData("/api/items?light=1", localStorage.getItem("token") || "", force);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load items");
       const list = (data.data || []).map(mapApiItem);
@@ -162,7 +169,7 @@ export default function AdminItems() {
 
   async function fetchLockers() {
     try {
-      const res = await fetch("/api/lockers", { headers: authHeaders() });
+      const res = await fetchAdminData("/api/lockers?light=1", localStorage.getItem("token") || "");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return;
       const map: Record<string, string> = {};
@@ -213,7 +220,7 @@ export default function AdminItems() {
 
   useEscapeKey(formDateOpen, () => setFormDateOpen(false));
   useEscapeKey(formCatOpen || formLockerOpen, () => { setFormCatOpen(false); setFormLockerOpen(false); });
-  useEscapeKey(categoryOpen || sortOpen, () => { setCategoryOpen(false); setSortOpen(false); });
+  useEscapeKey(statusOpen || categoryOpen || sortOpen, () => { setStatusOpen(false); setCategoryOpen(false); setSortOpen(false); });
   useEscapeKey(showModal, closeItemModal, !saving && !formDateOpen && !formCatOpen && !formLockerOpen);
   useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
 
@@ -233,7 +240,7 @@ export default function AdminItems() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const hasFilters = !!(query || statusFilter !== "All" || categoryFilter);
+  const hasFilters = !!(query || statusFilter !== "FOUND" || categoryFilter || sortOrder !== "newest");
 
   function openAdd() {
     setEditing(null);
@@ -241,6 +248,7 @@ export default function AdminItems() {
     setShowModal(true);
   }
   function openEdit(it: Item) {
+    if (it.status === "CLAIMED" || it.status === "RETRIEVED") { setViewItem(it); return; }
     setEditing(it);
     setFormName(it.name); setFormCategory(it.category); setFormLocation(it.location); setFormDate(it.date); setFormLocker(it.locker || ""); setFormDesc(it.description || ""); setFormPhoto(null); setFormPreview(it.imageUrl || null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
@@ -390,7 +398,8 @@ export default function AdminItems() {
       setFormCatOpen(false);
       setFormLockerOpen(false);
       setFormDateOpen(false);
-      await fetchItems();
+      invalidateAdminData();
+      await fetchItems(true);
       await fetchLockers();
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Save failed");
@@ -400,6 +409,7 @@ export default function AdminItems() {
   }
 
   function openDelete(it: Item) {
+    if (it.status === "CLAIMED" || it.status === "RETRIEVED") { setViewItem(it); return; }
     setDeleteTarget(it);
   }
   function closeDelete() {
@@ -416,7 +426,8 @@ export default function AdminItems() {
       if (!res.ok) throw new Error(data.error || "Failed to delete item");
       showCenteredMessage("success", `Item ${deleteTarget.id} removed`);
       closeDelete();
-      await fetchItems();
+      invalidateAdminData();
+      await fetchItems(true);
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Delete failed");
     }
@@ -427,31 +438,36 @@ export default function AdminItems() {
       <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           <FilterPanel
+            actions={<VButton size="md" onClick={openAdd}><Plus size={15} /> Add Item</VButton>}
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
                 size="lg" clearable placeholder="Search items..." />
             }
-            actions={
-              <VButton size="md" onClick={openAdd} className="w-full sm:w-auto">
-                <Plus size={15} /> Add Item
-              </VButton>
-            }
             filters={
               <>
-                <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
-                  {statusOptions.map((s) => (
-                    <button key={s} type="button"
-                      className="px-2 sm:px-3 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                      style={{ backgroundColor: statusFilter === s ? c.primary : "transparent", color: statusFilter === s ? "#fff" : c.textMuted }}
-                      onClick={() => { setStatusFilter(s); setPage(1); }}>
-                      {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
-                    </button>
-                  ))}
-                </div>
+                <VDropdown open={statusOpen} onOpenChange={setStatusOpen} width="w-36"
+                  trigger={
+                    <VFilterButton aria-label="Item status" aria-expanded={statusOpen} aria-controls="item-status-options"
+                      active={statusFilter !== "FOUND"} onClick={() => { setCategoryOpen(false); setSortOpen(false); setStatusOpen(!statusOpen); }}>
+                      <span>{statusFilter === "All" ? "All statuses" : statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()}</span>
+                      <ChevronDown size={12} />
+                    </VFilterButton>
+                  }>
+                  {(close) => (
+                    <div id="item-status-options" role="group" aria-label="Item status options">
+                      {statusOptions.map((value) => (
+                        <VDropdownItem key={value} active={statusFilter === value}
+                          onSelect={() => { setStatusFilter(value); setPage(1); close(); }}>
+                          {value === "All" ? "All statuses" : value.charAt(0) + value.slice(1).toLowerCase()}
+                        </VDropdownItem>
+                      ))}
+                    </div>
+                  )}
+                </VDropdown>
 
                 <VDropdown open={categoryOpen} onOpenChange={setCategoryOpen}
                   trigger={
-                    <VFilterButton active={!!categoryFilter} className="pl-3 pr-8 relative" onClick={() => setCategoryOpen(!categoryOpen)}>
+                    <VFilterButton active={!!categoryFilter} className="pl-3 pr-8 relative" onClick={() => { setStatusOpen(false); setSortOpen(false); setCategoryOpen(!categoryOpen); }}>
                       {categoryFilter ? (
                         <>{(() => { const cc = categories.find(v => v.label === categoryFilter); return cc ? <cc.icon size={14} style={{ color: cc.color }} /> : null; })()}<span>{categoryFilter}</span></>
                       ) : (
@@ -473,7 +489,7 @@ export default function AdminItems() {
 
                 <VDropdown open={sortOpen} onOpenChange={setSortOpen} width="w-32"
                   trigger={
-                    <VFilterButton onClick={() => setSortOpen(!sortOpen)}>
+                    <VFilterButton active={sortOrder !== "newest"} onClick={() => { setStatusOpen(false); setCategoryOpen(false); setSortOpen(!sortOpen); }}>
                       <ArrowUpDown size={13} style={{ color: c.textMuted }} /><span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span><ChevronDown size={12} className="text-[#64748b]" />
                     </VFilterButton>
                   }>
@@ -487,13 +503,11 @@ export default function AdminItems() {
                 </VDropdown>
               </>
             }
-            reset={hasFilters ? (
-              <ResetFiltersButton onClick={() => { setQuery(""); setStatusFilter("All"); setCategoryFilter(null); setSortOrder("newest"); setPage(1); }} />
-            ) : null}
+            reset={<ResetFiltersButton disabled={!hasFilters} onClick={() => { setQuery(""); setStatusFilter("FOUND"); setCategoryFilter(null); setSortOrder("newest"); setPage(1); }} />}
           />
 
           {/* Grid */}
-          {loading ? null : loadError ? (
+          {loading ? <AdminListSkeleton /> : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Package size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
@@ -510,12 +524,12 @@ export default function AdminItems() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1 content-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 min-w-0 content-start">
                 {paginated.map((it) => {
                   const Icon = filterIcons[it.category] || Package;
                   return (
-                    <VCard key={it.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-                      <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden shrink-0"
+                    <VCard key={it.id} className="p-5 min-w-0 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                      <div className="vq-admin-photo rounded-xl mb-4 flex items-center justify-center relative"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                         {it.imageUrl ? (
                           <button type="button" aria-label={`View ${it.name} photo`}
@@ -551,19 +565,23 @@ export default function AdminItems() {
                         )}
                       </p>
                       {it.description && (
-                        <p className="text-xs mt-2 line-clamp-2" style={{ color: c.textMuted }}>{it.description}</p>
+                        <DescriptionBox title="Description" className="mt-2">{it.description}</DescriptionBox>
                       )}
                       <div className="flex items-center gap-2 mt-auto pt-4">
+                        {it.status === "CLAIMED" || it.status === "RETRIEVED" ? (
+                          <VButton variant="secondary" className="w-full" onClick={() => setViewItem(it)}><Eye size={13} /> View</VButton>
+                        ) : <>
                         <button type="button" onClick={() => openEdit(it)}
                           className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                           style={{ borderColor: c.border, color: c.textMuted }}>
                           <Pencil size={13} /> Edit
                         </button>
-                        <button type="button" onClick={() => openDelete(it)}
+                        <button type="button" aria-label={`Delete ${it.name}`} onClick={() => openDelete(it)}
                           className="w-9 h-9 rounded-xl border bg-white flex items-center justify-center transition-colors duration-200 cursor-pointer"
                           style={{ borderColor: c.border, color: c.danger }}>
                           <Trash2 size={14} />
                         </button>
+                        </>}
                       </div>
                     </VCard>
                   );
@@ -579,6 +597,12 @@ export default function AdminItems() {
           )}
         </div>
       </main>
+
+      {viewItem && <ItemDetailsModal title={viewItem.name} statusLabel={viewItem.status === "RETRIEVED" ? "Retrieved" : "Claimed"}
+        statusColor={statusColor(viewItem.status)} category={viewItem.category} location={viewItem.location} date={fmtDay(viewItem.date)}
+        description={viewItem.description} photos={viewItem.imageUrl ? [viewItem.imageUrl] : []}
+        onViewPhoto={() => void openItemPhotos(viewItem)} onClose={() => setViewItem(null)}
+        footer={<VButton variant="secondary" onClick={() => setViewItem(null)}>Close</VButton>} />}
 
       {/* Add/Edit modal */}
       {showModal && (

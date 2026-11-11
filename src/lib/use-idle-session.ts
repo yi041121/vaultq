@@ -27,6 +27,7 @@ export function useIdleSession(router: SessionRouter) {
       token = null;
     }
     if (!token) {
+      clearClientSession();
       router.replace("/login?skip=1&expired=1");
       return;
     }
@@ -55,7 +56,13 @@ export function useIdleSession(router: SessionRouter) {
     markSessionActivity();
 
     const schedule = () => {
+      if (expired) return;
       if (timer) window.clearTimeout(timer);
+      const currentToken = localStorage.getItem("token");
+      if (!currentToken || isTokenExpired(currentToken)) {
+        expire();
+        return;
+      }
       let last = Date.now();
       try {
         const stored = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
@@ -68,10 +75,17 @@ export function useIdleSession(router: SessionRouter) {
         expire();
         return;
       }
-      timer = window.setTimeout(expire, remaining);
+      // Re-check the current session: another tab may have signed in again.
+      // Check JWT expiry even while activity keeps extending the idle timer.
+      timer = window.setTimeout(schedule, Math.min(remaining, 30_000));
     };
 
     const onActivity = () => {
+      if (expired) return;
+      if (isSessionIdle()) {
+        expire();
+        return;
+      }
       const now = Date.now();
       if (now - lastWrite >= 1000) {
         lastWrite = now;
@@ -85,8 +99,8 @@ export function useIdleSession(router: SessionRouter) {
         schedule();
         return;
       }
-      if (event.key === "token" && !event.newValue) {
-        expire();
+      if (event.key === "token") {
+        schedule();
       }
     };
 

@@ -3,11 +3,28 @@
 import React from "react";
 import { RotateCcw } from "lucide-react";
 import { colors } from "@/lib/design";
+import { VFilterButton } from "@/components/ui/vault";
+
+/** Shared outlined status buttons used throughout the admin pages. */
+export function AdminStatusFilters<T extends string>({ options, value, onChange }: {
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div role="group" aria-label="Filter by status" className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+      {options.map((option) => (
+        <VFilterButton key={option.value} active={value === option.value} onClick={() => onChange(option.value)}>
+          {option.label}
+        </VFilterButton>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Consistent filter layout:
- *   phone: search, filters, then reset on its own row
- *   desktop: search + primary action, then filters and reset on one row
+ * Search and record actions stay together; filters can wrap independently.
  */
 export function FilterPanel({
   search,
@@ -24,13 +41,13 @@ export function FilterPanel({
 }) {
   return (
     <div className={`space-y-3 mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0 ${className}`}>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 lg:contents">
-        <div className="w-full sm:max-w-md lg:w-[420px] lg:max-w-none lg:flex-none">{search}</div>
-        {actions && <div className="flex items-center gap-2 sm:ml-auto lg:order-3 lg:ml-0 lg:shrink-0">{actions}</div>}
+      <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
+        <div className="min-w-0 flex-1 sm:max-w-md lg:w-[360px] xl:w-[420px] lg:max-w-none lg:flex-none">{search}</div>
+        {actions && <div role="group" aria-label="Page actions" className="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
       {(filters || reset) && (
-        <div className="lg:order-2 lg:ml-auto lg:flex lg:flex-nowrap lg:items-start lg:gap-2">
-          {filters && <div className="flex flex-wrap items-center gap-2">{filters}</div>}
+        <div className="min-w-0 max-w-full lg:order-2 lg:ml-auto lg:flex lg:flex-wrap lg:items-start lg:gap-2">
+          {filters && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{filters}</div>}
           {reset && <div className="mt-3 flex items-center lg:mt-0">{reset}</div>}
         </div>
       )}
@@ -38,13 +55,14 @@ export function FilterPanel({
   );
 }
 
-export function ResetFiltersButton({ onClick }: { onClick: () => void }) {
+export function ResetFiltersButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer hover:bg-[#f8fafc] whitespace-nowrap shrink-0"
-      style={{ borderColor: colors.border, color: colors.primary }}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer enabled:hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap shrink-0"
+      style={{ borderColor: colors.border, color: disabled ? colors.textMuted : colors.primary }}
     >
       <RotateCcw size={13} />
       <span>Reset filters</span>

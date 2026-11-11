@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, generateToken } from "@/lib/auth";
+import { withDbRetry } from "@/lib/db-retry";
 import { getPersonNameError } from "@/lib/person-name";
 
 export async function POST(request: NextRequest) {
@@ -35,13 +36,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits (e.g. 2000132602)" }, { status: 400 });
     }
     if (cardBarcode) {
-      const existing = await prisma.user.findUnique({ where: { cardBarcode } });
+      const existing = await withDbRetry(() => prisma.user.findUnique({ where: { cardBarcode } }));
       if (existing) return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
     }
     if (email) {
-      const dupeEmail = await prisma.user.findFirst({
-        where: { email: { equals: email, mode: "insensitive" } },
-      });
+      const dupeEmail = await withDbRetry(() =>
+        prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
+        })
+      );
       if (dupeEmail) return NextResponse.json({ success: false, error: "Email already registered" }, { status: 409 });
     }
 

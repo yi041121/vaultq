@@ -9,7 +9,10 @@ import {
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
-import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { AdminStatusFilters, FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { DescriptionBox } from "@/components/description-box";
+import { AdminListSkeleton } from "@/components/admin-list-skeleton";
+import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import {
   VCard, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
@@ -77,6 +80,7 @@ function fmtDay(value: string | null) {
 }
 
 let reportsCache: UserReport[] | null = null;
+registerAdminCacheReset(() => { reportsCache = null; });
 
 export default function AdminReports() {
   const router = useRouter();
@@ -149,7 +153,7 @@ export default function AdminReports() {
     if (!reportsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/reports?light=1", { headers: authHeaders(), cache: "no-store" });
+      const res = await fetchAdminData("/api/reports?light=1", localStorage.getItem("token") || "");
       if (res.status === 401) {
         redirectUnauthorized();
         return;
@@ -372,6 +376,7 @@ export default function AdminReports() {
       }
       showCenteredMessage("success", successMessage);
       setMatchTarget(null);
+      invalidateAdminData();
       await fetchReports();
       await fetchSupporting();
       return true;
@@ -396,6 +401,7 @@ export default function AdminReports() {
       if (!res.ok || !data?.success) throw new Error(data.error || "Failed to match report");
       showCenteredMessage("success", "Report matched — pending claim created for review");
       setMatchTarget(null);
+      invalidateAdminData();
       await fetchReports();
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Failed to match report");
@@ -474,6 +480,7 @@ export default function AdminReports() {
       }
       showCenteredMessage("success", "Found report verified and item logged");
       setVerifyReport(null);
+      invalidateAdminData();
       await fetchReports();
       await fetchSupporting();
     } catch (e) {
@@ -504,6 +511,7 @@ export default function AdminReports() {
       reportsCache = null;
       setAssignLockerReport(null);
       showCenteredMessage("success", lockerNumber ? `Locker ${lockerNumber} assigned` : "Locker assigned");
+      invalidateAdminData();
       await Promise.all([fetchReports(), fetchSupporting()]);
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to assign locker");
@@ -583,24 +591,16 @@ export default function AdminReports() {
                 size="lg" clearable placeholder="Search item or student..." />
             }
             filters={
-              <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
-                {statusOptions.map((status) => (
-                  <button key={status} type="button"
-                    className="px-2 sm:px-3 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                    style={{
-                      backgroundColor: filterStatus === status ? c.primary : "transparent",
-                      color: filterStatus === status ? "#fff" : c.textMuted,
-                    }}
-                    onClick={() => setFilterStatus(status)}>
-                    {statusLabel[status]}
-                  </button>
-                ))}
-              </div>
+              <AdminStatusFilters
+                options={statusOptions.map((value) => ({ value, label: statusLabel[value] }))}
+                value={filterStatus}
+                onChange={setFilterStatus}
+              />
             }
-            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
+            reset={<ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} />}
           />
 
-          {loading ? null : loadError ? (
+          {loading ? <AdminListSkeleton /> : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <PackageSearch size={40} className="mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
@@ -622,15 +622,15 @@ export default function AdminReports() {
               </p>
             </VCard>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 content-start min-w-0">
               {filtered.map((report) => {
                 const CategoryIcon = categoryIcon(report.category);
                 return (
-                <VCard key={report.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                <VCard key={report.id} className="p-5 min-w-0 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                   <button type="button"
                     aria-label={report.images.length ? `View ${report.itemName} photos` : `${report.itemName} has no photos`}
                     disabled={report.images.length === 0}
-                    className={`w-full h-40 rounded-xl mb-4 relative overflow-hidden flex items-center justify-center shrink-0 group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
+                    className={`vq-admin-photo rounded-xl mb-4 relative flex items-center justify-center group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
                     style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                     onClick={() => {
                       if (report.images.length) {
@@ -664,11 +664,6 @@ export default function AdminReports() {
 
                   <div className="flex items-center gap-2 mb-1 min-w-0">
                     <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
-                    <VBadge
-                      color={report.type === "FOUND" ? "#16a34a" : c.textMuted}
-                      style={{ border: `1px solid ${report.type === "FOUND" ? "#86efac" : c.border}` }}>
-                      {report.typeLabel}
-                    </VBadge>
                     <VBadge color={report.color} className="ml-auto"
                       style={{ border: `1px solid color-mix(in srgb, ${report.color} 25%, transparent)` }}>
                       {statusLabel[report.status]}
@@ -708,10 +703,9 @@ export default function AdminReports() {
                     </span>
                   </div>
 
-                  <p className="text-xs leading-relaxed mb-3 px-2.5 py-2 rounded-lg line-clamp-3"
-                    style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                    {report.description}
-                  </p>
+                  <DescriptionBox title="Description" className="mb-3" contentClassName="line-clamp-3">
+                    {report.description || "No description provided."}
+                  </DescriptionBox>
 
                   {report.status === "PENDING" && (
                     <div className="mt-auto flex items-center gap-2 pt-4">

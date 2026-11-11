@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { NextRequest } from "next/server";
 import { prisma } from "./prisma";
+import { withDbRetry } from "./db-retry";
 
 const JWT_SECRET = process.env.JWT_SECRET || "vaultq-secret-key-change-in-production";
 
@@ -28,11 +29,13 @@ export async function authenticateRequest(request: NextRequest) {
   try {
     const token = authHeader.slice(7);
     const payload = verifyToken(token);
-    const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
-      select: { id: true, name: true, email: true, role: true, cardBarcode: true, isActive: true },
-    });
-    if (!user || !(user as any).isActive) return null;
+    const user = await withDbRetry(() =>
+      prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { id: true, name: true, email: true, role: true, cardBarcode: true, isActive: true },
+      })
+    );
+    if (!user || !user.isActive) return null;
     return user;
   } catch {
     return null;

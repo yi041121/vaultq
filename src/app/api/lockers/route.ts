@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { signedImageUrl } from "@/lib/image-url";
 
 const VALID_STATUS = ["AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const;
 
@@ -24,7 +25,11 @@ export async function GET(request: NextRequest) {
       orderBy: { lockerNumber: "asc" },
     });
 
-    return NextResponse.json({ success: true, data: lockers });
+    const data = searchParams.get("light") === "1" ? lockers.map(locker => ({
+      ...locker,
+      item: locker.item ? { ...locker.item, imageUrl: locker.item.imageUrl ? signedImageUrl("item", locker.item.id, 0, locker.item.imageUrl) : null } : null,
+    })) : lockers;
+    return NextResponse.json({ success: true, data });
   } catch (e) {
     console.error("Lockers list failed", e);
     return NextResponse.json({ success: false, error: "Failed to list lockers" }, { status: 500 });

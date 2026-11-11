@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { signedImageUrl } from "@/lib/image-url";
+import { uniquePhotos } from "@/lib/photo-gallery";
 
 /** Thrown when the item stops being available while a claim is submitted. */
 class ClaimConflict extends Error {}
@@ -29,7 +30,8 @@ export async function GET(request: NextRequest) {
             locker: { select: { lockerNumber: true } },
             reports: {
               where: { type: "FOUND", status: "VERIFIED" },
-              select: { id: true, imageUrls: true },
+              select: { id: true, imageUrl: true, imageUrls: true },
+              orderBy: { createdAt: "desc" },
               take: 1,
             },
           },
@@ -100,6 +102,15 @@ export async function GET(request: NextRequest) {
         : fallback?.photos || [];
       return {
         ...claim,
+        item: {
+          ...claim.item,
+          imageUrls: uniquePhotos([
+            claim.item.imageUrl,
+            ...(claim.item.reports[0]?.imageUrls?.length
+              ? claim.item.reports[0].imageUrls
+              : [claim.item.reports[0]?.imageUrl]),
+          ]),
+        },
         evidenceImageUrls: photos,
         evidenceImageUrl: claim.evidenceImageUrl || photos[0] || null,
         // Uploaded evidence uses the claim time; matched claims use the
@@ -138,15 +149,17 @@ export async function GET(request: NextRequest) {
           .map((source, index) => signedImageUrl("claim", claim.id, index, source))
           .filter(Boolean);
         const foundReport = claim.item?.reports?.[0];
-        const itemReportUrls = Array.isArray(foundReport?.imageUrls)
+        const reportSources: string[] = foundReport?.imageUrls?.length
           ? foundReport.imageUrls
-              .map((source: string, index: number) => signedImageUrl("report", foundReport.id, index, source))
-              .filter(Boolean)
-          : [];
-        const itemMain = claim.item?.imageUrl
-          ? signedImageUrl("item", claim.itemId, 0, claim.item.imageUrl)
-          : "";
-        const itemUrls = Array.from(new Set([itemMain, ...itemReportUrls].filter(Boolean)));
+          : foundReport?.imageUrl ? [foundReport.imageUrl] : [];
+        const itemReportUrls = reportSources.map((source, index) => signedImageUrl("report", foundReport.id, index, source));
+        // Use original source equality, not the different item/report URLs.
+        // Retain the original report index so photo 2 still resolves correctly.
+        const itemUrls = (claim.item?.imageUrls || []).map((source: string) =>
+          source === claim.item.imageUrl
+            ? signedImageUrl("item", claim.itemId, 0, source)
+            : signedImageUrl("report", foundReport.id, reportSources.indexOf(source), source),
+        );
         return {
           ...claim,
           evidenceImageUrls: evidenceUrls,
@@ -155,8 +168,9 @@ export async function GET(request: NextRequest) {
             ? {
                 ...claim.item,
                 imageUrl: itemUrls[0] || null,
+                imageUrls: itemUrls,
                 reports: foundReport
-                  ? [{ ...foundReport, imageUrls: itemReportUrls }]
+                  ? [{ ...foundReport, imageUrl: itemReportUrls[0] || null, imageUrls: itemReportUrls }]
                   : [],
               }
             : claim.item,

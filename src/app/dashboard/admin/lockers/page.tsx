@@ -10,7 +10,9 @@ import {
 import { showCenteredMessage } from "@/components/centered-message";
 import { StudentShell } from "@/components/student-shell";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
-import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { AdminStatusFilters, FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { AdminListSkeleton } from "@/components/admin-list-skeleton";
+import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { categoryIcon } from "@/lib/category-icons";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { matchesSearch } from "@/lib/search";
@@ -69,6 +71,7 @@ function fmtItemDate(value: string) {
 }
 
 let lockersCache: Locker[] | null = null;
+registerAdminCacheReset(() => { lockersCache = null; });
 
 export default function AdminLockers() {
   const router = useRouter();
@@ -88,7 +91,7 @@ export default function AdminLockers() {
   const [manageOpen, setManageOpen] = useState(false);
   const [newLockerNumber, setNewLockerNumber] = useState("");
   const [addingLocker, setAddingLocker] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(lockersCache === null);
   const [apiLive, setApiLive] = useState(false);
   const [unassignedItems, setUnassignedItems] = useState<{ id: string; name: string; category: string; imageUrl?: string | null }[]>([]);
 
@@ -108,7 +111,7 @@ export default function AdminLockers() {
 
   async function fetchLockers() {
     try {
-      const res = await fetch("/api/lockers", { headers: authHeaders() });
+      const res = await fetchAdminData("/api/lockers?light=1", localStorage.getItem("token") || "");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load lockers");
       const list = (data.data || []).map(mapApiLocker);
@@ -164,6 +167,7 @@ export default function AdminLockers() {
   });
 
   async function refresh() {
+    invalidateAdminData();
     await fetchLockers();
     await fetchUnassigned();
   }
@@ -333,6 +337,7 @@ export default function AdminLockers() {
       showCenteredMessage("success", `Locker ${number} added`);
       setNewLockerNumber("");
       lockersCache = null;
+      invalidateAdminData();
       await fetchLockers();
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Failed to add locker");
@@ -358,6 +363,7 @@ export default function AdminLockers() {
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to delete locker");
       showCenteredMessage("success", `Locker ${locker.number} deleted`);
       lockersCache = null;
+      invalidateAdminData();
       await fetchLockers();
     } catch (e: any) {
       showCenteredMessage("error", e?.message || "Failed to delete locker");
@@ -376,45 +382,33 @@ export default function AdminLockers() {
       <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full h-full flex flex-col">
           <FilterPanel
+            actions={<VButton variant="secondary" size="md" onClick={() => setManageOpen(true)}><Pencil size={14} /> Edit Lockers</VButton>}
             search={
               <VSearchInput value={query} onChange={setQuery} className="w-full"
                 size="lg" clearable placeholder="Search locker or item..." />
             }
-            actions={
-              <button type="button" aria-label="Manage lockers" title="Manage lockers"
-                onClick={() => setManageOpen(true)}
-                className="w-full sm:w-auto h-10 px-3 rounded-xl border bg-white inline-flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
-                style={{ borderColor: c.border, color: c.textMuted }}>
-                <Pencil size={14} /> Edit
-              </button>
-            }
             filters={
-              <div className="vq-scroll-x flex h-10 rounded-xl border bg-white shrink-0" style={{ borderColor: c.border }}>
-                {(["All", "AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const).map((s) => (
-                  <button key={s} type="button"
-                    className="px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer"
-                    style={{ backgroundColor: filter === s ? c.primary : "transparent", color: filter === s ? "#fff" : c.textMuted }}
-                    onClick={() => setFilter(s)}>
-                    {s === "All" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
-                  </button>
-                ))}
-              </div>
+              <AdminStatusFilters
+                options={(["All", "AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const).map((value) => ({ value, label: value === "All" ? "All" : value.charAt(0) + value.slice(1).toLowerCase() }))}
+                value={filter}
+                onChange={setFilter}
+              />
             }
-            reset={hasFilters ? <ResetFiltersButton onClick={resetFilters} /> : null}
+            reset={<ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} />}
           />
 
           {/* Grid */}
-          {loading ? null : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1">
+          {loading ? <AdminListSkeleton /> : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 content-start min-w-0">
             {filtered.map((l) => (
-              <VCard key={l.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-md" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+              <VCard key={l.id} className="p-5 min-w-0 flex flex-col transition-all duration-200 hover:shadow-md" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
                 <div className="flex items-center gap-2 mb-3">
                   <h3 className="text-sm font-bold" style={{ color: c.text }}>{l.number}</h3>
                   <span className="ml-auto text-[11px] font-medium" style={{ color: statusColor(l.status) }}>
                     {l.status.charAt(0) + l.status.slice(1).toLowerCase()}
                   </span>
                 </div>
-                <div className="w-full h-28 rounded-xl mb-3 flex flex-col items-center justify-center gap-1.5 relative overflow-hidden"
+                <div className="vq-admin-photo rounded-xl mb-3 flex flex-col items-center justify-center gap-1.5 relative"
                   style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                   {l.item?.imageUrl ? (
                     <button type="button"

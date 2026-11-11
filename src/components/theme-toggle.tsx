@@ -3,13 +3,9 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { colors } from "@/lib/design";
+import { setTheme } from "@/lib/theme";
 
 const STORAGE_KEY = "vaultq-theme";
-
-function setTheme(dark: boolean) {
-  document.documentElement.classList.toggle("dark", dark);
-  document.documentElement.style.colorScheme = dark ? "dark" : "light";
-}
 
 /** Small light/dark switch that sits beside the notification bell. */
 export function ThemeToggle() {
@@ -47,12 +43,13 @@ export function ThemeToggle() {
       title={dark ? "Light mode" : "Dark mode"}
       aria-pressed={dark}
       onClick={toggle}
-      className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200"
+      className="relative w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200"
       style={{ backgroundColor: colors.borderLight, color: dark ? "#fbbf24" : colors.textMuted }}
       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = colors.primarySoft; }}
       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = colors.borderLight; }}
     >
-      {mounted && dark ? <Sun size={18} /> : <Moon size={18} />}
+      <Sun size={18} data-theme-icon className={`absolute transition-[opacity,transform] duration-300 motion-reduce:transition-none ${mounted && dark ? "opacity-100 rotate-0 scale-100" : "opacity-0 -rotate-90 scale-75"}`} />
+      <Moon size={18} data-theme-icon className={`absolute transition-[opacity,transform] duration-300 motion-reduce:transition-none ${mounted && dark ? "opacity-0 rotate-90 scale-75" : "opacity-100 rotate-0 scale-100"}`} />
     </button>
   );
 }
