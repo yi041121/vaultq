@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { validateReportDetails } from "@/lib/report-validation";
+import { uniquePhotos } from "@/lib/photo-gallery";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -77,7 +78,8 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
             return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
           }
         }
-        imageUpdate = { imageUrls: body.imageUrls, imageUrl: body.imageUrls[0] || null };
+        const nextImages = uniquePhotos(body.imageUrls);
+        imageUpdate = { imageUrls: nextImages, imageUrl: nextImages[0] || null };
       }
 
       const duplicate = await prisma.report.findFirst({
@@ -137,9 +139,10 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
           return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
         }
       }
+      const nextImages = uniquePhotos(body.imageUrls);
       const updated = await prisma.report.update({
         where: { id },
-        data: { imageUrls: body.imageUrls, imageUrl: body.imageUrls[0] || null },
+        data: { imageUrls: nextImages, imageUrl: nextImages[0] || null },
         include: REPORT_INCLUDE,
       });
       return NextResponse.json({ success: true, data: updated });

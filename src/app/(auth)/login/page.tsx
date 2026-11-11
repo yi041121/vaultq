@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [succeeded, setSucceeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loggedOut, setLoggedOut] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [form, setForm] = useState({ email: "", password: "" });
   const [phase, setPhase] = useState<"intro" | "transitioning" | "complete">("intro");
@@ -60,13 +61,19 @@ export default function LoginPage() {
       setPhase("complete");
     }
     // Centered "Logged out" popup (redirected back with ?loggedOut=1)
-    if (new URLSearchParams(window.location.search).get("loggedOut") === "1") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("loggedOut") === "1") {
       setLoggedOut(true);
       setTimeout(() => setLoggedOut(false), 1500);
       window.history.replaceState(null, "", "/login?skip=1");
     }
+    // New account created — confirm, then let the user sign in.
+    if (params.get("registered") === "1") {
+      setRegistered(true);
+      setTimeout(() => setRegistered(false), 2500);
+      window.history.replaceState(null, "", "/login?skip=1");
+    }
     // Surface errors from the Google OAuth callback (redirected back with ?googleError=...)
-    const params = new URLSearchParams(window.location.search);
     const googleError = params.get("googleError");
     if (googleError) {
       showError(googleError, 5000);
@@ -306,6 +313,21 @@ export default function LoginPage() {
             </div>
             <p className="text-base font-semibold" style={{ color: c.text }}>Logged out</p>
             <p className="text-xs mt-1" style={{ color: c.textMuted }}>See you again soon</p>
+          </div>
+        </div>
+      )}
+
+      {/* Centered "Account created" popup — the sign-up flow never auto-logs in */}
+      {registered && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+          style={{ backgroundColor: "rgba(15,23,42,0.35)" }} onClick={() => setRegistered(false)}>
+          <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
+            style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
+              <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
+            </div>
+            <p className="text-base font-semibold" style={{ color: c.text }}>Account created</p>
+            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Sign in with your new account</p>
           </div>
         </div>
       )}

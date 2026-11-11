@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2, Pencil, Check } from "lucide-react";
+import { User, Mail, Save, LogOut, Barcode, Camera, Upload, GraduationCap, Loader2, CheckCircle2 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentBarcodeModal } from "@/components/student-barcode-modal";
@@ -33,7 +33,6 @@ export default function StudentProfile() {
   const [readingImage, setReadingImage] = useState(false);
   const [barcodeFromImage, setBarcodeFromImage] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-  const [barcodeEditing, setBarcodeEditing] = useState(false);
   const [showBarcodeCard, setShowBarcodeCard] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
@@ -153,7 +152,9 @@ export default function StudentProfile() {
         body: JSON.stringify({
           name: name.trim().replace(/\s+/g, " "),
           studentId: sid || null,
-          ...(barcode ? { cardBarcode: barcode } : {}),
+          // The barcode is immutable after sign-up. Only legacy accounts with
+          // no barcode yet may set one.
+          ...(!user?.cardBarcode && barcode ? { cardBarcode: barcode } : {}),
         }),
       });
       const data = await res.json().catch(() => null);
@@ -176,9 +177,8 @@ export default function StudentProfile() {
       setStudentId(cleanStudentId(updated.studentId));
       setBarcode(updated.cardBarcode || "");
       localStorage.setItem("user", JSON.stringify(updated));
-      // Saved — replace the success message with the "change your barcode" hint.
+      // Saved — clear the detected-from-image state.
       setBarcodeFromImage(false);
-      setBarcodeEditing(false);
       showCenteredMessage("success", "Profile updated");
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to update profile");
@@ -191,6 +191,7 @@ export default function StudentProfile() {
 
   const needsBarcode = !user.cardBarcode;
   const savedBarcode = user.cardBarcode || "";
+  const barcodeLocked = !!savedBarcode;
   const savedStudentId = cleanStudentId(user.studentId);
   const isDirty =
     normalizePersonName(name) !== normalizePersonName(user.name) ||
@@ -254,18 +255,18 @@ export default function StudentProfile() {
 
               <div className="space-y-1.5">
                 <label className="text-sm font-medium block" style={{ color: c.text }}>Barcode <span style={{ color: c.danger }}>*</span></label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
+                <div className="flex flex-wrap gap-2">
+                  <div className="relative w-full min-w-0 sm:w-auto sm:flex-1">
                     <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                     <VInput
                       id="profile-card-barcode"
                       type="text"
-                      placeholder={barcodeEditing ? "Enter 10-digit barcode" : "10-digit card barcode"}
+                      placeholder={barcodeLocked ? "10-digit card barcode" : "Enter 10-digit barcode"}
                       maxLength={10}
                       inputMode="numeric"
-                      className={`pl-9 ${barcodeEditing ? "" : "cursor-default"}`}
-                      readOnly={!barcodeEditing}
-                      aria-readonly={!barcodeEditing}
+                      className={`pl-9 ${barcodeLocked ? "cursor-default" : ""}`}
+                      readOnly={barcodeLocked}
+                      aria-readonly={barcodeLocked}
                       onChange={(e) => {
                         setBarcode(e.target.value.replace(/\D/g, "").slice(0, 10));
                         setBarcodeError(null);
@@ -275,23 +276,21 @@ export default function StudentProfile() {
                       value={barcode}
                     />
                   </div>
-                  <button type="button"
-                    onClick={() => { setBarcodeEditing((editing) => !editing); setBarcodeError(null); }}
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
-                    style={{ borderColor: barcodeEditing ? c.primary : c.border, backgroundColor: c.card, color: barcodeEditing ? c.primary : c.textMuted }}
-                    title={barcodeEditing ? "Done editing barcode" : "Enter barcode manually"}>
-                    {barcodeEditing ? <Check size={16} /> : <Pencil size={16} />}
-                  </button>
-                  <label className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
-                    style={{ borderColor: readingImage ? c.primary : c.border, backgroundColor: c.card, color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
-                    {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={readingImage} />
-                  </label>
-                  <button type="button" onClick={() => setShowCamera(true)}
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
-                    style={{ borderColor: c.border, backgroundColor: c.card, color: c.primary }} title="Scan with camera">
-                    <Camera size={16} />
-                  </button>
+                  {/* Legacy accounts without a barcode may add one; once set it is locked. */}
+                  {!barcodeLocked && (
+                    <>
+                      <label className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 ${readingImage ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#f1f5f9]"}`}
+                        style={{ borderColor: readingImage ? c.primary : c.border, backgroundColor: c.card, color: readingImage ? c.primary : c.textMuted }} title="Upload barcode image">
+                        {readingImage ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={readingImage} />
+                      </label>
+                      <button type="button" onClick={() => setShowCamera(true)}
+                        className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center shrink-0 transition-colors duration-200 hover:bg-[#f1f5f9] cursor-pointer"
+                        style={{ borderColor: c.border, backgroundColor: c.card, color: c.primary }} title="Scan with camera">
+                        <Camera size={16} />
+                      </button>
+                    </>
+                  )}
                 </div>
                 <p className="text-[11px] flex items-center gap-1.5" style={{ color: readingImage ? c.primary : barcodeError ? c.danger : barcodeFromImage ? "#16a34a" : c.textLight }}>
                   {readingImage ? (
@@ -300,14 +299,10 @@ export default function StudentProfile() {
                     <><CheckCircle2 size={12} /> Barcode successfully detected</>
                   ) : barcodeError ? (
                     barcodeError
-                  ) : barcodeEditing ? (
-                    "Type the 10 digits printed on your student card."
-                  ) : barcode !== savedBarcode ? (
-                    "Save changes to update the barcode used by the locker."
-                  ) : barcode ? (
-                    "Use Show to view the scannable code, or the pencil to edit."
-                  ) : (
-                    "Scan or upload your card, or tap the pencil to type the barcode manually."
+                  ) : barcodeLocked ? (
+                    "Barcode is locked. Contact an admin if it needs to be changed."
+                  ) : barcode ? null : (
+                    "Type, scan, or upload the 10 digits printed on your student card."
                   )}
                 </p>
               </div>
@@ -369,7 +364,7 @@ export default function StudentProfile() {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t" style={{ borderColor: c.borderLight }}>
-                <VButton variant="secondary" size="lg" onClick={() => { setName(user.name); setStudentId(cleanStudentId(user.studentId)); setStudentIdError(null); setNameError(null); setBarcode(user.cardBarcode || ""); setBarcodeError(null); setBarcodeFromImage(false); setBarcodeEditing(false); }}>Cancel</VButton>
+                <VButton variant="secondary" size="lg" onClick={() => { setName(user.name); setStudentId(cleanStudentId(user.studentId)); setStudentIdError(null); setNameError(null); setBarcode(user.cardBarcode || ""); setBarcodeError(null); setBarcodeFromImage(false); }}>Cancel</VButton>
                 <VButton size="lg" onClick={handleSave} disabled={saving || readingImage || !isDirty || !name.trim() || barcode.length !== 10 || !!barcodeError || !!studentIdError || !!nameError}>
                   <Save size={15} /> {saving ? "Saving..." : "Save Changes"}
                 </VButton>

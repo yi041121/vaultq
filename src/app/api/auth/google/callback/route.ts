@@ -36,12 +36,12 @@ export async function GET(request: NextRequest) {
 
   if (searchParams.has("error")) {
     return fail(searchParams.get("error") === "access_denied"
-      ? "Google sign-in permission was not granted. Please try again and allow access."
-      : "Google could not complete sign-in. Please try again.");
+      ? "Google sign-in was cancelled."
+      : "Google sign-in failed. Please try again.");
   }
 
   if (!CLIENT_ID || !CLIENT_SECRET || !code || !state || state !== cookieState) {
-    return fail("Google login session expired or invalid. Please try again.");
+    return fail("Session expired. Please try again.");
   }
 
   let stage = "token_exchange";
@@ -67,10 +67,10 @@ export async function GET(request: NextRequest) {
         status: tokenRes.status,
         code: typeof details?.error === "string" ? details.error : "unknown",
       });
-      return fail("Google sign-in was rejected by Google. Please try again, or use email/password.");
+      return fail("Google rejected the sign-in. Please try again.");
     }
     const tokens = (await tokenRes.json()) as { access_token?: string };
-    if (!tokens.access_token) return fail("Google login failed. Please try again.");
+    if (!tokens.access_token) return fail("Google sign-in failed. Please try again.");
 
     // Fetch the verified Google profile
     stage = "google_profile";
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
     });
     if (!infoRes.ok) {
       console.error("Google userinfo failed", infoRes.status);
-      return fail("Could not read your Google profile. Please try again.");
+      return fail("Could not load your Google profile. Please try again.");
     }
     const profile = (await infoRes.json()) as {
       email?: string;
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
     // they are sent to the regular sign-up form with name + email pre-filled,
     // and complete barcode/password themselves there.
     const email = String(profile.email || "").trim().toLowerCase();
-    if (!profile.email_verified) return fail("Your Google email is not verified. Please try again.");
+    if (!profile.email_verified) return fail("Verify your Google email and try again.");
 
     stage = "account_lookup";
     const user = await withDbRetry(() =>
@@ -106,9 +106,7 @@ export async function GET(request: NextRequest) {
     );
     if (!user) {
       if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
-        return fail(
-          `Only @${ALLOWED_DOMAIN} accounts can register with Google. If you are a staff/admin, sign in with your email and password instead.`
-        );
+        return fail(`Only @${ALLOWED_DOMAIN} accounts can register with Google.`);
       }
       // Hand the verified identity to the sign-up form
       const params = new URLSearchParams({
@@ -122,7 +120,7 @@ export async function GET(request: NextRequest) {
     // Existing account + signup intent: do NOT silently log in — the user
     // tried to register with an account that already exists
     if (intent === "signup") {
-      return fail("This account is already registered. Please sign in instead.");
+      return fail("Account already registered. Please sign in.");
     }
     if (!user.isActive) return fail("Account disabled. Contact admin.");
 
@@ -155,11 +153,11 @@ export async function GET(request: NextRequest) {
       message,
     });
     if (stage === "account_lookup") {
-      return fail("Could not connect to your account database. Please try signing in again shortly.");
+      return fail("Account service unavailable. Please try again.");
     }
     if (stage === "token_exchange" || stage === "google_profile") {
-      return fail("Could not reach Google to complete sign-in. Please try again shortly.");
+      return fail("Could not reach Google. Please try again.");
     }
-    return fail("Google login failed. Please try again, or use email/password.");
+    return fail("Google sign-in failed. Please try again.");
   }
 }

@@ -26,6 +26,7 @@ import { compressImageFile } from "@/lib/image-compression";
 import { clearStudentCache, getCachedClaimedIds, getCachedSearchItems, setCachedSearchItems } from "@/lib/student-cache";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
+import { uniquePhotos } from "@/lib/photo-gallery";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -127,11 +128,11 @@ export default function StudentSearch() {
           date: String(report.date || report.createdAt || "").slice(0, 10),
           description: report.description || "",
           location: report.location || "",
-          images: Array.isArray(report.imageUrls) && report.imageUrls.length
-            ? report.imageUrls.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+          images: uniquePhotos(Array.isArray(report.imageUrls) && report.imageUrls.length
+            ? report.imageUrls
             : report.imageUrl
               ? [report.imageUrl]
-              : [],
+              : []),
         }));
       setLostReports(list);
       return list;
@@ -511,7 +512,7 @@ export default function StudentSearch() {
                   onClick={() => setSortOpen(!sortOpen)}>
                   <span className="flex items-center gap-1.5">
                     <ArrowUpDown size={13} style={{ color: sortOrder !== "newest" ? c.primary : c.textMuted }} />
-                    <span>{sortOrder === "newest" ? "Newest first" : "Oldest first"}</span>
+                    <span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
                   </span>
                   <ChevronDown size={12} className="shrink-0" style={{ color: sortOrder !== "newest" ? c.primary : c.textMuted }} />
                 </VFilterButton>
@@ -522,7 +523,7 @@ export default function StudentSearch() {
                   {["newest", "oldest"].map((opt) => (
                     <VDropdownItem key={opt} active={sortOrder === opt}
                       onSelect={() => { setSortOrder(opt); close(); setPage(1); }}>
-                      {opt === "newest" ? "Newest first" : "Oldest first"}
+                      {opt === "newest" ? "Newest" : "Oldest"}
                     </VDropdownItem>
                   ))}
                 </>

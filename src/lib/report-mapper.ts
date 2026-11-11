@@ -1,5 +1,6 @@
 // Shared mapping between `Report` records and the student/admin report cards.
 import { toDateOnly } from "./item-mapper";
+import { uniquePhotos } from "./photo-gallery";
 
 export type ReportType = "LOST" | "FOUND";
 export type ReportStatus = "PENDING" | "MATCHED" | "VERIFIED" | "REJECTED" | "CLOSED";
@@ -67,12 +68,13 @@ export function shortReportReference(id: string): string {
 export function mapReport(raw: any): UserReport {
   const type = (raw?.type || "LOST") as ReportType;
   const status = (raw?.status || "PENDING") as ReportStatus;
-  const images: string[] =
+  const images = uniquePhotos(
     Array.isArray(raw?.imageUrls) && raw.imageUrls.length
-      ? raw.imageUrls.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+      ? raw.imageUrls
       : raw?.imageUrl
         ? [raw.imageUrl]
-        : [];
+        : [],
+  );
   const item = raw?.item
     ? {
         id: String(raw.item.id ?? ""),

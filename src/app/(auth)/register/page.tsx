@@ -7,7 +7,7 @@ import { Eye, EyeOff, Barcode, Camera, Upload, X, CheckCircle2, Loader2 } from "
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import { showCenteredMessage } from "@/components/centered-message";
 import LockerIllustration from "@/components/locker-illustration";
-import { markSessionActivity } from "@/lib/idle-session";
+import { clearClientSession } from "@/lib/idle-session";
 import BarcodeScanner from "@/components/barcode-scanner";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
@@ -278,17 +278,12 @@ export default function RegisterPage() {
         setLoading(false);
         return;
       }
-      localStorage.setItem("token", data.data.token);
-      localStorage.setItem("user", JSON.stringify(data.data.user));
-      markSessionActivity();
-      const role = data.data.user.role;
-      const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
-      // Show centered success popup on this page, then redirect quickly —
-      // rendered here so it never appears again on the dashboard.
-      // Keep loading=true so the button stays in "Creating..." state.
+      // Sign-up does not create a session. Clear any stale local session and
+      // send the user to the login page to sign in with their new account.
+      clearClientSession();
       setSucceeded(true);
       localStorage.removeItem("vq_register_barcode");
-      setTimeout(() => router.push(target), 500);
+      setTimeout(() => router.push("/login?skip=1&registered=1"), 700);
     } catch { showCenteredMessage("error", "Something went wrong"); setLoading(false); }
   }
 
@@ -405,11 +400,11 @@ export default function RegisterPage() {
               <label htmlFor="cardBarcode" className="text-sm font-medium block" style={{ color: c.text }}>
                 Card Barcode <span style={{ color: c.danger }}>*</span>
               </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
+              <div className="flex flex-wrap gap-2">
+                <div className="relative w-full min-w-0 sm:w-auto sm:flex-1">
                   <Barcode size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.textLight }} />
                   <VInput
-                    id="cardBarcode" type="text" placeholder="e.g. 2000132602"
+                    id="cardBarcode" type="text" placeholder="10-digit card barcode"
                     className={`pl-10 pr-10 ${barcodeDetected ? "cursor-default" : ""}`}
                     inputMode="numeric"
                     maxLength={10}
@@ -586,7 +581,7 @@ export default function RegisterPage() {
               <CheckCircle2 size={30} style={{ color: "#16a34a" }} />
             </div>
             <p className="text-base font-semibold" style={{ color: c.text }}>Account created successfully</p>
-            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Redirecting...</p>
+            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Redirecting to sign in...</p>
           </div>
         </div>
       )}

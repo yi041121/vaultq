@@ -6,6 +6,7 @@ import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { VALID_REPORT_TYPES, validateReportDetails } from "@/lib/report-validation";
 import { signedImageUrl } from "@/lib/image-url";
+import { uniquePhotos } from "@/lib/photo-gallery";
 
 const VALID_STATUS = ["PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"] as const;
 
@@ -53,11 +54,13 @@ export async function GET(request: NextRequest) {
     // instead of embedding base64 image data in the JSON response.
     if (searchParams.get("light") === "1") {
       data = data.map((report: any) => {
-        const sources: string[] = Array.isArray(report.imageUrls) && report.imageUrls.length
-          ? report.imageUrls
-          : report.imageUrl
-            ? [report.imageUrl]
-            : [];
+        const sources: string[] = uniquePhotos(
+          Array.isArray(report.imageUrls) && report.imageUrls.length
+            ? report.imageUrls
+            : report.imageUrl
+              ? [report.imageUrl]
+              : [],
+        );
         const urls = sources
           .map((source, index) => signedImageUrl("report", report.id, index, source))
           .filter(Boolean);
@@ -127,6 +130,7 @@ export async function POST(request: NextRequest) {
         const buf = Buffer.from(await file.arrayBuffer());
         imageUrls.push(`data:${file.type};base64,${buf.toString("base64")}`);
       }
+      imageUrls = uniquePhotos(imageUrls);
     } else {
       const body = await request.json();
       type = body.type ?? null;
@@ -135,11 +139,11 @@ export async function POST(request: NextRequest) {
       description = body.description ?? null;
       location = body.location ?? null;
       date = body.date ?? null;
-      imageUrls = Array.isArray(body.imageUrls)
-        ? body.imageUrls.filter((value: unknown): value is string => typeof value === "string" && value.length > 0)
+      imageUrls = uniquePhotos(Array.isArray(body.imageUrls)
+        ? body.imageUrls
         : body.imageUrl
           ? [body.imageUrl]
-          : [];
+          : []);
       if (imageUrls.length > 3) {
         return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
       }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Barcode, Check, Copy, X } from "lucide-react";
+import { X } from "lucide-react";
 import { vcolors as c } from "@/components/ui/vault";
 import { useEscapeKey } from "@/lib/use-escape-key";
 
@@ -23,7 +23,6 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
   const label = usingStudentId ? "Student ID barcode" : "Card barcode";
   const svgRef = useRef<SVGSVGElement>(null);
   const [renderError, setRenderError] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   useEscapeKey(true, onClose);
 
@@ -51,17 +50,6 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
     return () => { cancelled = true; };
   }, [value]);
 
-  async function copyValue() {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard permissions can be unavailable; the number remains visible.
-    }
-  }
-
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
@@ -74,10 +62,6 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
           <X size={16} />
         </button>
 
-        <div className="w-11 h-11 rounded-xl mx-auto flex items-center justify-center mb-3"
-          style={{ backgroundColor: c.primarySoft, color: c.primary }}>
-          <Barcode size={22} />
-        </div>
         <h3 className="text-base font-semibold" style={{ color: c.text }}>Your student barcode</h3>
         {name && <p className="text-xs mt-0.5" style={{ color: c.textMuted }}>{name}</p>}
 
@@ -92,13 +76,6 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
                 <svg ref={svgRef} className="w-full h-auto" role="img" aria-label={`${label} barcode`} />
               )}
             </div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider mt-4" style={{ color: c.textLight }}>{label}</p>
-            <p className="text-2xl font-bold tracking-[0.18em] tabular-nums mt-1" style={{ color: c.text }}>{value}</p>
-            <button type="button" onClick={() => void copyValue()}
-              className="mt-3 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-xs font-semibold cursor-pointer"
-              style={{ borderColor: c.border, color: c.primary }}>
-              {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy number"}
-            </button>
             <p className="text-[11px] leading-relaxed mt-4" style={{ color: c.textMuted }}>
               Show this barcode to the locker scanner if you forgot your physical student card.
             </p>

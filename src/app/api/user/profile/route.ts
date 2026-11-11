@@ -72,13 +72,21 @@ export async function PATCH(request: NextRequest) {
       if (!/^[0-9]{10}$/.test(barcode)) {
         return NextResponse.json({ success: false, error: "Card barcode must be exactly 10 digits" }, { status: 400 });
       }
-      const dupe = await prisma.user.findFirst({
-        where: { cardBarcode: barcode, NOT: { id: user.id } },
-      });
-      if (dupe) {
-        return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
+      // The barcode is immutable once assigned. Only legacy accounts without
+      // a barcode may set one; changes must be made by an admin.
+      if (user.cardBarcode) {
+        if (barcode !== user.cardBarcode) {
+          return NextResponse.json({ success: false, error: "Card barcode cannot be changed. Contact an admin." }, { status: 403 });
+        }
+      } else {
+        const dupe = await prisma.user.findFirst({
+          where: { cardBarcode: barcode, NOT: { id: user.id } },
+        });
+        if (dupe) {
+          return NextResponse.json({ success: false, error: "Barcode already registered" }, { status: 409 });
+        }
+        data.cardBarcode = barcode;
       }
-      data.cardBarcode = barcode;
     } else if (!user.cardBarcode) {
       return NextResponse.json({ success: false, error: "Card barcode is required" }, { status: 400 });
     }

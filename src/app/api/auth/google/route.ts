@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   if (!CLIENT_ID || !CLIENT_SECRET) {
     return NextResponse.redirect(
       `${origin}/login?skip=1&googleError=${encodeURIComponent(
-        "Google login is not configured yet. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env"
+        "Google sign-in is unavailable right now."
       )}`
     );
   }
