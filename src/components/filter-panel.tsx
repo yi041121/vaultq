@@ -40,28 +40,30 @@ export function FilterPanel({
   className?: string;
 }) {
   return (
-    <div className={`space-y-3 mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0 ${className}`}>
+    <div className={`space-y-2.5 mb-4 lg:mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0 ${className}`}>
       <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
         <div className="min-w-0 flex-1 sm:max-w-md lg:w-[360px] xl:w-[420px] lg:max-w-none lg:flex-none">{search}</div>
         {actions && <div role="group" aria-label="Page actions" className="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>
       {(filters || reset) && (
-        <div className="min-w-0 max-w-full lg:order-2 lg:ml-auto lg:flex lg:flex-wrap lg:items-start lg:gap-2">
-          {filters && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{filters}</div>}
-          {reset && <div className="mt-3 flex items-center lg:mt-0">{reset}</div>}
+        <div className="min-w-0 max-w-full lg:order-2 lg:ml-auto">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5 sm:gap-2">
+            {filters}
+            {reset}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function ResetFiltersButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
+export function ResetFiltersButton({ onClick, disabled = false, className = "" }: { onClick: () => void; disabled?: boolean; className?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer enabled:hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap shrink-0"
+      className={`inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer enabled:hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap shrink-0 ${className}`}
       style={{ borderColor: colors.border, color: disabled ? colors.textMuted : colors.primary }}
     >
       <RotateCcw size={13} />

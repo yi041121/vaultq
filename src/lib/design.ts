@@ -31,7 +31,7 @@ export const size = {
   buttonLg: "h-11 px-6",
   input: "h-11",
   inputSm: "h-10",
-  filter: "h-10 px-3",
+  filter: "h-9 px-2.5 sm:h-10 sm:px-3",
   icon: "w-9 h-9",
   iconSm: "w-8 h-8",
   page: "px-4 lg:px-10 pt-6 lg:pt-8",

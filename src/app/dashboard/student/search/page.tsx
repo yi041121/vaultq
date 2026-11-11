@@ -456,22 +456,22 @@ export default function StudentSearch() {
 
   return (
     <StudentShell active="Search" userName={user.name} userRole={user.role} pageTitle="Search Items" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+      <main className="min-h-[calc(100vh-52px)] pb-24 sm:pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-4 sm:pt-5 lg:pt-6 w-full flex-1 flex flex-col">
           {/* Search + filters */}
-          <div className="space-y-3 mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0">
+          <div className="space-y-2.5 mb-4 lg:mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0">
             <div className="w-full sm:max-w-md lg:w-[420px] lg:max-w-none lg:flex-none">
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
                 size="lg" clearable placeholder="Search name, description, location" />
             </div>
-            <div className="flex flex-wrap items-center gap-2 lg:ml-auto lg:flex-nowrap">
+            <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:flex-nowrap">
 <VDropdown
               open={categoryOpen}
               onOpenChange={setCategoryOpen}
               width="w-56"
               align="left"
               trigger={
-                <VFilterButton active={!!selectedCategory} className="justify-between sm:min-w-[170px]"
+                <VFilterButton active={!!selectedCategory} className="w-full justify-between sm:w-auto sm:min-w-[170px]"
                   style={selectedCategory ? activeFilterStyle : undefined}
                   onClick={() => setCategoryOpen(!categoryOpen)}>
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -507,7 +507,7 @@ export default function StudentSearch() {
               onOpenChange={setSortOpen}
               width="w-40"
               trigger={
-                <VFilterButton active={sortOrder !== "newest"} className="justify-between sm:min-w-[140px]"
+                <VFilterButton active={sortOrder !== "newest"} className="w-full justify-between sm:w-auto sm:min-w-[140px]"
                   style={sortOrder !== "newest" ? activeFilterStyle : undefined}
                   onClick={() => setSortOpen(!sortOpen)}>
                   <span className="flex items-center gap-1.5">
@@ -529,13 +529,13 @@ export default function StudentSearch() {
                 </>
               )}
             </VDropdown>
-            <div className="relative shrink-0 w-full sm:w-auto">
+            <div className={`relative min-w-0 w-full sm:w-auto sm:shrink-0 ${hasFilters ? "" : "col-span-2 sm:col-span-1"}`}>
               <VFilterButton active={!!dateFrom} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
                 style={dateFrom ? activeFilterStyle : undefined}
                 onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
                 <span className="flex items-center gap-1.5 min-w-0">
                   <Clock size={14} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
-                  <span className="whitespace-nowrap">
+                  <span className="min-w-0 truncate">
                     {dateFrom && dateTo && dateFrom !== dateTo
                       ? `${fmtDay(parseDate(dateFrom))} - ${fmtDay(parseDate(dateTo))}`
                       : dateFrom && dateTo
@@ -657,16 +657,16 @@ export default function StudentSearch() {
                 </>
               )}
             </div>
-            {hasFilters && <ResetFiltersButton onClick={resetFilters} />}
+            {hasFilters && <ResetFiltersButton onClick={resetFilters} className="w-full sm:w-auto" />}
             </div>
           </div>
 
           {/* Items grid */}
           {loading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
               {Array.from({ length: 8 }).map((_, i) => (
-                <VCard key={i} className="p-5 animate-pulse">
-                  <div className="w-full h-40 rounded-xl mb-4" style={{ backgroundColor: c.fill }} />
+                <VCard key={i} className="p-4 sm:p-5 animate-pulse">
+                  <div className="w-full h-32 sm:h-40 rounded-xl mb-3 sm:mb-4" style={{ backgroundColor: c.fill }} />
                   <div className="h-4 w-2/3 rounded mb-2" style={{ backgroundColor: c.fill }} />
                   <div className="h-3 w-1/2 rounded mb-4" style={{ backgroundColor: c.fill }} />
                   <div className="h-9 w-full rounded-xl" style={{ backgroundColor: c.fill }} />
@@ -690,15 +690,15 @@ export default function StudentSearch() {
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 flex-1 content-start">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 flex-1 content-start">
                 {paginated.map((item) => {
                   const Icon = filterIcons[item.category] || Package;
                   const claimed = claimedItemIds.has(item.id);
                   const ownReport = item.reportedByMe;
                   const unavailable = claimed || ownReport || item.status !== "FOUND";
                   return (
-                    <VCard key={item.id} className="p-5 flex flex-col transition-all duration-200 hover:shadow-lg cursor-pointer" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }} onClick={() => setViewItem(item)}>
-                      <div className="w-full h-40 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
+                    <VCard key={item.id} className="p-4 sm:p-5 flex flex-col transition-all duration-200 hover:shadow-lg cursor-pointer" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }} onClick={() => setViewItem(item)}>
+                      <div className="w-full h-32 sm:h-40 rounded-xl mb-3 sm:mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                         onClick={() => setViewItem(item)}>
                         {item.imageUrl ? (
@@ -721,7 +721,7 @@ export default function StudentSearch() {
                       <p className="text-xs flex items-center gap-1 mt-1" style={{ color: c.textMuted }}>
                         <Clock size={12} style={{ color: c.textLight }} /> {fmtItemDate(item.date)}
                       </p>
-                      <div className="flex items-center gap-2 mt-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-2 mt-3 sm:mt-4" onClick={(e) => e.stopPropagation()}>
                         <button type="button"
                           className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                           style={{ borderColor: c.border, color: c.textMuted }}

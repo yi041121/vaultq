@@ -27,7 +27,7 @@ function NotificationRow({ n, onOpen }: { n: BellNotification; onOpen: (n: BellN
     <button
       type="button"
       onClick={() => onOpen(n)}
-      className="w-full flex gap-3 px-4 py-3 text-left border-b last:border-0 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
+      className="w-full flex gap-2.5 sm:gap-3 px-3.5 sm:px-4 py-2.5 sm:py-3 text-left border-b last:border-0 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
       style={{ borderColor: colors.borderLight }}
     >
       <span
@@ -224,10 +224,12 @@ export function NotificationBell({ role }: { role: string }) {
 
       {open && (
         <div
-          className="absolute right-0 top-11 z-50 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border bg-white shadow-xl"
+          role="dialog"
+          aria-label="Notifications"
+          className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)_+_4rem)] z-50 flex max-h-[min(70dvh,30rem)] w-auto flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-[3.125rem] sm:max-h-[min(70vh,32rem)] sm:w-[360px] sm:max-w-[calc(100vw-2rem)] sm:rounded-xl sm:shadow-xl"
           style={{ borderColor: colors.border }}
         >
-            <div className="flex items-center justify-between gap-3 border-b px-4 py-3" style={{ borderColor: colors.borderLight }}>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b px-3.5 py-2.5 sm:px-4 sm:py-3" style={{ borderColor: colors.borderLight }}>
               <div>
                 <p className="text-sm font-semibold" style={{ color: colors.text }}>Notifications</p>
                 <p className="text-[11px]" style={{ color: colors.textMuted }}>
@@ -247,7 +249,7 @@ export function NotificationBell({ role }: { role: string }) {
               )}
             </div>
 
-            <div className="max-h-[min(60vh,24rem)] overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               {loading && items.length === 0 ? (
                 <div className="px-4 py-3 space-y-3">
                   {[0, 1, 2].map((i) => (
@@ -277,7 +279,7 @@ export function NotificationBell({ role }: { role: string }) {
                 <div className="px-4 py-8 text-center">
                   <BellRing size={26} className="mx-auto mb-2" style={{ color: colors.textLight }} />
                   <p className="text-xs font-medium" style={{ color: colors.textMuted }}>No notifications</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: colors.textLight }}>You're all caught up.</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: colors.textLight }}>You&apos;re all caught up.</p>
                 </div>
               ) : (
                 items.map((n) => <NotificationRow key={n.id} n={n} onOpen={openNotification} />)
@@ -291,7 +293,7 @@ export function NotificationBell({ role }: { role: string }) {
                   setOpen(false);
                   router.push("/dashboard/student/notifications");
                 }}
-                className="w-full flex items-center justify-center gap-1 border-t px-4 py-2.5 text-[11px] font-semibold transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
+                className="w-full shrink-0 flex items-center justify-center gap-1 border-t px-4 py-2.5 text-[11px] font-semibold transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
                 style={{ borderColor: colors.borderLight, color: colors.primary }}
               >
                 View all notifications <ChevronRight size={13} />

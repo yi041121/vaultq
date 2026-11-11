@@ -117,7 +117,7 @@ export function VFilterButton({ children, style, active, onClick, className = ""
       {...props}
       type="button"
       aria-pressed={active}
-      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap ${size.filter} ${radius.button} text-sm font-medium border bg-white transition-colors duration-200 cursor-pointer ${className}`}
+      className={`flex shrink-0 items-center gap-1 sm:gap-1.5 whitespace-nowrap ${size.filter} ${radius.button} text-xs sm:text-sm font-medium border bg-white transition-colors duration-200 cursor-pointer ${className}`}
       style={{ borderColor: active ? colors.primary : colors.border, color: active ? colors.primary : colors.text, backgroundColor: active ? colors.primarySoft : undefined, ...style }}
       onClick={onClick}
     >
@@ -145,7 +145,7 @@ export function VSearchInput({ value, onChange, placeholder = "Search items...",
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full ${large ? "h-12 text-[15px]" : "h-11 text-sm"} pl-10 ${clearable ? "pr-11" : "pr-4"} border bg-white ${radius.input} transition-shadow duration-200`}
+        className={`w-full ${large ? "h-11 text-sm sm:h-12 sm:text-[15px]" : "h-11 text-sm"} pl-10 ${clearable ? "pr-11" : "pr-4"} border bg-white ${radius.input} transition-shadow duration-200`}
         style={{ borderColor: colors.border, color: colors.text, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
         onFocus={(e) => { e.target.style.borderColor = colors.primary; e.target.style.boxShadow = "0 0 0 3px rgba(53,92,138,0.12)"; }}
         onBlur={(e) => { e.target.style.borderColor = colors.border; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.02)"; }}
