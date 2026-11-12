@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Camera, CameraOff, Info } from "lucide-react";
 import { VButton, vcolors as c } from "@/components/ui/vault";
+import { useEscapeKey } from "@/lib/use-escape-key";
 
 interface Props {
   open: boolean;
@@ -19,6 +20,7 @@ function extractBarcode(raw: string): string | null {
 
 export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  useEscapeKey(open, onClose);
   const [error, setError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -175,7 +177,7 @@ export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/75" onClick={onClose} />
+      <div className="absolute inset-0 vq-modal-backdrop-strong" onClick={onClose} />
       <div className="relative w-full max-w-md max-h-[92dvh] rounded-2xl overflow-hidden bg-black shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 bg-black/80 shrink-0">
           <span className="text-sm font-medium text-white flex items-center gap-2"><Camera size={16} /> Scan barcode</span>

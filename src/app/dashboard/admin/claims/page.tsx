@@ -26,7 +26,7 @@ import { suggestMatches, suggestionLabel } from "@/lib/report-match";
 import { categoryIcon } from "@/lib/category-icons";
 import { clearClientSession } from "@/lib/idle-session";
 import {
-  VCard, VBadge, VButton, VInput, VTextarea, VSearchInput, VPagination,
+  VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VSearchInput, VPaginationFooter,
   VDropdown, VDropdownItem, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 
@@ -660,8 +660,8 @@ export default function AdminClaims() {
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="Claim Verification" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col overflow-x-hidden">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full min-w-0 flex-1 flex flex-col">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col overflow-x-hidden">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full min-w-0 flex flex-col">
           <FilterPanel
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
@@ -739,6 +739,7 @@ export default function AdminClaims() {
             </div>
           )}
 
+          <VContentPanel>
           {loading ? (
             <AdminListSkeleton />
           ) : loadError && claims.length === 0 ? (
@@ -1012,14 +1013,10 @@ export default function AdminClaims() {
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
-                <span className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sortedRows.length)} of {sortedRows.length} results
-                </span>
-                <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-              </div>
+              <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={sortedRows.length} onPage={setPage} />
             </>
           )}
+          </VContentPanel>
         </div>
       </main>
 
@@ -1084,7 +1081,7 @@ export default function AdminClaims() {
 
       {approveTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!approving) setApproveTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!approving) setApproveTarget(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1124,7 +1121,7 @@ export default function AdminClaims() {
 
       {rejectTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!rejecting) setRejectTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!rejecting) setRejectTarget(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1173,7 +1170,7 @@ export default function AdminClaims() {
 
       {matchTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!matching) setMatchTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!matching) setMatchTarget(null); }} />
           <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1316,7 +1313,7 @@ export default function AdminClaims() {
 
       {compareClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setCompareClaim(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setCompareClaim(null)} />
           <VCard role="dialog" aria-modal="true" aria-label="Claim Details" className="relative w-full min-w-0 max-w-2xl max-h-[90dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3 mb-1">
               <div>

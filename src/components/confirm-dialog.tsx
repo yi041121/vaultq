@@ -23,7 +23,7 @@ export function ConfirmDialog({ open, title, subtitle, cancelLabel = "Cancel", c
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      <div className="absolute inset-0 vq-modal-backdrop" onClick={onCancel} />
       <div className="relative w-full max-w-sm p-6 text-center rounded-2xl border bg-white" style={{ borderColor: c.border }}>
         <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: isPrimary ? c.primarySoft : "#fef2f2" }}>
           <AlertTriangle size={22} style={{ color: isPrimary ? c.primary : c.danger }} />

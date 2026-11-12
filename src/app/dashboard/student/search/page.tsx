@@ -19,7 +19,7 @@ import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import {
-  VCard, VBadge, VFilterButton, VPagination, VDropdown, VDropdownItem, VSearchInput, VButton, VTextarea,
+  VCard, VContentPanel, VBadge, VFilterButton, VPaginationFooter, VDropdown, VDropdownItem, VSearchInput, VButton, VTextarea,
   vcolors as c,
 } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
@@ -179,6 +179,8 @@ export default function StudentSearch() {
         const params = new URLSearchParams(window.location.search);
         const targetId = params.get("item");
         const targetReportId = params.get("report");
+        const targetName = params.get("claim");
+        const targetView = params.get("view");
         if (targetId) {
           window.history.replaceState(null, "", "/dashboard/student/search");
           const target = mapped.find((item) => item.id === targetId);
@@ -189,6 +191,26 @@ export default function StudentSearch() {
             } else {
               setViewItem(target);
             }
+          } else {
+            showCenteredMessage("error", "That item is no longer available");
+          }
+        } else if (targetName) {
+          window.history.replaceState(null, "", "/dashboard/student/search");
+          const target = mapped.find(
+            (item) => item.name.trim().toLowerCase() === targetName.trim().toLowerCase(),
+          );
+          if (target && !claimedSet.has(target.id) && target.status === "FOUND" && !target.reportedByMe) {
+            startClaim(target, null);
+          } else {
+            showCenteredMessage("error", "That item is no longer available");
+          }
+        } else if (targetView) {
+          window.history.replaceState(null, "", "/dashboard/student/search");
+          const target = mapped.find(
+            (item) => item.name.trim().toLowerCase() === targetView.trim().toLowerCase(),
+          );
+          if (target) {
+            setViewItem(target);
           } else {
             showCenteredMessage("error", "That item is no longer available");
           }
@@ -450,6 +472,9 @@ export default function StudentSearch() {
   }
 
   useEscapeKey(!!lostReportPreview, () => setLostReportPreview(null));
+  useEscapeKey(!!viewItem, () => setViewItem(null));
+  useEscapeKey(!!linkPromptItem, () => setLinkPromptItem(null));
+  useEscapeKey(!!claimItem && !claimCameraOpen && !claimPhotoSourceOpen && claimEditPhoto === null, () => setClaimItem(null));
 
   if (!user || !mounted) return null;
 
@@ -470,13 +495,13 @@ export default function StudentSearch() {
 
   return (
     <StudentShell active="Search" userName={user.name} userRole={user.role} pageTitle="Search Items" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-24 sm:pb-28 lg:pb-6 flex flex-col">
-        <div className="px-4 sm:px-6 lg:px-12 pt-4 sm:pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-24 sm:pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-4 sm:pt-5 lg:pt-6 w-full flex flex-col">
           {/* Search + filters — shared layout with the admin pages. */}
           <FilterPanel
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
-                size="lg" clearable placeholder="Search name, description, location" />
+                size="lg" clearable placeholder="Search items..." />
             }
             filters={
               <div className="grid w-full grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-2 sm:contents">
@@ -677,6 +702,7 @@ export default function StudentSearch() {
           />
 
           {/* Items grid */}
+          <VContentPanel>
           {loading ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -698,22 +724,22 @@ export default function StudentSearch() {
               </VButton>
             </VCard>
           ) : filtered.length === 0 ? (
-            <VCard className="py-20 text-center">
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>No items found</p>
               <p className="text-sm mt-1" style={{ color: c.textMuted }}>Try adjusting your filters or search term.</p>
             </VCard>
           ) : (
             <>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 flex-1 content-start">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 content-start">
                 {paginated.map((item) => {
                   const Icon = filterIcons[item.category] || Package;
                   const claimed = claimedItemIds.has(item.id);
                   const ownReport = item.reportedByMe;
                   const unavailable = claimed || ownReport || item.status !== "FOUND";
                   return (
-                    <VCard key={item.id} className="p-4 sm:p-5 flex flex-col transition-all duration-200 hover:shadow-lg cursor-pointer" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }} onClick={() => setViewItem(item)}>
-                      <div className="w-full h-32 sm:h-40 rounded-xl mb-3 sm:mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
+                    <VCard key={item.id} className="p-3 sm:p-5 grid grid-cols-[96px_minmax(0,1fr)] sm:flex sm:flex-col gap-x-3 transition-all duration-200 hover:shadow-lg cursor-pointer" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }} onClick={() => setViewItem(item)}>
+                      <div className="w-24 h-24 sm:w-full sm:h-40 rounded-xl sm:mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                         onClick={() => setViewItem(item)}>
                         {item.imageUrl ? (
@@ -726,17 +752,19 @@ export default function StudentSearch() {
                           </>
                         )}
                       </div>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 className="text-sm font-semibold truncate cursor-pointer hover:opacity-80" style={{ color: c.text }} onClick={() => setViewItem(item)}>{item.name}</h3>
-                        <VBadge color={item.color}>{item.statusLabel}</VBadge>
+                      <div className="min-w-0 py-0.5 sm:py-0">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h3 className="text-sm font-semibold line-clamp-2 cursor-pointer hover:opacity-80" style={{ color: c.text }} onClick={() => setViewItem(item)}>{item.name}</h3>
+                          <VBadge color={item.color}>{item.statusLabel}</VBadge>
+                        </div>
+                        <p className="text-[13px] flex items-center gap-1" style={{ color: c.textMuted }}>
+                          <MapPin size={13} style={{ color: c.textMuted }} /> {item.location || "—"}
+                        </p>
+                        <p className="text-[13px] flex items-center gap-1 mt-1" style={{ color: c.textMuted }}>
+                          <Clock size={13} style={{ color: c.textLight }} /> {fmtItemDate(item.date)}
+                        </p>
                       </div>
-                      <p className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}>
-                        <MapPin size={12} style={{ color: c.textMuted }} /> {item.location || "—"}
-                      </p>
-                      <p className="text-xs flex items-center gap-1 mt-1" style={{ color: c.textMuted }}>
-                        <Clock size={12} style={{ color: c.textLight }} /> {fmtItemDate(item.date)}
-                      </p>
-                      <div className="flex items-center gap-2 mt-3 sm:mt-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="col-span-2 flex items-center gap-2 mt-3 sm:mt-4" onClick={(e) => e.stopPropagation()}>
                         <button type="button"
                           className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                           style={{ borderColor: c.border, color: c.textMuted }}
@@ -762,14 +790,10 @@ export default function StudentSearch() {
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
-                <span className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
-                </span>
-                <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-              </div>
+              <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={filtered.length} onPage={setPage} />
             </>
           )}
+          </VContentPanel>
         </div>
       </main>
 
@@ -785,7 +809,7 @@ export default function StudentSearch() {
           photos={viewItem.imageUrl ? [viewItem.imageUrl] : []}
           onClose={() => setViewItem(null)}
           footer={<>
-            <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
+            <VButton variant="ghost" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
             <VButton
               className="flex-1"
               onClick={() => openClaim(viewItem)}
@@ -821,7 +845,7 @@ export default function StudentSearch() {
       {/* Always offer the student's pending lost reports before claiming */}
       {linkPromptItem && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setLinkPromptItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setLinkPromptItem(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0">
@@ -889,7 +913,7 @@ export default function StudentSearch() {
       {/* Claim evidence modal */}
       {claimItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setClaimItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setClaimItem(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-5">
               <div>
@@ -987,7 +1011,7 @@ export default function StudentSearch() {
                     </div>
                   </div>
                 )}
-                <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
+                <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">

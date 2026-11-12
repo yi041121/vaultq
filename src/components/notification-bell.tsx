@@ -10,13 +10,11 @@ import { getCachedNotifications, getCachedUnread } from "@/lib/student-cache";
 import { resolveNotificationLink } from "@/lib/notification-link";
 import { FloatingPanel } from "@/components/date-calendar";
 
-function NotificationPanel({ sidebar, shortcut, anchor, onClose, children }: {
-  sidebar: boolean; shortcut: boolean; anchor: HTMLElement | null; onClose: () => void; children: React.ReactNode;
+function NotificationPanel({ shortcut, anchor, onClose, children }: {
+  shortcut: boolean; anchor: HTMLElement | null; onClose: () => void; children: React.ReactNode;
 }) {
-  if (!sidebar && !shortcut) return <>{children}</>;
-  return <FloatingPanel anchor={anchor} onClose={onClose}
-    offsetX={shortcut ? (anchor?.offsetWidth ?? 36) - 360 : (anchor?.offsetWidth ?? 44) + 32}
-    offsetY={shortcut ? 12 : -44} fallbackWidth={360} fallbackHeight={440}>{children}</FloatingPanel>;
+  if (!shortcut) return <>{children}</>;
+  return <FloatingPanel anchor={anchor} onClose={onClose} offsetX={-324} offsetY={12} fallbackWidth={360} fallbackHeight={440}>{children}</FloatingPanel>;
 }
 
 interface BellNotification {
@@ -66,10 +64,11 @@ function NotificationRow({ n, onOpen }: { n: BellNotification; onOpen: (n: BellN
 }
 
 /** Bell with unread count and an expandable newest-notifications panel. */
-export function NotificationBell({ role, sidebar = false, expanded = false, active = false, shortcut = false }: { role: string; sidebar?: boolean; expanded?: boolean; active?: boolean; shortcut?: boolean }) {
+export function NotificationBell({ role, shortcut = false }: { role: string; shortcut?: boolean }) {
   const router = useRouter();
   const [unread, setUnread] = useState(() => getCachedUnread());
   const [open, setOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState<BellNotification[]>(() => (getCachedNotifications() ?? []).slice(0, 5));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +78,7 @@ export function NotificationBell({ role, sidebar = false, expanded = false, acti
   useEscapeKey(open, () => setOpen(false));
 
   useEffect(() => {
-    if (!open || sidebar || shortcut) return;
+    if (!open || shortcut) return;
     function onPointerDown(event: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
         setOpen(false);
@@ -87,7 +86,7 @@ export function NotificationBell({ role, sidebar = false, expanded = false, acti
     }
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open, sidebar, shortcut]);
+  }, [open, shortcut]);
 
   async function loadCount() {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -157,6 +156,7 @@ export function NotificationBell({ role, sidebar = false, expanded = false, acti
 
   function togglePanel() {
     const next = !open;
+    if (next) setAnchorEl(wrapperRef.current);
     setOpen(next);
     if (next) void loadItems();
   }
@@ -211,22 +211,21 @@ export function NotificationBell({ role, sidebar = false, expanded = false, acti
   }
 
   return (
-    <div ref={wrapperRef} className={`relative ${sidebar && expanded ? "w-full" : ""}`}>
+    <div ref={wrapperRef} className="relative">
       <button
         type="button"
         aria-label="Notifications"
         aria-haspopup="true"
         aria-expanded={open}
         title="Notifications"
-        className={`relative flex items-center cursor-pointer transition-colors duration-200 ${sidebar ? expanded ? "w-full h-11 px-4 gap-3 rounded-full" : "w-11 h-11 rounded-full justify-center" : "w-9 h-9 rounded-xl justify-center"}`}
-        style={{ backgroundColor: active ? colors.primary : open ? colors.primarySoft : sidebar ? "transparent" : colors.borderLight }}
+        className="relative w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200"
+        style={{ backgroundColor: open ? colors.primarySoft : colors.borderLight }}
         onClick={togglePanel}
       >
-        <Bell size={18} style={{ color: active ? "#fff" : open ? colors.primary : colors.textMuted }} />
-        {sidebar && expanded && <span className="text-sm font-medium" style={{ color: active ? "#fff" : colors.textMuted }}>Notifications</span>}
+        <Bell size={18} style={{ color: open ? colors.primary : colors.textMuted }} />
         {unread > 0 && (
           <span
-            className={`${sidebar ? expanded ? "ml-auto" : "absolute top-0 right-0" : "absolute -top-1 -right-1"} min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center`}
+            className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
             style={{ backgroundColor: "#dc2626" }}
           >
             {unread > 9 ? "9+" : unread}
@@ -235,11 +234,11 @@ export function NotificationBell({ role, sidebar = false, expanded = false, acti
       </button>
 
       {open && (
-        <NotificationPanel sidebar={sidebar} shortcut={shortcut} anchor={wrapperRef.current} onClose={() => setOpen(false)}>
+        <NotificationPanel shortcut={shortcut} anchor={anchorEl} onClose={() => setOpen(false)}>
         <div
           role="dialog"
           aria-label="Notifications"
-          className={sidebar || shortcut ? "flex w-[360px] max-w-[calc(100vw-2rem)] max-h-[min(70dvh,32rem)] flex-col overflow-hidden rounded-2xl border bg-white shadow-xl" : "fixed inset-x-3 top-[calc(env(safe-area-inset-top)_+_4rem)] z-50 flex max-h-[min(70dvh,30rem)] w-auto flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-[3.125rem] sm:max-h-[min(70vh,32rem)] sm:w-[360px] sm:max-w-[calc(100vw-2rem)] sm:rounded-xl sm:shadow-xl"}
+          className={shortcut ? "flex w-[360px] max-w-[calc(100vw-2rem)] max-h-[min(70dvh,32rem)] flex-col overflow-hidden rounded-2xl border bg-white shadow-xl" : "fixed inset-x-3 top-[calc(env(safe-area-inset-top)_+_4rem)] z-50 flex max-h-[min(70dvh,30rem)] w-auto flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-[3.125rem] sm:max-h-[min(70vh,32rem)] sm:w-[360px] sm:max-w-[calc(100vw-2rem)] sm:rounded-xl sm:shadow-xl"}
           style={{ borderColor: colors.border }}
         >
             <div className="flex shrink-0 items-center justify-between gap-3 border-b px-3.5 py-2.5 sm:px-4 sm:py-3" style={{ borderColor: colors.borderLight }}>

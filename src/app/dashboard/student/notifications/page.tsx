@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, AlertCircle, Loader2, RefreshCw, CheckCheck } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, VSearchInput, VFilterButton, VPagination, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VSearchInput, VFilterButton, VPaginationFooter, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
 import {
   NOTIFICATION_META, relativeTime,
@@ -221,8 +221,8 @@ export default function StudentNotifications() {
 
   return (
     <StudentShell active="Notifications" userName={user.name} userRole={user.role} pageTitle="Notifications" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex flex-col">
           <FilterPanel
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
@@ -239,7 +239,8 @@ export default function StudentNotifications() {
             }
           />
 
-          <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+          <VContentPanel>
+          <div className="flex flex-wrap items-center justify-start gap-2 mb-4">
             <button type="button" aria-pressed={showUnreadOnly}
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer"
               style={{
@@ -263,7 +264,8 @@ export default function StudentNotifications() {
           </div>
 
           {/* List */}
-          <VCard className="flex-1 overflow-hidden flex flex-col">
+          <VCard className={`overflow-hidden flex flex-col ${loading || error || filtered.length === 0 ? "flex-1" : ""}`}
+            style={{ border: 0, boxShadow: "none" }}>
             {loading ? (
               <div className="divide-y" style={{ borderColor: c.borderLight }}>
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -334,14 +336,10 @@ export default function StudentNotifications() {
               </>
             )}
           </VCard>
-          {!loading && !error && filtered.length > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
-              <span className="text-xs" style={{ color: c.textMuted }}>
-                Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
-              </span>
-              <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-            </div>
+          {!loading && !error && (
+            <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={filtered.length} onPage={setPage} />
           )}
+          </VContentPanel>
         </div>
       </main>
     </StudentShell>

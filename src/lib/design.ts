@@ -9,6 +9,7 @@ export const colors = {
   sidebarTextHover: "var(--vq-sidebar-text-hover)",
   bg: "var(--vq-bg)",
   card: "var(--vq-card)",
+  panel: "var(--vq-panel)",
   border: "var(--vq-border)",
   borderLight: "var(--vq-border-light)",
   fill: "var(--vq-fill)",

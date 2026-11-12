@@ -15,7 +15,7 @@ import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import {
-  VCard, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
+  VCard, VContentPanel, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport, type ReportStatus } from "@/lib/report-mapper";
@@ -584,7 +584,7 @@ export default function AdminReports() {
 
   return (
     <StudentShell active="Intake" userName={user.name} userRole={user.role} pageTitle="Item Intake" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
           <FilterPanel
             search={
@@ -601,6 +601,7 @@ export default function AdminReports() {
             reset={<ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} />}
           />
 
+          <VContentPanel>
           {loading ? <AdminListSkeleton /> : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <PackageSearch size={40} className="mb-4" style={{ color: c.textLight }} />
@@ -731,13 +732,14 @@ export default function AdminReports() {
               })}
             </div>
           )}
+          </VContentPanel>
         </div>
       </main>
 
       {/* Match modal (lost reports) */}
       {matchTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMatchTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setMatchTarget(null)} />
           <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -892,7 +894,7 @@ export default function AdminReports() {
       {/* Verify modal */}
       {verifyReport && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!verifying) setVerifyReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!verifying) setVerifyReport(null); }} />
           <VCard className="relative w-full max-w-2xl max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1050,7 +1052,7 @@ export default function AdminReports() {
                       ))}
                     </div>
                   )}
-                  <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
+                  <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
                 </div>
                 <p className="text-[11px]" style={{ color: c.textLight }}>
                   Only approve after the item has been physically handed in. The item will appear in Search immediately.
@@ -1109,7 +1111,7 @@ export default function AdminReports() {
 
       {verifyReport && approveStage === "locker" && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!verifying) setApproveStage("form"); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!verifying) setApproveStage("form"); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1183,7 +1185,7 @@ export default function AdminReports() {
 
       {assignLockerReport && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1244,7 +1246,7 @@ export default function AdminReports() {
       {/* Reject modal */}
       {rejectReport && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!rejecting) setRejectReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!rejecting) setRejectReport(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Reject this report?</h3>
             <p className="text-xs mb-4" style={{ color: c.textMuted }}>

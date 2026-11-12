@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, MoreVertical, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, MoreVertical, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -16,6 +16,7 @@ import { clearClientSession } from "@/lib/idle-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { FloatingPanel } from "@/components/date-calendar";
+import { quickActionsForRole } from "@/lib/quick-actions";
 
 interface NavItem {
   label: string;
@@ -61,7 +62,9 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const desktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, getServerDesktopSnapshot);
   useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
+  const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountAnchor, setAccountAnchor] = useState<HTMLDivElement | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const adminCounts = useAdminNavCounts(userRole);
@@ -85,6 +88,8 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   }
 
   const navItems = bottomNav.map((item) => ({ ...item, active: item.label === active }));
+  const desktopNavItems = navItems;
+  const quickActions = quickActionsForRole(userRole);
   const activeIndex = navItems.findIndex((item) => item.active);
   const navCount = navItems.length;
   const [indicatorIndex, setIndicatorIndex] = useState(activeIndex);
@@ -152,7 +157,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     <>
       {userRole === "ADMIN" && (
         <div ref={accountMenuRef} className={`relative ${sidebarOpen ? "w-full" : ""}`}>
-          <button type="button" onClick={() => setAccountMenuOpen((open) => !open)}
+          <button type="button" onClick={() => { setAccountAnchor(accountMenuRef.current); setAccountMenuOpen((open) => !open); }}
             aria-label="Account menu" title="Account menu" aria-haspopup="menu" aria-expanded={accountMenuOpen}
             className={`flex items-center rounded-full cursor-pointer transition-colors duration-200 ${sidebarOpen ? "w-full h-11 px-4 gap-3" : "w-11 h-11 justify-center"}`}
             style={{ backgroundColor: accountMenuOpen ? colors.primarySoft : "transparent" }}>
@@ -160,8 +165,8 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
             {sidebarOpen && <span className="text-sm font-medium" style={{ color: colors.textMuted }}>Account menu</span>}
           </button>
           {accountMenuOpen && (
-            <FloatingPanel anchor={accountMenuRef.current} onClose={() => setAccountMenuOpen(false)}
-              offsetX={(accountMenuRef.current?.offsetWidth ?? 44) + 32} offsetY={-44} fallbackWidth={240} fallbackHeight={200}>
+            <FloatingPanel anchor={accountAnchor} onClose={() => setAccountMenuOpen(false)}
+              offsetX={sidebarOpen ? 248 : 68} offsetY={-44} fallbackWidth={240} fallbackHeight={200}>
             <div role="menu" aria-label="Account menu"
               className="w-60 overflow-hidden rounded-xl border bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150"
               style={{ borderColor: colors.border }}>
@@ -196,9 +201,12 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
       <CenteredMessageHost />
+      <div data-workspace-frame
+        className="lg:flex lg:min-h-dvh"
+        style={{ backgroundColor: colors.card }}>
       {/* Desktop Sidebar */}
       <aside id="app-sidebar" aria-label="Main navigation"
-        className={`hidden lg:flex fixed left-4 top-4 bottom-4 flex-col z-40 rounded-3xl border shadow-sm overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${sidebarOpen ? "w-64" : "w-[88px]"}`}
+        className={`hidden lg:flex sticky top-0 h-dvh self-start shrink-0 flex-col z-40 border-r overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${sidebarOpen ? "w-64" : "w-[88px]"}`}
         style={{ backgroundColor: colors.card, borderColor: colors.borderLight }}>
         <div className={`shrink-0 flex pt-7 pb-4 ${sidebarOpen ? "items-center gap-3 px-5" : "flex-col items-center gap-5 px-3"}`}>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: colors.primarySoft }}>
@@ -215,7 +223,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
           </button>
         </div>
         <nav id="desktop-sidebar-links" aria-label="Desktop navigation" className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-2 ${sidebarOpen ? "px-5" : "px-3"}`}>
-          {navItems.map((item, index) => (
+          {desktopNavItems.map((item, index) => (
             <React.Fragment key={item.label}>
               {sidebarOpen && (index === 0 || item.label === "Profile" || item.label === "Accounts" || (userRole === "ADMIN" && index === 3)) && (
                 <p className={`text-[11px] font-medium uppercase tracking-wider px-2 mb-3 ${index === 0 ? "mt-2" : "mt-7"}`}
@@ -275,15 +283,33 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
 
       {desktop && (
         <div role="group" aria-label="Quick shortcuts"
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border p-2 shadow-lg"
+          className="fixed bottom-3 right-6 z-40 flex items-center gap-2 rounded-full border p-2 shadow-lg"
           style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+          <button type="button" onClick={() => setShortcutDockOpen((open) => !open)}
+            aria-label={shortcutDockOpen ? "Collapse quick shortcuts" : "Expand quick shortcuts"}
+            aria-expanded={shortcutDockOpen} title={shortcutDockOpen ? "Collapse shortcuts" : "More shortcuts"}
+            className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ backgroundColor: shortcutDockOpen ? colors.primarySoft : colors.borderLight, color: shortcutDockOpen ? colors.primary : colors.textMuted }}>
+            {shortcutDockOpen ? <X size={17} /> : <LayoutGrid size={17} />}
+          </button>
+          {shortcutDockOpen && quickActions.map((action) => (
+            <button key={action.label} type="button" onClick={() => router.push(action.path)}
+              aria-label={action.label} title={action.label}
+              className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{ backgroundColor: colors.borderLight, color: colors.textMuted }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = colors.primarySoft; e.currentTarget.style.color = colors.primary; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = colors.borderLight; e.currentTarget.style.color = colors.textMuted; }}>
+              <action.icon size={17} />
+            </button>
+          ))}
+          {shortcutDockOpen && <span aria-hidden="true" className="mx-0.5 h-6 w-px" style={{ backgroundColor: colors.borderLight }} />}
           <ThemeToggle />
-          {bell ?? <NotificationBell role={userRole} shortcut />}
         </div>
       )}
 
       {/* Main area */}
-      <div className={`flex flex-col transition-[margin-left] duration-300 ease-out motion-reduce:transition-none lg:[&>main]:pb-24 ${sidebarOpen ? "lg:ml-72" : "lg:ml-[120px]"}`}>
+      <div data-workspace-content className="min-w-0 flex-1 flex flex-col"
+        style={{ backgroundColor: colors.bg }}>
         {/* Top nav */}
         <header className="sticky top-0 z-30 flex lg:hidden items-center justify-between px-4 py-3 border-b bg-white"
           style={{ borderColor: colors.border, paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
@@ -304,6 +330,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
         </header>
 
         {children}
+      </div>
       </div>
 
       {/* Mobile bottom nav */}

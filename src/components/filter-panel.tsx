@@ -40,7 +40,9 @@ export function FilterPanel({
   className?: string;
 }) {
   return (
-    <div className={`space-y-2.5 mb-4 lg:mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0 ${className}`}>
+    <div data-filter-panel
+      className={`shrink-0 rounded-2xl border p-4 lg:p-5 space-y-3 mb-6 lg:mb-8 lg:flex lg:flex-wrap lg:items-center lg:gap-3 lg:space-y-0 ${className}`}
+      style={{ backgroundColor: colors.panel, borderColor: colors.border }}>
       <div className="flex w-full min-w-0 items-center gap-2 lg:w-auto">
         <div className="min-w-0 flex-1 sm:max-w-md lg:w-[360px] xl:w-[420px] lg:max-w-none lg:flex-none">{search}</div>
         {actions && <div role="group" aria-label="Page actions" className="flex shrink-0 items-center gap-2">{actions}</div>}

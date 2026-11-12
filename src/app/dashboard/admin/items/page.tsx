@@ -21,7 +21,7 @@ import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import {
-  VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
+  VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPaginationFooter, VFilterButton,
   vcolors as c,
 } from "@/components/ui/vault";
 
@@ -222,7 +222,9 @@ export default function AdminItems() {
   useEscapeKey(formDateOpen, () => setFormDateOpen(false));
   useEscapeKey(formCatOpen || formLockerOpen, () => { setFormCatOpen(false); setFormLockerOpen(false); });
   useEscapeKey(statusOpen || categoryOpen || sortOpen, () => { setStatusOpen(false); setCategoryOpen(false); setSortOpen(false); });
-  useEscapeKey(showModal, closeItemModal, !saving && !formDateOpen && !formCatOpen && !formLockerOpen);
+  useEscapeKey(showModal, closeItemModal, !saving && !formDateOpen && !formCatOpen && !formLockerOpen && !showCamera);
+  useEscapeKey(!!viewItem && !viewer, () => setViewItem(null));
+  useEscapeKey(showCamera, closeLiveCamera);
   useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
 
   if (!user || !mounted) return null;
@@ -438,8 +440,8 @@ export default function AdminItems() {
 
   return (
     <StudentShell active="Items" userName={user.name} userRole={user.role} pageTitle="Item Inventory" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex flex-col">
           <FilterPanel
             actions={<VButton size="md" onClick={openAdd}><Plus size={15} /> Add Item</VButton>}
             search={
@@ -510,6 +512,7 @@ export default function AdminItems() {
           />
 
           {/* Grid */}
+          <VContentPanel>
           {loading ? <AdminListSkeleton /> : loadError ? (
             <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
               <Package size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
@@ -590,14 +593,10 @@ export default function AdminItems() {
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
-                <span className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
-                </span>
-                <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-              </div>
+              <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={filtered.length} onPage={setPage} />
             </>
           )}
+          </VContentPanel>
         </div>
       </main>
 
@@ -610,7 +609,7 @@ export default function AdminItems() {
       {/* Add/Edit modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={closeItemModal} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={closeItemModal} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>{editing ? "Edit Item" : "Add New Item"}</h3>
@@ -746,7 +745,7 @@ export default function AdminItems() {
       {/* Live camera modal for desktop */}
       {showCamera && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={closeLiveCamera} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={closeLiveCamera} />
           <VCard className="relative w-full max-w-md p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Take Photo</h3>
@@ -777,7 +776,7 @@ export default function AdminItems() {
       {/* Single-confirm delete dialog */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={closeDelete} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={closeDelete} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "#fef2f2" }}>
               <Trash2 size={22} style={{ color: c.danger }} />

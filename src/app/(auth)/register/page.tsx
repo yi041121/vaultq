@@ -546,7 +546,7 @@ export default function RegisterPage() {
       {/* Confirm details before creating account */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !loading && setShowConfirm(false)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => !loading && setShowConfirm(false)} />
           <div className="relative w-full max-w-[380px] rounded-[20px] p-6 bg-white"
             style={{ boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <h3 className="text-base font-semibold text-center mb-1" style={{ color: c.text }}>Confirm your details</h3>
@@ -574,7 +574,7 @@ export default function RegisterPage() {
       )}
       {/* Centered success popup — page-scoped, never shows on the dashboard */}
       {succeeded && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>

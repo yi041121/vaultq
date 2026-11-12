@@ -46,7 +46,7 @@ export function CenteredMessageHost() {
   const isError = msg.kind === "error";
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-      style={{ backgroundColor: "rgba(15,23,42,0.35)" }}
+      style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
       onClick={() => setMsg(null)}>
       <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
         style={{ background: colors.card, boxShadow: "0 20px 48px rgba(0,0,0,0.28)" }}>

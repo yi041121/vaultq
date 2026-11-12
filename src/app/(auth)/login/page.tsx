@@ -305,7 +305,7 @@ export default function LoginPage() {
       )}
       {/* Centered "Logged out" popup — same style as the success popup */}
       {loggedOut && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
@@ -320,7 +320,7 @@ export default function LoginPage() {
       {/* Centered "Account created" popup — the sign-up flow never auto-logs in */}
       {registered && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-          style={{ backgroundColor: "rgba(15,23,42,0.35)" }} onClick={() => setRegistered(false)}>
+          style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setRegistered(false)}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
@@ -335,7 +335,7 @@ export default function LoginPage() {
       {/* Centered error popup — same style as the success popup */}
       {error && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-          style={{ backgroundColor: "rgba(15,23,42,0.35)" }}
+          style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
           onClick={() => setError(null)}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
@@ -350,7 +350,7 @@ export default function LoginPage() {
 
       {/* Centered success popup — page-scoped, never shows on the dashboard */}
       {succeeded && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(15,23,42,0.35)" }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>

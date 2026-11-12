@@ -31,7 +31,7 @@ export function PhotoViewerModal({ photos, index, title, onIndexChange, onClose 
 
   return (
     <div
-      className="fixed inset-0 z-[85] flex flex-col bg-black/90 p-4"
+      className="fixed inset-0 z-[85] flex flex-col bg-black/90 backdrop-blur-md p-4"
       role="dialog"
       aria-modal="true"
       aria-label={title ? `${title} photo` : "Photo viewer"}>

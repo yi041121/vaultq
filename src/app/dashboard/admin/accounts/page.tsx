@@ -8,10 +8,11 @@ import { StudentShell } from "@/components/student-shell";
 import { AdminStatusFilters, FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
-import { VCard, VBadge, VButton, VInput, VSearchInput, VPagination, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VButton, VInput, VSearchInput, VPaginationFooter, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
 import { matchesSearch } from "@/lib/search";
+import { useEscapeKey } from "@/lib/use-escape-key";
 
 const adminNav = [
   { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
@@ -71,6 +72,10 @@ export default function AdminAccounts() {
   const [deleting, setDeleting] = useState(false);
 
   const [editTarget, setEditTarget] = useState<Student | null>(null);
+
+  useEscapeKey(showModal, () => setShowModal(false));
+  useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
+  useEscapeKey(!!editTarget, () => setEditTarget(null));
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editStudentId, setEditStudentId] = useState("");
@@ -404,8 +409,8 @@ export default function AdminAccounts() {
 
   return (
     <StudentShell active="Accounts" userName={user.name} userRole={user.role} pageTitle="Account Management" bottomNav={adminNav} logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex-1 flex flex-col">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
+        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex flex-col">
           <FilterPanel
             actions={<VButton size="md" onClick={openAdd}><Plus size={15} /> Add Student</VButton>}
             search={
@@ -422,8 +427,9 @@ export default function AdminAccounts() {
             reset={<ResetFiltersButton disabled={!hasFilters} onClick={() => { setQuery(""); setStatusFilter("All"); setPage(1); }} />}
           />
 
+          <VContentPanel>
           {loading ? <AdminListSkeleton /> : loadError ? (
-            <VCard className="p-8 text-center">
+            <VCard className="p-8 text-center flex-1 flex flex-col items-center justify-center">
               <p className="text-sm mb-3" style={{ color: c.textMuted }}>{loadError}</p>
               <VButton variant="secondary" onClick={() => void fetchAccounts(true)}>Try again</VButton>
             </VCard>
@@ -435,7 +441,7 @@ export default function AdminAccounts() {
             </VCard>
           ) : (
             <>
-              <div className="space-y-4 flex-1">
+              <div className="space-y-4">
                 {paginated.map((st) => (
                   <VCard key={st.id} className="p-5 flex flex-col lg:flex-row lg:items-center gap-4" style={st.status === "DISABLED" ? { opacity: 0.75 } : {}}>
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold text-white shrink-0"
@@ -470,21 +476,17 @@ export default function AdminAccounts() {
                   </VCard>
                 ))}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
-                <span className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} results
-                </span>
-                <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-              </div>
+              <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={filtered.length} onPage={setPage} />
             </>
           )}
+          </VContentPanel>
         </div>
       </main>
 
       {/* Add student modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowModal(false)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setShowModal(false)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Add Student Account</h3>
@@ -548,7 +550,7 @@ export default function AdminAccounts() {
       {/* Single-confirm delete dialog */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setDeleteTarget(null)} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "#fef2f2" }}>
               <AlertTriangle size={22} style={{ color: c.danger }} />
@@ -570,7 +572,7 @@ export default function AdminAccounts() {
       {/* Edit student modal */}
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setEditTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setEditTarget(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Edit Student Account</h3>

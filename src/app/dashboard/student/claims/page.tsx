@@ -16,7 +16,7 @@ import { compressImageFile } from "@/lib/image-compression";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
-import { VCard, VBadge, VPagination, VButton, VTextarea, VSearchInput, VFilterButton, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VPaginationFooter, VButton, VTextarea, VSearchInput, VFilterButton, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
 import { matchesSearch } from "@/lib/search";
 import {
@@ -298,6 +298,8 @@ export default function StudentClaims() {
   }
 
   useEscapeKey(!!detailsClaim, () => setDetailsClaim(null));
+  useEscapeKey(!!qrModal, () => setQrModal(null));
+  useEscapeKey(!!resubmitClaim && !resubmitCameraOpen && !resubmitSourceOpen, () => setResubmitClaim(null));
 
   if (!user || !mounted) return null;
 
@@ -325,8 +327,8 @@ export default function StudentClaims() {
 
   return (
     <StudentShell active="Claims" userName={user.name} userRole={user.role} pageTitle="My Claims" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
-        <div className="px-4 sm:px-6 lg:px-12 pt-6 lg:pt-8 w-full flex-1 flex flex-col">
+      <main className="bg-white min-h-[calc(100vh-52px)] lg:min-h-dvh pb-28 lg:pb-6 flex flex-col">
+        <div className={`px-4 sm:px-6 lg:px-12 pt-6 lg:pt-8 w-full flex flex-col ${loading || loadError || sorted.length === 0 ? "flex-1" : ""}`}>
           <FilterPanel
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
@@ -348,6 +350,7 @@ export default function StudentClaims() {
             }
           />
 
+          <VContentPanel>
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1" aria-busy="true" aria-label="Loading claims">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -417,7 +420,7 @@ export default function StudentClaims() {
             </VCard>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5 content-start">
                 {paginated.map((cl) => {
                   const Icon = filterIcons[cl.category] || Package;
                   const statusColor = CLAIM_STATUS_COLOR[cl.displayStatus];
@@ -513,21 +516,17 @@ export default function StudentClaims() {
                   );
                 })}
               </div>
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto pt-6">
-                <span className="text-xs" style={{ color: c.textMuted }}>
-                  Showing {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length} results
-                </span>
-                <VPagination current={currentPage} total={totalPages} onPage={setPage} />
-              </div>
+              <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={sorted.length} onPage={setPage} />
             </>
           )}
+          </VContentPanel>
         </div>
       </main>
 
       {/* Claim details / photo comparison */}
       {detailsClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setDetailsClaim(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setDetailsClaim(null)} />
           <VCard className="relative w-full max-w-3xl max-h-[90vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -632,7 +631,7 @@ export default function StudentClaims() {
 
       {resubmitClaim && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!resubmitting) setResubmitClaim(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!resubmitting) setResubmitClaim(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -683,7 +682,7 @@ export default function StudentClaims() {
                   ))}
                 </div>
               )}
-              <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
+              <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
             </div>
 
             <div className="flex items-center justify-end gap-2 mt-5">
@@ -720,7 +719,7 @@ export default function StudentClaims() {
       {/* Locker QR */}
       {qrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setQrModal(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setQrModal(null)} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Pickup QR Code</h3>

@@ -10,7 +10,7 @@ import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { getPersonNameError, normalizePersonName, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, VButton, VInput, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import BarcodeScanner from "@/components/barcode-scanner";
 
 interface UserData { id: string; name: string; email: string; role: string; studentId?: string | null; cardBarcode?: string | null; }
@@ -200,11 +200,12 @@ export default function StudentProfile() {
 
   return (
     <StudentShell active="Profile" userName={user.name} userRole={user.role} pageTitle="Profile" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
-          <div className="w-full max-w-3xl mx-auto space-y-5">
+          <VContentPanel>
+          <div className="w-full max-w-4xl mx-auto space-y-6">
             {/* Header card */}
-            <VCard className="p-5 sm:p-6 lg:p-8 flex items-center gap-4 sm:gap-5">
+            <VCard className="p-6 sm:p-8 lg:p-10 flex items-center gap-4 sm:gap-5">
               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold text-white shrink-0"
                 style={{ backgroundColor: c.primary }}>
                 {user.name.charAt(0).toUpperCase()}
@@ -233,7 +234,7 @@ export default function StudentProfile() {
             )}
 
             {/* Card Barcode */}
-            <VCard className="p-5 sm:p-6 lg:p-8">
+            <VCard className="p-6 sm:p-8 lg:p-10">
               <div className="flex items-start justify-between gap-3 mb-5">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
@@ -309,7 +310,7 @@ export default function StudentProfile() {
             </VCard>
 
             {/* Personal info */}
-            <VCard className="p-5 sm:p-6 lg:p-8">
+            <VCard className="p-6 sm:p-8 lg:p-10">
               <div className="flex items-center gap-2 mb-5">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
                   <User size={16} style={{ color: c.primary }} />
@@ -371,6 +372,7 @@ export default function StudentProfile() {
               </div>
             </VCard>
           </div>
+          </VContentPanel>
         </div>
       </main>
       <BarcodeScanner

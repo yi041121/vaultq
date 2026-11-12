@@ -22,7 +22,7 @@ import { PhotoPicker } from "@/components/photo-picker";
 import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { StudentShell } from "@/components/student-shell";
 import {
-  VCard, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VBadge, VFilterButton, vcolors as c,
+  VCard, VContentPanel, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VBadge, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
@@ -75,7 +75,9 @@ const categoryIcons: Record<string, any> = {
 
 // Report type tags use their own colour and an outline style so they never
 // look like the status pill beside them (e.g. "Lost" vs "Pending").
-const reportTypeColor = (type: ReportType) => (type === "LOST" ? "#355C8A" : "#15803d");
+const FOUND_COLOR = "#4a9d6b";
+const FOUND_BUTTON = "#3f8a5c";
+const reportTypeColor = (type: ReportType) => (type === "LOST" ? "#355C8A" : FOUND_COLOR);
 
 // Logged item statuses shown inside a report card. Once the report itself is
 // VERIFIED the card shows "Verified" instead, matching the badge at the top.
@@ -258,7 +260,12 @@ function StudentReportContent() {
     if (!mounted) return;
     const kind = searchParams.get("kind");
     if (kind === "LOST" || kind === "FOUND") setReportKind(kind);
-    if (searchParams.get("tab") === "reports") setTab("reports");
+    const typeParam = searchParams.get("type");
+    if (typeParam === "lost") setType("LOST");
+    if (typeParam === "found") setType("FOUND");
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "reports") setTab("reports");
+    if (tabParam === "new") setTab("new");
   }, [searchParams, mounted]);
 
   function switchTab(next: "new" | "reports") {
@@ -687,26 +694,42 @@ function StudentReportContent() {
 
   return (
     <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report Items" logout={handleLogout}>
-      <main className="min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
-        <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col items-center">
+      <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
+        <div className="px-4 sm:px-6 lg:px-8 xl:px-10 pt-5 lg:pt-8 w-full flex flex-col items-stretch">
+          <div data-filter-panel className={`shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border p-4 lg:p-5 mb-6 lg:mb-8 ${tab === "new" ? "sm:w-fit" : "w-full"}`}
+            style={{ backgroundColor: c.panel, borderColor: c.border }}>
           {/* Tabs */}
-          <div className="w-full max-w-3xl mx-auto flex rounded-xl border bg-white overflow-hidden mb-6" style={{ borderColor: c.border }}>
+          <div className="w-full sm:w-[448px] h-11 shrink-0 flex rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
             <button type="button"
-              className="flex-1 h-10 text-xs font-semibold transition-all duration-150 cursor-pointer"
+              className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={{ backgroundColor: tab === "new" ? c.primary : "transparent", color: tab === "new" ? "#fff" : c.textMuted }}
               onClick={() => switchTab("new")}>
               New report
             </button>
             <button type="button"
-              className="flex-1 h-10 text-xs font-semibold transition-all duration-150 cursor-pointer"
+              className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={{ backgroundColor: tab === "reports" ? c.primary : "transparent", color: tab === "reports" ? "#fff" : c.textMuted }}
               onClick={() => switchTab("reports")}>
               My reports{reports.length > 0 ? ` (${reports.length})` : ""}
             </button>
           </div>
+          {tab === "reports" && (
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto" role="group" aria-label="Filter reports by type">
+              <VFilterButton active={reportKind === "LOST"} onClick={() => setReportKind("LOST")}>
+                <PackageSearch size={14} style={{ color: reportKind === "LOST" ? c.primary : c.textMuted }} />
+                Lost ({lostReportCount})
+              </VFilterButton>
+              <VFilterButton active={reportKind === "FOUND"} onClick={() => setReportKind("FOUND")}>
+                <PackageCheck size={14} style={{ color: reportKind === "FOUND" ? c.primary : c.textMuted }} />
+                Found ({foundReportCount})
+              </VFilterButton>
+            </div>
+          )}
+          </div>
 
+          <VContentPanel>
           {tab === "reports" ? (
-            <div className="w-full max-w-3xl mx-auto flex-1">
+            <div className="w-full min-w-0 flex-1 flex flex-col">
               {reportsLoading ? (
                 <div className="space-y-4" aria-busy="true" aria-label="Loading your reports">
                   {Array.from({ length: 3 }).map((_, i) => (
@@ -723,7 +746,7 @@ function StudentReportContent() {
                   ))}
                 </div>
               ) : reportsError ? (
-                <VCard className="py-20 text-center flex flex-col items-center justify-center">
+                <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
                   <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
                   <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
                   <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{reportsError}</p>
@@ -732,7 +755,7 @@ function StudentReportContent() {
                   </VButton>
                 </VCard>
               ) : reports.length === 0 ? (
-                <VCard className="py-20 text-center flex flex-col items-center justify-center">
+                <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
                   <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
                   <p className="text-base font-medium" style={{ color: c.textMuted }}>No reports yet</p>
                   <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>
@@ -741,20 +764,9 @@ function StudentReportContent() {
                   <VButton onClick={() => switchTab("new")}><Plus size={14} /> New report</VButton>
                 </VCard>
               ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <VFilterButton active={reportKind === "LOST"} onClick={() => setReportKind("LOST")}>
-                      <PackageSearch size={14} style={{ color: reportKind === "LOST" ? c.primary : c.textMuted }} />
-                      Lost ({lostReportCount})
-                    </VFilterButton>
-                    <VFilterButton active={reportKind === "FOUND"} onClick={() => setReportKind("FOUND")}>
-                      <PackageCheck size={14} style={{ color: reportKind === "FOUND" ? c.primary : c.textMuted }} />
-                      Found ({foundReportCount})
-                    </VFilterButton>
-                  </div>
-
+                <div className="flex flex-1 flex-col gap-6 lg:gap-8">
                   {visibleReports.length === 0 ? (
-                    <VCard className="py-16 text-center flex flex-col items-center justify-center">
+                    <VCard className="py-16 text-center flex-1 flex flex-col items-center justify-center">
                       {reportKind === "LOST"
                         ? <PackageSearch size={36} className="mb-4" style={{ color: c.textLight }} />
                         : <PackageCheck size={36} className="mb-4" style={{ color: c.textLight }} />}
@@ -771,7 +783,7 @@ function StudentReportContent() {
                       </VButton>
                     </VCard>
                   ) : (
-                  <div className="space-y-4">
+                  <div className={`grid items-start gap-4 lg:grid-cols-2 ${visibleReports.length >= 3 ? "xl:grid-cols-3" : ""}`}>
                   {visibleReports.map((report) => {
                     const Icon = categoryIcons[report.category] || FileText;
                     const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
@@ -826,7 +838,7 @@ function StudentReportContent() {
                                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
                                   {(report.status === "VERIFIED" || report.status === "MATCHED" || rejected) && (
                                     <VBadge color={reportTypeColor(report.type)}
-                                      style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${reportTypeColor(report.type)} 33%, transparent)` }}>
+                                      style={{ backgroundColor: "transparent", border: "1px solid currentColor" }}>
                                       {report.typeLabel}
                                     </VBadge>
                                   )}
@@ -851,7 +863,7 @@ function StudentReportContent() {
                           </div>
                     );
                     return (
-                      <VCard key={report.id} className="p-5 lg:p-6">
+                      <VCard key={report.id} className="p-6 lg:p-7">
                         {showsItemFirst && itemBlock}
                         {!showsItemFirst && (
                           <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
@@ -869,7 +881,7 @@ function StudentReportContent() {
                           </div>
                           <div className="flex items-center gap-2">
                             <VBadge color={reportTypeColor(report.type)}
-                              style={{ backgroundColor: "transparent", border: `1px solid color-mix(in srgb, ${reportTypeColor(report.type)} 33%, transparent)` }}>
+                              style={{ backgroundColor: "transparent", border: "1px solid currentColor" }}>
                               {report.typeLabel}
                             </VBadge>
                             {/* A verified report shows its badge on the logged item below, so hide the duplicate here. */}
@@ -949,7 +961,8 @@ function StudentReportContent() {
               )}
             </div>
           ) : (
-            <div className="w-full max-w-3xl mx-auto flex-1 flex flex-col">
+            <div data-report-workspace className={`grid w-full min-w-0 mx-auto gap-6 items-start ${type ? "max-w-[1200px] xl:grid-cols-[minmax(0,1fr)_minmax(280px,400px)]" : "max-w-3xl flex-1 content-center"}`}>
+              <div className="w-full min-w-0 max-w-3xl mx-auto xl:mx-0">
               {submitted ? (
                 <div className="space-y-5">
                   <VCard className="p-8 lg:p-10 text-center">
@@ -967,7 +980,7 @@ function StudentReportContent() {
                         Report another
                       </VButton>
                       <VButton size="lg" onClick={() => { const kind = submitted; clearSubmission(); if (kind) setReportKind(kind); switchTab("reports"); }}>
-                        View my reports
+                        View
                       </VButton>
                     </div>
                   </VCard>
@@ -1075,43 +1088,41 @@ function StudentReportContent() {
                   )}
                 </div>
               ) : !type ? (
-                <div className="flex-1 flex flex-col justify-center py-8">
-                  <div className="text-center mb-8">
-                    <h2 className="text-xl font-bold mb-2" style={{ color: c.text }}>What would you like to report?</h2>
-                    <p className="text-sm" style={{ color: c.textMuted }}>Choose the type of report to continue.</p>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-5">
-                    <button type="button" onClick={() => selectType("LOST")}
-                      className="group flex h-full flex-col text-left p-6 lg:p-8 rounded-2xl border bg-white transition-all duration-200 hover:shadow-lg cursor-pointer"
-                      style={{ borderColor: c.border }}>
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: c.primarySoft }}>
+                <div className="flex flex-col py-4 lg:py-0">
+                  <div className="grid grid-cols-1 gap-5 w-full max-w-[336px] mx-auto">
+                    <button type="button" onClick={() => selectType("LOST")} aria-label="Select Lost Item"
+                      className="vq-report-choice group flex sm:aspect-square flex-col items-center text-center p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
+                      style={{ borderColor: `color-mix(in srgb, ${c.primary} 55%, ${c.border})`, backgroundColor: c.card }}>
+                      <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: c.primarySoft }}>
                         <PackageSearch size={24} style={{ color: c.primary }} />
                       </div>
                       <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Lost Item</h3>
-                      <p className="text-sm mb-5" style={{ color: c.textMuted }}>I lost something on campus and need help finding it.</p>
-                      <span className="mt-auto inline-flex items-center justify-center h-9 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.primary }}>
-                        Report Lost Item
+                      <p className="text-sm mb-2" style={{ color: c.textMuted }}>I lost something on campus and need help finding it.</p>
+                      <p className="text-xs font-medium mb-3" style={{ color: c.textMuted }}>Select this card to continue.</p>
+                      <span className="mt-auto w-full shrink-0 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.primary }}>
+                        Select Lost Item <ChevronRight size={16} className="transition-transform group-hover:translate-x-1 motion-reduce:transition-none" />
                       </span>
                     </button>
-                    <button type="button" onClick={() => selectType("FOUND")}
-                      className="group flex h-full flex-col text-left p-6 lg:p-8 rounded-2xl border bg-white transition-all duration-200 hover:shadow-lg cursor-pointer"
-                      style={{ borderColor: c.border }}>
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 9%, transparent)` }}>
-                        <PackageCheck size={24} style={{ color: c.accent }} />
+                    <button type="button" onClick={() => selectType("FOUND")} aria-label="Select Found Item"
+                      className="vq-report-choice group flex sm:aspect-square flex-col items-center text-center p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
+                      style={{ borderColor: `color-mix(in srgb, ${FOUND_COLOR} 60%, ${c.border})`, backgroundColor: c.card }}>
+                      <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 10%, transparent)` }}>
+                        <PackageCheck size={24} style={{ color: FOUND_COLOR }} />
                       </div>
-                      <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Found Item</h3>
-                      <p className="text-sm mb-5" style={{ color: c.textMuted }}>I found an item and want to hand it in.</p>
-                      <span className="mt-auto inline-flex items-center justify-center h-9 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.accent }}>
-                        Report Found Item
+                      <h3 className="text-base font-semibold mb-1" style={{ color: FOUND_COLOR }}>Found Item</h3>
+                      <p className="text-sm mb-2" style={{ color: c.textMuted }}>I found an item and want to hand it in.</p>
+                      <p className="text-xs font-medium mb-3" style={{ color: c.textMuted }}>Select this card to continue.</p>
+                      <span className="mt-auto w-full shrink-0 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: FOUND_BUTTON }}>
+                        Select Found Item <ChevronRight size={16} className="transition-transform group-hover:translate-x-1 motion-reduce:transition-none" />
                       </span>
                     </button>
                   </div>
                 </div>
               ) : (
-                <VCard className="p-8 lg:p-10 flex-1 flex flex-col">
+                <VCard className="p-8 lg:p-10 flex flex-col">
                   <div className="flex items-center justify-between mb-5">
                     <p className="text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
-                      Reporting: <span style={{ color: c.textMuted }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
+                      Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
                     <button type="button" className="text-xs font-semibold underline hover:opacity-70 cursor-pointer" style={{ color: c.primary }}
                       onClick={() => { setType(null); resetForm(); }}>
@@ -1120,8 +1131,8 @@ function StudentReportContent() {
                   </div>
 
                   {type === "FOUND" && (
-                    <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 7%, transparent)`, color: c.textMuted }}>
-                      <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: c.accent }} />
+                    <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 8%, transparent)`, color: c.textMuted }}>
+                      <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: FOUND_COLOR }} />
                       <span>After submitting, hand the item to the Lost &amp; Found office. An admin will verify it and assign a locker.</span>
                     </div>
                   )}
@@ -1283,7 +1294,7 @@ function StudentReportContent() {
                         ))}
                       </div>
                     )}
-                    <p className="text-[11px] mt-2 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
+                    <p className="text-[11px] mt-2 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
@@ -1295,8 +1306,35 @@ function StudentReportContent() {
                   </div>
                 </VCard>
               )}
+              </div>
+              {type && <aside className="hidden xl:flex flex-col gap-5 sticky top-6" aria-label="Report guidance">
+                <VCard className="p-5 xl:p-6">
+                  <h2 className="text-base font-semibold mb-4" style={{ color: c.text }}>How reporting works</h2>
+                  <ol className="space-y-5">
+                    {[
+                      { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
+                      { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
+                      { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
+                    ].map((step, index) => (
+                      <li key={step.title} className="flex gap-3">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold" style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
+                        <div>
+                          <p className="text-sm font-semibold mb-1" style={{ color: c.text }}>{step.title}</p>
+                          <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>{step.text}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </VCard>
+                <VCard className="p-5 xl:p-6">
+                  <div className="flex items-center gap-2 mb-2" style={{ color: c.primary }}><FileText size={18} /><h2 className="text-sm font-semibold">Your reports</h2></div>
+                  <p className="text-xs leading-relaxed mb-4" style={{ color: c.textMuted }}>Review your lost and found reports, verification updates and possible matches in one place.</p>
+                  <VButton variant="secondary" className="w-full" onClick={() => switchTab("reports")}>View</VButton>
+                </VCard>
+              </aside>}
             </div>
           )}
+          </VContentPanel>
         </div>
       </main>
 
@@ -1401,7 +1439,7 @@ function StudentReportContent() {
 
       {editTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { if (!savingEdit) setEditTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!savingEdit) setEditTarget(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1553,7 +1591,7 @@ function StudentReportContent() {
                     ))}
                   </div>
                 )}
-                <p className="text-[11px] mt-1 text-center" style={{ color: c.textLight }}>JPG, PNG, HEIC · auto-compressed</p>
+                <p className="text-[11px] mt-1 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
               </div>
             </div>
 

@@ -88,8 +88,22 @@ export function VCard({ className = "", style, ...props }: React.HTMLAttributes<
   return (
     <div
       {...props}
-      className={`bg-white ${radius.card} border ${className}`}
+      className={`vq-card bg-white ${radius.card} border ${className}`}
       style={{ borderColor: colors.border, boxShadow: "0 1px 3px rgba(0,0,0,0.02)", ...style }}
+    />
+  );
+}
+
+/* ----------------------------- Content panel ------------------------------- */
+
+/** Stationary page surface shared by populated lists, empty states and forms. */
+export function VContentPanel({ className = "", style, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...props}
+      data-content-panel
+      className={`vq-content-panel min-w-0 w-full flex-1 flex flex-col rounded-[22px] border p-4 lg:p-6 ${className}`}
+      style={{ backgroundColor: colors.panel, borderColor: colors.border, ...style }}
     />
   );
 }
@@ -99,8 +113,8 @@ export function VCard({ className = "", style, ...props }: React.HTMLAttributes<
 export function VBadge({ color, children, className = "", style }: { color: string; children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
     <span
-      className={`text-[11px] lg:text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${className}`}
-      style={{ backgroundColor: `color-mix(in srgb, ${color} 8%, transparent)`, color, ...style }}
+      className={`vq-badge text-[11px] lg:text-xs font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap ${className}`}
+      style={{ "--vq-badge-color": color, ...style } as React.CSSProperties}
     >
       {children}
     </span>
@@ -244,30 +258,52 @@ function paginationItems(current: number, total: number): Array<number | "…"> 
   return out;
 }
 
+/** Shared results footer used by every paginated list. */
+export function VPaginationFooter({ current, total, pageSize, itemCount, onPage }: {
+  current: number;
+  total: number;
+  pageSize: number;
+  itemCount: number;
+  onPage: (p: number) => void;
+}) {
+  if (itemCount === 0) return null;
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6" data-pagination-footer>
+      <span className="text-xs" style={{ color: colors.textMuted }}>
+        Showing {((current - 1) * pageSize) + 1}-{Math.min(current * pageSize, itemCount)} of {itemCount} results
+      </span>
+      <VPagination current={current} total={total} onPage={onPage} />
+    </div>
+  );
+}
+
 export function VPagination({ current, total, onPage }: {
   current: number;
   total: number;
   onPage: (p: number) => void;
 }) {
+  if (total <= 1) return null;
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="vq-scroll-x flex max-w-full items-center gap-1.5 sm:gap-2" role="group" aria-label="Pagination">
       <button
         type="button"
-        className="w-9 h-9 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
+        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
         style={{ borderColor: colors.border, color: colors.textMuted }}
         disabled={current === 1}
+        aria-label="Previous page"
         onClick={() => onPage(current - 1)}
       >
         <ChevronLeft size={16} />
       </button>
       {paginationItems(current, total).map((p, i) =>
         p === "…" ? (
-          <span key={`gap-${i}`} className="w-6 text-center text-sm" style={{ color: colors.textLight }}>…</span>
+          <span key={`gap-${i}`} className="w-6 shrink-0 text-center text-sm" style={{ color: colors.textLight }}>…</span>
         ) : (
           <button
             key={p}
             type="button"
-            className="w-9 h-9 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer"
+            className="w-9 h-9 shrink-0 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer"
             style={{
               backgroundColor: current === p ? colors.primary : "#fff",
               color: current === p ? "#fff" : colors.textMuted,
@@ -282,9 +318,10 @@ export function VPagination({ current, total, onPage }: {
       )}
       <button
         type="button"
-        className="w-9 h-9 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
+        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
         style={{ borderColor: colors.border, color: colors.textMuted }}
         disabled={current === total}
+        aria-label="Next page"
         onClick={() => onPage(current + 1)}
       >
         <ChevronRight size={16} />

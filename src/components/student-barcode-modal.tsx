@@ -52,7 +52,7 @@ export function StudentBarcodeModal({ barcode, studentId, name, onClose }: Stude
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 vq-modal-backdrop" onClick={onClose} />
       <div role="dialog" aria-modal="true" aria-label="Your student barcode"
         className="relative w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl"
         style={{ border: `1px solid ${c.border}` }}>

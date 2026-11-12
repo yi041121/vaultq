@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { PhotoPicker } from "@/components/photo-picker";
 import { VCard, vcolors as c } from "@/components/ui/vault";
+import { useEscapeKey } from "@/lib/use-escape-key";
 
 interface PhotoSourceDialogProps {
   description?: string;
@@ -20,9 +21,10 @@ export function PhotoSourceDialog({
   onTakePhoto,
   onUpload,
 }: PhotoSourceDialogProps) {
+  useEscapeKey(true, onClose);
   return (
     <div className="fixed inset-0 z-[75] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 vq-modal-backdrop" onClick={onClose} />
       <VCard className="relative w-full max-w-sm p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
