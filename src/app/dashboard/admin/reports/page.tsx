@@ -24,6 +24,7 @@ import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { categoryIcon } from "@/lib/category-icons";
 import { ItemDetailsModal } from "@/components/item-details-modal";
+import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
@@ -426,10 +427,10 @@ export default function AdminReports() {
       const reportImages: string[] = Array.isArray(fresh.reports)
         ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
         : [];
-      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      const images = await dedupePhotos(itemPhotoSources(item.imageUrl, fresh.imageUrl, reportImages));
       setMatchPreview((prev) => {
         if (!prev || prev.item.id !== item.id) return prev;
-        const merged = Array.from(new Set([...prev.images, ...images]));
+        const merged = images.length ? images : prev.images;
         return { ...prev, images: merged, index: Math.min(prev.index, Math.max(0, merged.length - 1)) };
       });
     } catch {

@@ -12,7 +12,8 @@ import {
 import { showCenteredMessage } from "@/components/centered-message";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { StudentShell } from "@/components/student-shell";
-import { ResetFiltersButton } from "@/components/filter-panel";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { FloatingPanel } from "@/components/date-calendar";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
@@ -105,6 +106,7 @@ export default function StudentSearch() {
   const [lostReportPreview, setLostReportPreview] = useState<{ report: LostReportOption; index: number } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const dateFilterRef = useRef<HTMLDivElement>(null);
   const deepLinkHandled = useRef(false);
 
   function openLostReportPreview(report: LostReportOption) {
@@ -248,6 +250,19 @@ export default function StudentSearch() {
 
   function fmtDay(d: Date) {
     return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  // Keep ranges short enough for the filter bar: drop the repeated month or
+  // year while still showing the year once ("04 - 10 Nov 2026").
+  function fmtRange(from: string, to: string) {
+    const start = parseDate(from);
+    const end = parseDate(to);
+    if (start.getFullYear() !== end.getFullYear()) return `${fmtDay(start)} - ${fmtDay(end)}`;
+    if (start.getMonth() === end.getMonth()) {
+      return `${String(start.getDate()).padStart(2, "0")} - ${fmtDay(end)}`;
+    }
+    const startDay = start.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+    return `${startDay} - ${fmtDay(end)}`;
   }
 
   function fmtItemDate(d: string) {
@@ -439,7 +454,6 @@ export default function StudentSearch() {
   if (!user || !mounted) return null;
 
   const hasFilters = !!(query || selectedCategory || dateFrom || dateTo || sortOrder !== "newest");
-  const activeFilterStyle = { backgroundColor: c.primarySoft, borderColor: c.primary, color: c.primary };
 
   function resetFilters() {
     setQuery("");
@@ -458,208 +472,209 @@ export default function StudentSearch() {
     <StudentShell active="Search" userName={user.name} userRole={user.role} pageTitle="Search Items" logout={handleLogout}>
       <main className="min-h-[calc(100vh-52px)] pb-24 sm:pb-28 lg:pb-6 flex flex-col">
         <div className="px-4 sm:px-6 lg:px-12 pt-4 sm:pt-5 lg:pt-6 w-full flex-1 flex flex-col">
-          {/* Search + filters */}
-          <div className="space-y-2.5 mb-4 lg:mb-6 lg:flex lg:flex-wrap lg:items-center lg:gap-2.5 lg:space-y-0">
-            <div className="w-full sm:max-w-md lg:w-[420px] lg:max-w-none lg:flex-none">
+          {/* Search + filters — shared layout with the admin pages. */}
+          <FilterPanel
+            search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
                 size="lg" clearable placeholder="Search name, description, location" />
-            </div>
-            <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-2 sm:flex sm:flex-wrap lg:ml-auto lg:flex-nowrap">
-<VDropdown
-              open={categoryOpen}
-              onOpenChange={setCategoryOpen}
-              width="w-56"
-              align="left"
-              trigger={
-                <VFilterButton active={!!selectedCategory} className="w-full justify-between sm:w-auto sm:min-w-[170px]"
-                  style={selectedCategory ? activeFilterStyle : undefined}
-                  onClick={() => setCategoryOpen(!categoryOpen)}>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    {selectedCategory ? (
-                      <>{(() => { const cc = categories.find(c => c.label === selectedCategory); return cc ? <cc.icon size={14} style={{ color: cc.color }} /> : null; })()}<span className="truncate">{selectedCategory}</span></>
-                    ) : (
-                      <><Grid3X3 size={14} style={{ color: c.textMuted }} /><span>All Categories</span></>
-                    )}
-                  </span>
-                  <ChevronDown size={13} className="shrink-0" style={{ color: selectedCategory ? c.primary : c.textMuted }} />
-                </VFilterButton>
-              }
-            >
-              {(close) => (
-                <>
-                  <VDropdownItem active={!selectedCategory} onSelect={() => { setSelectedCategory(null); close(); setPage(1); }}>
-                    <Grid3X3 size={14} style={{ color: c.textMuted }} />
-                    All Categories
-                  </VDropdownItem>
-                  <div style={{ borderColor: c.border }} className="mx-3 border-t" />
-                  {categories.map((cat) => (
-                    <VDropdownItem key={cat.label} active={selectedCategory === cat.label}
-                      onSelect={() => { setSelectedCategory(cat.label); close(); setPage(1); }}>
-                      <cat.icon size={14} style={{ color: cat.color }} />
-                      {cat.label}
-                    </VDropdownItem>
-                  ))}
-                </>
-              )}
-            </VDropdown>
-            <VDropdown
-              open={sortOpen}
-              onOpenChange={setSortOpen}
-              width="w-40"
-              trigger={
-                <VFilterButton active={sortOrder !== "newest"} className="w-full justify-between sm:w-auto sm:min-w-[140px]"
-                  style={sortOrder !== "newest" ? activeFilterStyle : undefined}
-                  onClick={() => setSortOpen(!sortOpen)}>
-                  <span className="flex items-center gap-1.5">
-                    <ArrowUpDown size={13} style={{ color: sortOrder !== "newest" ? c.primary : c.textMuted }} />
-                    <span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
-                  </span>
-                  <ChevronDown size={12} className="shrink-0" style={{ color: sortOrder !== "newest" ? c.primary : c.textMuted }} />
-                </VFilterButton>
-              }
-            >
-              {(close) => (
-                <>
-                  {["newest", "oldest"].map((opt) => (
-                    <VDropdownItem key={opt} active={sortOrder === opt}
-                      onSelect={() => { setSortOrder(opt); close(); setPage(1); }}>
-                      {opt === "newest" ? "Newest" : "Oldest"}
-                    </VDropdownItem>
-                  ))}
-                </>
-              )}
-            </VDropdown>
-            <div className={`relative min-w-0 w-full sm:w-auto sm:shrink-0 ${hasFilters ? "" : "col-span-2 sm:col-span-1"}`}>
-              <VFilterButton active={!!dateFrom} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
-                style={dateFrom ? activeFilterStyle : undefined}
-                onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <Clock size={14} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
-                  <span className="min-w-0 truncate">
-                    {dateFrom && dateTo && dateFrom !== dateTo
-                      ? `${fmtDay(parseDate(dateFrom))} - ${fmtDay(parseDate(dateTo))}`
-                      : dateFrom && dateTo
-                        ? fmtDay(parseDate(dateFrom))
-                        : dateFrom
-                          ? `${fmtDay(parseDate(dateFrom))} - ?`
-                          : "Select date"}
-                  </span>
-                </span>
-                <ChevronDown size={13} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
-              </VFilterButton>
-              {dateRangeOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={closeDateCalendar} />
-                  <div className="absolute left-0 top-12 z-50 w-[300px] max-w-[calc(100vw-2rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
-                    <div className="flex items-center justify-between mb-3">
-                      <button type="button"
-                        className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-                        style={{ backgroundColor: c.fill, color: c.textMuted }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                        onClick={() => setCalOffset(calOffset - 1)}>
-                        <ChevronLeft size={14} />
-                      </button>
-                      <span className="text-xs font-medium" style={{ color: c.primary }}>
-                        {months[0].toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+            }
+            filters={
+              <div className="grid w-full grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-2 sm:contents">
+                <VDropdown
+                  open={categoryOpen}
+                  onOpenChange={setCategoryOpen}
+                  width="w-56"
+                  align="left"
+                  trigger={
+                    <VFilterButton active={!!selectedCategory} className="w-full justify-between sm:w-auto sm:min-w-[170px]"
+                      onClick={() => setCategoryOpen(!categoryOpen)}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        {selectedCategory ? (
+                          <>{(() => { const cc = categories.find(c => c.label === selectedCategory); return cc ? <cc.icon size={14} style={{ color: cc.color }} /> : null; })()}<span className="truncate">{selectedCategory}</span></>
+                        ) : (
+                          <><Grid3X3 size={14} style={{ color: c.textMuted }} /><span>All Categories</span></>
+                        )}
                       </span>
-                      <button type="button"
-                        disabled={calOffset >= 0}
-                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 ${calOffset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
-                        style={{ backgroundColor: c.fill, color: c.textMuted }}
-                        onMouseEnter={(e) => { if (calOffset < 0) e.currentTarget.style.backgroundColor = c.borderLight; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                        onClick={() => { if (calOffset < 0) setCalOffset(calOffset + 1); }}>
-                        <ChevronRight size={14} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-7 gap-0.5 text-center">
-                      {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                        <span key={d} className="text-[10px] font-semibold py-1" style={{ color: c.textMuted }}>{d}</span>
+                      <ChevronDown size={13} className="shrink-0" style={{ color: selectedCategory ? c.primary : c.textMuted }} />
+                    </VFilterButton>
+                  }
+                >
+                  {(close) => (
+                    <>
+                      <VDropdownItem active={!selectedCategory} onSelect={() => { setSelectedCategory(null); close(); setPage(1); }}>
+                        <Grid3X3 size={14} style={{ color: c.textMuted }} />
+                        All Categories
+                      </VDropdownItem>
+                      <div style={{ borderColor: c.border }} className="mx-3 border-t" />
+                      {categories.map((cat) => (
+                        <VDropdownItem key={cat.label} active={selectedCategory === cat.label}
+                          onSelect={() => { setSelectedCategory(cat.label); close(); setPage(1); }}>
+                          <cat.icon size={14} style={{ color: cat.color }} />
+                          {cat.label}
+                        </VDropdownItem>
                       ))}
-                      {monthGrid(months[0].getFullYear(), months[0].getMonth()).map((d, i) => {
-                        if (!d) return <span key={i} />;
-                        const iso = toISO(d);
-                        const isStart = tempFrom === iso;
-                        const isEnd = tempTo === iso && tempTo !== tempFrom;
-                        const inRange = isInRange(d);
-                        const isFuture = iso > todayIso;
-                        return (
-                          <button key={i} type="button"
-                            disabled={isFuture}
-                            className={`h-8 w-8 mx-auto rounded-full text-xs transition-all duration-150 ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
-                            style={{
-                              backgroundColor: isFuture ? "transparent" : isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
-                              color: isFuture ? c.textLight : isStart || isEnd ? "#fff" : c.text,
-                              fontWeight: isStart || isEnd ? "700" : "400",
-                            }}
-                            onMouseEnter={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = c.fill; }}
-                            onMouseLeave={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = inRange ? c.primarySoft : "transparent"; }}
-                            onClick={() => {
-                              if (isFuture) return;
-                              if (tempFrom && tempTo && tempFrom !== tempTo) {
-                                setTempFrom(iso);
-                                setTempTo(iso);
-                                return;
-                              }
-                              if (!tempFrom) {
-                                setTempFrom(iso);
-                                setTempTo(iso);
-                                return;
-                              }
-                              if (iso === tempFrom) {
-                                setTempTo(iso);
-                                return;
-                              }
-                              if (iso < tempFrom) {
-                                setTempFrom(iso);
-                                setTempTo(iso);
-                              } else {
-                                setTempTo(iso);
-                              }
-                            }}>
-                            {d.getDate()}
+                    </>
+                  )}
+                </VDropdown>
+                <VDropdown
+                  open={sortOpen}
+                  onOpenChange={setSortOpen}
+                  width="w-40"
+                  trigger={
+                    <VFilterButton active={sortOrder !== "newest"} className="w-full justify-between sm:w-auto sm:min-w-[140px]"
+                      onClick={() => setSortOpen(!sortOpen)}>
+                      <span className="flex items-center gap-1.5">
+                        <ArrowUpDown size={13} style={{ color: sortOrder !== "newest" ? c.primary : c.textMuted }} />
+                        <span>{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
+                      </span>
+                      <ChevronDown size={12} className="shrink-0" style={{ color: sortOrder !== "newest" ? c.primary : c.textMuted }} />
+                    </VFilterButton>
+                  }
+                >
+                  {(close) => (
+                    <>
+                      {["newest", "oldest"].map((opt) => (
+                        <VDropdownItem key={opt} active={sortOrder === opt}
+                          onSelect={() => { setSortOrder(opt); close(); setPage(1); }}>
+                          {opt === "newest" ? "Newest" : "Oldest"}
+                        </VDropdownItem>
+                      ))}
+                    </>
+                  )}
+                </VDropdown>
+                <div ref={dateFilterRef} className="relative min-w-0 w-full sm:w-auto sm:shrink-0">
+                  <VFilterButton active={!!dateFrom} className="justify-between w-full sm:w-auto sm:min-w-[160px] sm:max-w-[16rem]"
+                    aria-haspopup="dialog" aria-expanded={dateRangeOpen} aria-controls="search-date-range"
+                    onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Clock size={14} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
+                      <span className="min-w-0 truncate">
+                        {dateFrom && dateTo && dateFrom !== dateTo
+                          ? fmtRange(dateFrom, dateTo)
+                          : dateFrom && dateTo
+                            ? fmtDay(parseDate(dateFrom))
+                            : dateFrom
+                              ? `${fmtDay(parseDate(dateFrom))} - ?`
+                              : "Select date"}
+                      </span>
+                    </span>
+                    <ChevronDown size={13} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
+                  </VFilterButton>
+                  {dateRangeOpen && (
+                    <FloatingPanel anchor={dateFilterRef.current} onClose={closeDateCalendar}
+                      offsetY={8} fallbackWidth={300} fallbackHeight={380}>
+                      <div id="search-date-range" role="dialog" aria-label="Select date range"
+                        className="w-[300px] max-w-[calc(100vw-3rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
+                        <div className="flex items-center justify-between mb-3">
+                          <button type="button"
+                            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
+                            style={{ backgroundColor: c.fill, color: c.textMuted }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
+                            onClick={() => setCalOffset(calOffset - 1)}>
+                            <ChevronLeft size={14} />
                           </button>
-                        );
-                      })}
-                    </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: c.fill }}>
-                      <button type="button"
-                        className="h-8 px-3 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer"
-                        style={{ backgroundColor: c.fill, color: c.textMuted }}
-                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                        onClick={() => { setTempFrom(""); setTempTo(""); }}>
-                        Clear
-                      </button>
-                      <button type="button"
-                        className="h-8 px-4 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer"
-                        style={{ backgroundColor: c.primary, color: "#fff" }}
-                        onMouseEnter={(e) => { if (tempFrom) e.currentTarget.style.backgroundColor = c.primaryDark; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}
-                        onClick={() => {
-                          if (!tempFrom) {
-                            setDateFrom("");
-                            setDateTo("");
-                            setPage(1);
-                            closeDateCalendar();
-                            return;
-                          }
-                          setDateFrom(tempFrom);
-                          setDateTo(tempTo || tempFrom);
-                          setPage(1);
-                          closeDateCalendar();
-                        }}>
-                        Confirm
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            {hasFilters && <ResetFiltersButton onClick={resetFilters} className="w-full sm:w-auto" />}
-            </div>
-          </div>
+                          <span className="text-xs font-medium" style={{ color: c.primary }}>
+                            {months[0].toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+                          </span>
+                          <button type="button"
+                            disabled={calOffset >= 0}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 ${calOffset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
+                            style={{ backgroundColor: c.fill, color: c.textMuted }}
+                            onMouseEnter={(e) => { if (calOffset < 0) e.currentTarget.style.backgroundColor = c.borderLight; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
+                            onClick={() => { if (calOffset < 0) setCalOffset(calOffset + 1); }}>
+                            <ChevronRight size={14} />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-7 gap-0.5 text-center">
+                          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                            <span key={d} className="text-[10px] font-semibold py-1" style={{ color: c.textMuted }}>{d}</span>
+                          ))}
+                          {monthGrid(months[0].getFullYear(), months[0].getMonth()).map((d, i) => {
+                            if (!d) return <span key={i} />;
+                            const iso = toISO(d);
+                            const isStart = tempFrom === iso;
+                            const isEnd = tempTo === iso && tempTo !== tempFrom;
+                            const inRange = isInRange(d);
+                            const isFuture = iso > todayIso;
+                            return (
+                              <button key={i} type="button"
+                                disabled={isFuture}
+                                className={`h-8 w-8 mx-auto rounded-full text-xs transition-all duration-150 ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
+                                style={{
+                                  backgroundColor: isFuture ? "transparent" : isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
+                                  color: isFuture ? c.textLight : isStart || isEnd ? "#fff" : c.text,
+                                  fontWeight: isStart || isEnd ? "700" : "400",
+                                }}
+                                onMouseEnter={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = c.fill; }}
+                                onMouseLeave={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = inRange ? c.primarySoft : "transparent"; }}
+                                onClick={() => {
+                                  if (isFuture) return;
+                                  if (tempFrom && tempTo && tempFrom !== tempTo) {
+                                    setTempFrom(iso);
+                                    setTempTo(iso);
+                                    return;
+                                  }
+                                  if (!tempFrom) {
+                                    setTempFrom(iso);
+                                    setTempTo(iso);
+                                    return;
+                                  }
+                                  if (iso === tempFrom) {
+                                    setTempTo(iso);
+                                    return;
+                                  }
+                                  if (iso < tempFrom) {
+                                    setTempFrom(iso);
+                                    setTempTo(iso);
+                                  } else {
+                                    setTempTo(iso);
+                                  }
+                                }}>
+                                {d.getDate()}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: c.fill }}>
+                          <button type="button"
+                            className="h-8 px-3 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer"
+                            style={{ backgroundColor: c.fill, color: c.textMuted }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
+                            onClick={() => { setTempFrom(""); setTempTo(""); }}>
+                            Clear
+                          </button>
+                          <button type="button"
+                            className="h-8 px-4 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer"
+                            style={{ backgroundColor: c.primary, color: "#fff" }}
+                            onMouseEnter={(e) => { if (tempFrom) e.currentTarget.style.backgroundColor = c.primaryDark; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}
+                            onClick={() => {
+                              if (!tempFrom) {
+                                setDateFrom("");
+                                setDateTo("");
+                                setPage(1);
+                                closeDateCalendar();
+                                return;
+                              }
+                              setDateFrom(tempFrom);
+                              setDateTo(tempTo || tempFrom);
+                              setPage(1);
+                              closeDateCalendar();
+                            }}>
+                            Confirm
+                          </button>
+                        </div>
+                      </div>
+                    </FloatingPanel>
+                  )}
+                </div>
+                <ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} className="w-full sm:w-auto" />
+              </div>
+            }
+          />
 
           {/* Items grid */}
           {loading ? (

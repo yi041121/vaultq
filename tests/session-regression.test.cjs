@@ -273,6 +273,40 @@ test("photo sources are deduplicated without dropping distinct uploads", () => {
   assert.deepEqual(Array.from(uniquePhotos([null, "", "photo-a", "photo-a", "photo-b", undefined])), ["photo-a", "photo-b"]);
 });
 
+test("item detail photos prefer the original image over the signed list URL", () => {
+  const { itemPhotoSources } = load("src/lib/photo-dedupe.ts", {
+    "./photo-gallery": load("src/lib/photo-gallery.ts", {}),
+  });
+  assert.deepEqual(
+    Array.from(itemPhotoSources("signed-item-url", "raw-item-image", ["raw-item-image", "second-photo"])),
+    ["raw-item-image", "second-photo"],
+  );
+  assert.deepEqual(Array.from(itemPhotoSources("signed-item-url", null, [])), ["signed-item-url"]);
+});
+
+test("visually identical photos are deduplicated by decoded pixels", () => {
+  const { dedupePhotoPixels } = load("src/lib/photo-dedupe.ts", {
+    "./photo-gallery": load("src/lib/photo-gallery.ts", {}),
+  });
+  const first = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]);
+  const reencoded = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]);
+  const secondAngle = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 9, 255]);
+  const result = dedupePhotoPixels([
+    { source: "item-photo", pixels: first },
+    { source: "report-copy", pixels: reencoded },
+    { source: "second-angle", pixels: secondAngle },
+    { source: "undecodable", pixels: null },
+  ]);
+  assert.deepEqual(Array.from(result), ["item-photo", "second-angle", "undecodable"]);
+});
+
+test("photo dedupe falls back to exact sources without a browser DOM", async () => {
+  const { dedupePhotos } = load("src/lib/photo-dedupe.ts", {
+    "./photo-gallery": load("src/lib/photo-gallery.ts", {}),
+  });
+  assert.deepEqual(Array.from(await dedupePhotos(["photo-a", "photo-a", "photo-b"])), ["photo-a", "photo-b"]);
+});
+
 async function listClaimPhotos(reportSources, light = true, main = "photo-a") {
   const photos = load("src/lib/photo-gallery.ts", {});
   const route = load("src/app/api/claims/route.ts", {

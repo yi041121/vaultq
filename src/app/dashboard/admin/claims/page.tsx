@@ -16,6 +16,7 @@ import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { EvidenceSlider } from "@/components/evidence-slider";
 import { DescriptionBox } from "@/components/description-box";
 import { uniquePhotos } from "@/lib/photo-gallery";
+import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
@@ -571,10 +572,10 @@ export default function AdminClaims() {
       const reportImages: string[] = Array.isArray(fresh.reports)
         ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
         : [];
-      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      const images = await dedupePhotos(itemPhotoSources(item.imageUrl, fresh.imageUrl, reportImages));
       setMatchPreview((prev) => {
         if (!prev || prev.item.id !== item.id) return prev;
-        const merged = Array.from(new Set([...prev.images, ...images]));
+        const merged = images.length ? images : prev.images;
         return { ...prev, images: merged, index: Math.min(prev.index, Math.max(0, merged.length - 1)) };
       });
     } catch {

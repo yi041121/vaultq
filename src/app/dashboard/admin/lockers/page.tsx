@@ -15,6 +15,7 @@ import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { categoryIcon } from "@/lib/category-icons";
 import { ItemDetailsModal } from "@/components/item-details-modal";
+import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { matchesSearch } from "@/lib/search";
 import {
   VCard, VButton, VInput, VSearchInput, vcolors as c, font as f,
@@ -283,7 +284,7 @@ export default function AdminLockers() {
       const reportImages: string[] = Array.isArray(fresh.reports)
         ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
         : [];
-      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      const images = await dedupePhotos(itemPhotoSources(item.imageUrl, fresh.imageUrl, reportImages));
       setItemDetail((prev) => (prev && prev.id === item.id ? {
         ...prev,
         name: fresh.itemName || prev.name,

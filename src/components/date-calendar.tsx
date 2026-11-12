@@ -131,22 +131,47 @@ export function DateCalendar({ value, onChange, onClose, compact = false }: Date
 }
 
 
-interface CalendarPopoverProps extends DateCalendarProps {
-  /** Trigger element the popover should sit next to. */
+export interface FloatingPanelProps {
+  /** Trigger element the panel should sit next to. */
   anchor: HTMLElement | null;
+  onClose: () => void;
+  children: React.ReactNode;
+  /** Horizontal/vertical offset from the anchor, in pixels. */
+  offsetX?: number;
+  offsetY?: number;
+  /** Measured size fallback for the first paint. */
+  fallbackWidth?: number;
+  fallbackHeight?: number;
 }
 
 /**
- * Portal-based wrapper so the calendar is never clipped by a scrolling modal.
- * It opens below the trigger, flips above when there is no room, and is
- * clamped inside the viewport on both axes.
+ * Portal-based panel used by the date pickers. It opens below the trigger,
+ * flips above when there is no room, and is clamped inside the viewport on
+ * both axes so it can never cause horizontal overflow.
  */
-export function CalendarPopover({ anchor, compact = false, ...props }: CalendarPopoverProps) {
+export function FloatingPanel({
+  anchor,
+  onClose,
+  children,
+  offsetX = 0,
+  offsetY = 8,
+  fallbackWidth = 300,
+  fallbackHeight = 340,
+}: FloatingPanelProps) {
   const [mounted, setMounted] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mounted, onClose]);
 
   useLayoutEffect(() => {
     if (!mounted || !anchor) return;
@@ -155,20 +180,16 @@ export function CalendarPopover({ anchor, compact = false, ...props }: CalendarP
     function update() {
       const rect = anchor!.getBoundingClientRect();
       const box = boxRef.current;
-      const width = box?.offsetWidth || (compact ? 248 : 300);
-      const height = box?.offsetHeight || 340;
+      const width = box?.offsetWidth || fallbackWidth;
+      const height = box?.offsetHeight || fallbackHeight;
       const viewportW = window.innerWidth;
       const viewportH = window.innerHeight;
 
-      // Nudge the panel slightly left and up so it hugs the trigger and
-      // clears the field's helper text.
-      const offsetX = -10;
-      const offsetY = -6;
       const left = Math.min(Math.max(margin, rect.left + offsetX), Math.max(margin, viewportW - width - margin));
 
       let top = rect.bottom + offsetY;
       if (top + height > viewportH - margin) {
-        const above = rect.top - height + offsetY;
+        const above = rect.top - height - Math.abs(offsetY);
         top = above >= margin ? above : Math.max(margin, viewportH - height - margin);
       }
 
@@ -182,13 +203,13 @@ export function CalendarPopover({ anchor, compact = false, ...props }: CalendarP
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [mounted, anchor, compact]);
+  }, [mounted, anchor, offsetX, offsetY, fallbackWidth, fallbackHeight]);
 
   if (!mounted) return null;
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[90]" onClick={props.onClose} />
+      <div className="fixed inset-0 z-[90]" onClick={onClose} />
       <div
         ref={boxRef}
         className="fixed z-[95] max-h-[calc(100vh-1.5rem)] overflow-auto overscroll-contain"
@@ -198,9 +219,29 @@ export function CalendarPopover({ anchor, compact = false, ...props }: CalendarP
           maxWidth: "calc(100vw - 1.5rem)",
           visibility: pos ? "visible" : "hidden",
         }}>
-        <DateCalendar {...props} compact={compact} />
+        {children}
       </div>
     </>,
     document.body,
+  );
+}
+
+interface CalendarPopoverProps extends DateCalendarProps {
+  /** Trigger element the popover should sit next to. */
+  anchor: HTMLElement | null;
+}
+
+/** Portal-based calendar popover with collision handling and viewport clamping. */
+export function CalendarPopover({ anchor, compact = false, ...props }: CalendarPopoverProps) {
+  return (
+    <FloatingPanel
+      anchor={anchor}
+      onClose={props.onClose}
+      offsetX={-10}
+      offsetY={-6}
+      fallbackWidth={compact ? 248 : 300}
+      fallbackHeight={340}>
+      <DateCalendar {...props} compact={compact} />
+    </FloatingPanel>
   );
 }

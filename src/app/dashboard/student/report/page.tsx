@@ -19,6 +19,7 @@ import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { PhotoPicker } from "@/components/photo-picker";
+import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VBadge, VFilterButton, vcolors as c,
@@ -626,11 +627,12 @@ function StudentReportContent() {
       const reportImages: string[] = Array.isArray(fresh.reports)
         ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
         : [];
-      const images = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      // Prefer the original item image from the details response over the
+      // signed list URL, so the same photo is not shown twice.
+      const images = await dedupePhotos(itemPhotoSources(item.imageUrl, fresh.imageUrl, reportImages));
       setItemDetail((prev) => {
         if (!prev || prev.id !== item.id) return prev;
-        // Keep the photos already shown and add any new item photos.
-        const merged = Array.from(new Set([...prev.images, ...images]));
+        const merged = images.length ? images : prev.images;
         return {
           ...prev,
           name: fresh.itemName || prev.name,

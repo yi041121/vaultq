@@ -240,7 +240,7 @@ export default function StudentNotifications() {
           />
 
           <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
-            <button type="button"
+            <button type="button" aria-pressed={showUnreadOnly}
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer"
               style={{
                 borderColor: showUnreadOnly ? c.primary : c.border,

@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, MoreVertical, LogOut } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, MoreVertical, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -15,6 +15,7 @@ import { useIdleSession } from "@/lib/use-idle-session";
 import { clearClientSession } from "@/lib/idle-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { FloatingPanel } from "@/components/date-calendar";
 
 interface NavItem {
   label: string;
@@ -43,9 +44,23 @@ const defaultNav: NavItem[] = [
   { label: "Profile", icon: User, path: "/dashboard/student/profile" },
 ];
 
-export function StudentShell({ active, children, userName, userRole, pageTitle, bell, bottomNav = defaultNav, logout }: StudentShellProps) {
+// Start with an icon rail; retain expansion during client-side navigation.
+let sidebarPreference = false;
+
+const desktopQuery = "(min-width: 1024px)";
+function subscribeDesktop(onChange: () => void) {
+  const query = window.matchMedia(desktopQuery);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+const getDesktopSnapshot = () => window.matchMedia(desktopQuery).matches;
+const getServerDesktopSnapshot = () => false;
+
+export function StudentShell({ active, children, userName, userRole, bell, bottomNav = defaultNav, logout }: StudentShellProps) {
   const router = useRouter();
+  const desktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, getServerDesktopSnapshot);
   useIdleSession(router);
+  const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -64,6 +79,11 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
     setConfirmLogout(true);
   }
 
+  function toggleSidebar() {
+    sidebarPreference = !sidebarOpen;
+    setSidebarOpen(sidebarPreference);
+  }
+
   const navItems = bottomNav.map((item) => ({ ...item, active: item.label === active }));
   const activeIndex = navItems.findIndex((item) => item.active);
   const navCount = navItems.length;
@@ -71,17 +91,6 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
   const navTimerRef = useRef<number | null>(null);
 
   useEscapeKey(accountMenuOpen, () => setAccountMenuOpen(false));
-
-  useEffect(() => {
-    if (!accountMenuOpen) return;
-    function onPointerDown(event: MouseEvent) {
-      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
-        setAccountMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [accountMenuOpen]);
 
   // Keep the notch aligned if the active tab changes while the shell stays mounted.
   useEffect(() => {
@@ -137,130 +146,160 @@ export function StudentShell({ active, children, userName, userRole, pageTitle, 
     if (token) void prefetchAdminPage(path, token);
   }
 
-  // The mobile header keeps its actions inline, so there is no drawer to lock
-  // the page behind. The desktop account menu closes on escape/outside click above.
+  // The desktop shortcut dock stays independent of navigation and page content.
+
+  const accountActions = (
+    <>
+      {userRole === "ADMIN" && (
+        <div ref={accountMenuRef} className={`relative ${sidebarOpen ? "w-full" : ""}`}>
+          <button type="button" onClick={() => setAccountMenuOpen((open) => !open)}
+            aria-label="Account menu" title="Account menu" aria-haspopup="menu" aria-expanded={accountMenuOpen}
+            className={`flex items-center rounded-full cursor-pointer transition-colors duration-200 ${sidebarOpen ? "w-full h-11 px-4 gap-3" : "w-11 h-11 justify-center"}`}
+            style={{ backgroundColor: accountMenuOpen ? colors.primarySoft : "transparent" }}>
+            <MoreVertical size={18} style={{ color: accountMenuOpen ? colors.primary : colors.textMuted }} />
+            {sidebarOpen && <span className="text-sm font-medium" style={{ color: colors.textMuted }}>Account menu</span>}
+          </button>
+          {accountMenuOpen && (
+            <FloatingPanel anchor={accountMenuRef.current} onClose={() => setAccountMenuOpen(false)}
+              offsetX={(accountMenuRef.current?.offsetWidth ?? 44) + 32} offsetY={-44} fallbackWidth={240} fallbackHeight={200}>
+            <div role="menu" aria-label="Account menu"
+              className="w-60 overflow-hidden rounded-xl border bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150"
+              style={{ borderColor: colors.border }}>
+              <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: colors.borderLight }}>
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                  style={{ backgroundColor: colors.primary }}>{userName.charAt(0).toUpperCase()}</div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold" style={{ color: colors.text }}>{userName}</p>
+                  <p className="text-[11px]" style={{ color: colors.textMuted }}>{userRole}</p>
+                </div>
+              </div>
+              <div className="p-1.5">
+                <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); router.push("/dashboard/admin/accounts"); }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm cursor-pointer hover:bg-[#f8fafc]"
+                  style={{ color: colors.text }}>
+                  <User size={15} style={{ color: colors.textMuted }} /> Manage accounts
+                </button>
+                <button type="button" role="menuitem" onClick={requestLogout}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm cursor-pointer hover:bg-[#fef2f2]"
+                  style={{ color: colors.danger }}>
+                  <LogOut size={15} /> Sign out
+                </button>
+              </div>
+            </div>
+            </FloatingPanel>
+          )}
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
       <CenteredMessageHost />
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-56 flex-col z-40" style={{ backgroundColor: colors.sidebar }}>
-        <div className="px-5 py-5 border-b flex items-center gap-3" style={{ borderColor: colors.sidebarBorder }}>
-          <img src="/vaultQ-removebg-preview.png" alt="" className="w-8 h-8 object-contain" />
-          <span className="text-lg font-bold text-white">VaultQ</span>
+      <aside id="app-sidebar" aria-label="Main navigation"
+        className={`hidden lg:flex fixed left-4 top-4 bottom-4 flex-col z-40 rounded-3xl border shadow-sm overflow-hidden transition-[width] duration-300 ease-out motion-reduce:transition-none ${sidebarOpen ? "w-64" : "w-[88px]"}`}
+        style={{ backgroundColor: colors.card, borderColor: colors.borderLight }}>
+        <div className={`shrink-0 flex pt-7 pb-4 ${sidebarOpen ? "items-center gap-3 px-5" : "flex-col items-center gap-5 px-3"}`}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: colors.primarySoft }}>
+            <img src="/vaultQ-removebg-preview.png" alt="VaultQ" className="w-8 h-8 object-contain" />
+          </div>
+          {sidebarOpen && <span className="text-xl font-bold tracking-tight" style={{ color: colors.text }}>VaultQ</span>}
+          <button type="button" onClick={toggleSidebar}
+            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            aria-expanded={sidebarOpen} aria-controls="desktop-sidebar-links"
+            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 cursor-pointer hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 ${sidebarOpen ? "ml-auto" : ""}`}
+            style={{ color: colors.textMuted }}>
+            {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+          </button>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1.5">
-          {navItems.map((item) => (
+        <nav id="desktop-sidebar-links" aria-label="Desktop navigation" className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-2 ${sidebarOpen ? "px-5" : "px-3"}`}>
+          {navItems.map((item, index) => (
+            <React.Fragment key={item.label}>
+              {sidebarOpen && (index === 0 || item.label === "Profile" || item.label === "Accounts" || (userRole === "ADMIN" && index === 3)) && (
+                <p className={`text-[11px] font-medium uppercase tracking-wider px-2 mb-3 ${index === 0 ? "mt-2" : "mt-7"}`}
+                  style={{ color: colors.textLight }}>
+                  {index === 0 ? "Main menu" : item.label === "Accounts" ? "Admin" : item.label === "Profile" ? "Account" : "Management"}
+                </p>
+              )}
             <button
-              key={item.label}
+              aria-label={item.label}
+              aria-current={item.active ? "page" : undefined}
+              title={sidebarOpen ? undefined : item.label}
               onPointerEnter={() => warmPage(item.path)}
               onFocus={() => warmPage(item.path)}
               type="button"
-              className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer ${item.active ? "font-semibold" : "font-medium"}`}
+              className={`relative flex items-center rounded-full text-sm transition-colors duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 ${sidebarOpen ? "w-full h-11 gap-3 px-4 mb-1" : "w-14 h-14 justify-center mb-3"} ${item.active ? "font-semibold" : "font-medium"}`}
               style={{
-                backgroundColor: item.active ? "rgba(127,184,181,0.14)" : "transparent",
-                color: item.active ? "#fff" : colors.sidebarText,
+                backgroundColor: item.active ? colors.primary : sidebarOpen ? "transparent" : colors.fill,
+                color: item.active ? "#fff" : colors.textMuted,
               }}
               onClick={() => item.path && router.push(item.path)}
-              onMouseEnter={(e) => { if (!item.active) { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = colors.sidebarTextHover; } }}
-              onMouseLeave={(e) => { if (!item.active) { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = colors.sidebarText; } }}
+              onMouseEnter={(e) => { if (!item.active) e.currentTarget.style.backgroundColor = colors.borderLight; }}
+              onMouseLeave={(e) => { if (!item.active) e.currentTarget.style.backgroundColor = sidebarOpen ? "transparent" : colors.fill; }}
             >
-              {item.active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full" style={{ backgroundColor: colors.accent }} />
-              )}
-              <item.icon size={iconSize.nav} style={{ color: item.active ? colors.accent : undefined, flexShrink: 0, opacity: item.active ? 1 : 0.9 }} />
-              <span>{item.label}</span>
+              <item.icon size={sidebarOpen ? iconSize.nav : 21} style={{ flexShrink: 0 }} />
+              {sidebarOpen && <span className="whitespace-nowrap">{item.label}</span>}
               {navBadge(item.label) > 0 && (
-                <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums"
-                  style={{ backgroundColor: "rgba(220,38,38,0.18)", color: "#fecaca", boxShadow: "inset 0 0 0 1px rgba(248,113,113,0.35)" }}>
+                <span className={`${sidebarOpen ? "ml-auto" : "absolute -right-0.5 top-0"} min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums`}
+                  style={{ backgroundColor: colors.danger, color: "#fff" }}>
                   {badgeText(navBadge(item.label))}
                 </span>
               )}
             </button>
+            </React.Fragment>
           ))}
         </nav>
-        <div className="px-3 py-4 border-t" style={{ borderColor: colors.sidebarBorder }}>
-          <div className="flex items-center gap-3 px-3 py-2.5">
+        {userRole === "ADMIN" && <div role="group" aria-label="Account controls"
+          className={`shrink-0 flex flex-col gap-1 border-t py-3 ${sidebarOpen ? "px-5" : "items-center px-3"}`}
+          style={{ borderColor: colors.borderLight }}>
+          {desktop && accountActions}
+        </div>}
+        <div className="shrink-0 px-3 py-4 border-t" style={{ borderColor: colors.borderLight }}>
+          <div className={`flex items-center gap-3 ${sidebarOpen ? "px-2" : "flex-col"}`}>
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
               style={{ backgroundColor: colors.primary }}>
               {userName.charAt(0).toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{userName}</p>
-              <p className="text-xs" style={{ color: colors.sidebarText }}>{userRole}</p>
-            </div>
-            <button onClick={requestLogout} className="text-white/40 hover:text-white transition-colors shrink-0 cursor-pointer" aria-label="Sign out">
+            {sidebarOpen && <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: colors.text }}>{userName}</p>
+              <p className="text-[10px]" style={{ color: colors.textLight }}>{userRole}</p>
+            </div>}
+            <button type="button" onClick={requestLogout} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 transition-colors shrink-0 cursor-pointer" style={{ color: colors.textMuted }} aria-label="Sign out" title="Sign out">
               <LogOut size={16} />
             </button>
           </div>
         </div>
       </aside>
 
+      {desktop && (
+        <div role="group" aria-label="Quick shortcuts"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border p-2 shadow-lg"
+          style={{ backgroundColor: colors.card, borderColor: colors.border }}>
+          <ThemeToggle />
+          {bell ?? <NotificationBell role={userRole} shortcut />}
+        </div>
+      )}
+
       {/* Main area */}
-      <div className="lg:ml-56 flex flex-col">
+      <div className={`flex flex-col transition-[margin-left] duration-300 ease-out motion-reduce:transition-none lg:[&>main]:pb-24 ${sidebarOpen ? "lg:ml-72" : "lg:ml-[120px]"}`}>
         {/* Top nav */}
-        <header className="sticky top-0 z-30 flex items-center justify-between px-4 lg:px-8 py-3 border-b bg-white relative"
+        <header className="sticky top-0 z-30 flex lg:hidden items-center justify-between px-4 py-3 border-b bg-white"
           style={{ borderColor: colors.border, paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
           <div className="flex items-center gap-2.5">
             <img src="/vaultQ-removebg-preview.png" alt="" className="w-7 h-7 object-contain lg:hidden" />
             <span className="text-base font-bold lg:hidden" style={{ color: colors.text }}>VaultQ</span>
           </div>
-          {pageTitle && (
-            <h1 className="hidden lg:block text-lg font-bold absolute left-1/2 -translate-x-1/2" style={{ color: colors.text }}>{pageTitle}</h1>
-          )}
           <div className="flex items-center gap-3">
-            <ThemeToggle />
-            {bell ?? <NotificationBell role={userRole} />}
+            {!desktop && <ThemeToggle />}
+            {!desktop && (bell ?? <NotificationBell role={userRole} />)}
             {/* Phone: sign out lives beside the notification bell, no drawer. */}
             <button type="button" onClick={requestLogout} aria-label="Sign out" title="Sign out"
               className="lg:hidden w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200"
               style={{ backgroundColor: colors.borderLight }}>
               <LogOut size={17} style={{ color: colors.textMuted }} />
             </button>
-            {/* Desktop: compact 3-dot account menu. */}
-            <div ref={accountMenuRef} className="relative hidden lg:block">
-              <button type="button" onClick={() => setAccountMenuOpen((open) => !open)}
-                aria-label="Account menu" title="Account menu"
-                aria-haspopup="menu" aria-expanded={accountMenuOpen}
-                className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200"
-                style={{ backgroundColor: accountMenuOpen ? colors.primarySoft : colors.borderLight }}>
-                <MoreVertical size={18} style={{ color: accountMenuOpen ? colors.primary : colors.textMuted }} />
-              </button>
-              {accountMenuOpen && (
-                <div role="menu" aria-label="Account menu"
-                  className="absolute right-0 top-12 z-50 w-60 origin-top-right overflow-hidden rounded-xl border bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150"
-                  style={{ borderColor: colors.border }}>
-                  <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: colors.borderLight }}>
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                      style={{ backgroundColor: colors.primary }}>
-                      {userName.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold" style={{ color: colors.text }}>{userName}</p>
-                      <p className="text-[11px]" style={{ color: colors.textMuted }}>{userRole}</p>
-                    </div>
-                  </div>
-                  <div className="p-1.5">
-                    <button type="button" role="menuitem"
-                      onClick={() => {
-                        setAccountMenuOpen(false);
-                        router.push(userRole === "ADMIN" ? "/dashboard/admin/accounts" : "/dashboard/student/profile");
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors duration-150 hover:bg-[#f8fafc]"
-                      style={{ color: colors.text }}>
-                      <User size={15} style={{ color: colors.textMuted }} />
-                      {userRole === "ADMIN" ? "Manage accounts" : "My profile"}
-                    </button>
-                    <button type="button" role="menuitem" onClick={requestLogout}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors duration-150 hover:bg-[#fef2f2]"
-                      style={{ color: colors.danger }}>
-                      <LogOut size={15} />
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </header>
 

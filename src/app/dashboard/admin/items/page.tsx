@@ -19,6 +19,7 @@ import { DescriptionBox } from "@/components/description-box";
 import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { ItemDetailsModal } from "@/components/item-details-modal";
+import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import {
   VCard, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPagination, VFilterButton,
   vcolors as c,
@@ -288,9 +289,11 @@ export default function AdminItems() {
       const reportImages: string[] = Array.isArray(fresh.reports)
         ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
         : [];
-      const photos = Array.from(new Set([fresh.imageUrl, ...reportImages].filter(Boolean))) as string[];
+      const photos = await dedupePhotos(itemPhotoSources(item.imageUrl, fresh.imageUrl, reportImages));
       if (photos.length) {
-        setViewer((prev) => (prev ? { ...prev, photos } : prev));
+        setViewer((prev) => (prev
+          ? { ...prev, photos, index: Math.min(prev.index, Math.max(0, photos.length - 1)) }
+          : prev));
       }
     } catch {
       // Keep the single card photo.
