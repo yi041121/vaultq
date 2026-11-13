@@ -7,7 +7,7 @@ import {
   Loader2, RefreshCw, Plus, FileText, RotateCcw,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
   ChevronDown, ZoomIn, MapPin, Eye, Sparkles,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, CircleAlert,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -32,6 +32,51 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 
 interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
+
+function ReportingSteps({ type }: { type: ReportType }) {
+  return (
+    <ol className="space-y-3">
+      {[
+        { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
+        { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
+        { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
+      ].map((step, index) => (
+        <li key={step.title} className="flex gap-2.5">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold" style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
+          <div>
+            <p className="text-xs font-semibold mb-0.5" style={{ color: c.text }}>{step.title}</p>
+            <p className="text-[11px] leading-relaxed" style={{ color: c.textMuted }}>{step.text}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ReportingHelpDialog({ type, onClose, returnFocus }: { type: ReportType; onClose: () => void; returnFocus: HTMLButtonElement | null }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEscapeKey(true, onClose);
+  useEffect(() => {
+    const previous = returnFocus ?? document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    return () => { queueMicrotask(() => { if (previous?.isConnected) previous.focus(); }); };
+  }, [returnFocus]);
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={onClose} />
+      <VCard id="reporting-help" role="dialog" aria-modal="true" aria-labelledby="reporting-help-title"
+        className="relative w-full max-w-sm max-h-[85dvh] overflow-y-auto p-5"
+        onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); closeRef.current?.focus(); } }}>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h2 id="reporting-help-title" className="text-base font-semibold" style={{ color: c.text }}>How reporting works</h2>
+          <button ref={closeRef} type="button" aria-label="Close reporting help" onClick={onClose}
+            className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center cursor-pointer" style={{ backgroundColor: "rgba(15,23,42,0.7)", color: "#fff" }}><X size={17} /></button>
+        </div>
+        <ReportingSteps type={type} />
+      </VCard>
+    </div>
+  );
+}
 type ReportPhoto = { file: File; preview: string; originalFile: File; originalPreview: string };
 type EditPhoto = { preview: string; originalPreview: string };
 type ItemDetail = {
@@ -127,6 +172,8 @@ function StudentReportContent() {
 
   const [type, setType] = useState<ReportType | null>(null);
   const [expandedChoice, setExpandedChoice] = useState<ReportType | null>(null);
+  const [reportHelpOpen, setReportHelpOpen] = useState(false);
+  const reportHelpTriggerRef = useRef<HTMLButtonElement>(null);
   const [itemName, setItemName] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [description, setDescription] = useState("");
@@ -287,6 +334,7 @@ function StudentReportContent() {
   function resetForm() {
     setType(null);
     setExpandedChoice(null);
+    setReportHelpOpen(false);
     setItemName("");
     setCategory(null);
     setDescription("");
@@ -696,7 +744,7 @@ function StudentReportContent() {
   useEscapeKey(!!itemDetail && !viewer, () => setItemDetail(null));
   useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
   useEscapeKey(
-    !!type && !submitted && !photoSourceTarget && !cameraTarget && editingPhoto === null && !categoryOpen && !dateOpen,
+    !!type && !reportHelpOpen && !submitted && !photoSourceTarget && !cameraTarget && editingPhoto === null && !categoryOpen && !dateOpen,
     () => { if (!submitting) closeReportForm(); },
   );
   useEscapeKey(!!editTarget && !viewer && !photoSourceTarget && !cameraTarget && editingEditPhoto === null, () => {
@@ -1148,16 +1196,21 @@ function StudentReportContent() {
                 </div>
               )}
               {type && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                <div inert={reportHelpOpen} className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                   <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
                     onClick={() => { if (!submitting) closeReportForm(); }} />
                   <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-y-auto">
                   <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
                   <VCard className="min-w-0 p-6 sm:p-8">
-                  <div className="flex items-center justify-between mb-5">
-                    <p className="text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
+                  <div className="flex items-center justify-between gap-3 mb-5">
+                    <div className="flex min-w-0 items-center gap-2">
+                    <p className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
+                    <button ref={reportHelpTriggerRef} type="button" aria-label="How reporting works" aria-haspopup="dialog" aria-controls="reporting-help" aria-expanded={reportHelpOpen}
+                      onClick={() => setReportHelpOpen(true)} className="lg:hidden w-9 h-9 shrink-0 rounded-full flex items-center justify-center cursor-pointer"
+                      style={{ backgroundColor: c.primarySoft, color: c.primary }}><CircleAlert size={19} /></button>
+                    </div>
                     <button type="button" className="text-xs font-semibold underline hover:opacity-70 cursor-pointer" style={{ color: c.primary }}
                       onClick={closeReportForm}>
                       Change
@@ -1339,35 +1392,17 @@ function StudentReportContent() {
                   </div>
 
                   </VCard>
-                  <aside className="flex flex-col gap-4 lg:sticky lg:top-0">
+                  <aside className="hidden lg:block lg:sticky lg:top-0">
                     <VCard className="p-4">
                       <h3 className="text-sm font-semibold mb-3" style={{ color: c.text }}>How reporting works</h3>
-                      <ol className="space-y-3">
-                        {[
-                          { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
-                          { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
-                          { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
-                        ].map((step, index) => (
-                          <li key={step.title} className="flex gap-2.5">
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold" style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
-                            <div>
-                              <p className="text-xs font-semibold mb-0.5" style={{ color: c.text }}>{step.title}</p>
-                              <p className="text-[11px] leading-relaxed" style={{ color: c.textMuted }}>{step.text}</p>
-                            </div>
-                          </li>
-                        ))}
-                      </ol>
-                    </VCard>
-                    <VCard className="p-4" style={{ backgroundColor: c.fill }}>
-                      <div className="flex items-center gap-2 mb-2" style={{ color: c.primary }}><FileText size={16} /><h3 className="text-sm font-semibold">Your reports</h3></div>
-                      <p className="text-xs leading-relaxed mb-3" style={{ color: c.textMuted }}>Review your lost and found reports, verification updates and possible matches in one place.</p>
-                      <VButton variant="secondary" size="sm" className="w-full" onClick={() => { closeReportForm(); switchTab("reports"); }}>View</VButton>
+                      <ReportingSteps type={type} />
                     </VCard>
                   </aside>
                   </div>
                   </div>
                 </div>
               )}
+              {type && reportHelpOpen && <ReportingHelpDialog type={type} onClose={() => setReportHelpOpen(false)} returnFocus={reportHelpTriggerRef.current} />}
               </div>
             </div>
           )}
