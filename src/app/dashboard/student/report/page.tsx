@@ -357,6 +357,14 @@ function StudentReportContent() {
     clearSubmission();
   }
 
+  /** Swap the open form to the other report type, keeping what was typed. */
+  function switchReportType() {
+    if (!type || submitting) return;
+    const next: ReportType = type === "LOST" ? "FOUND" : "LOST";
+    setExpandedChoice(next);
+    selectType(next);
+  }
+
   function activateChoice(next: ReportType) {
     const tapToExpand = window.matchMedia("(hover: none), (max-width: 767px)").matches;
     if (tapToExpand && expandedChoice !== next) {
@@ -1208,10 +1216,11 @@ function StudentReportContent() {
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
                     <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                      <button type="button" aria-label="Change report type" title="Change report type"
+                      <button type="button" aria-label={type === "LOST" ? "Switch to found report" : "Switch to lost report"}
+                        title={type === "LOST" ? "Switch to found report" : "Switch to lost report"}
                         className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 hover:bg-[#e6eef5]"
                         style={{ color: c.primary }}
-                        onClick={closeReportForm}>
+                        onClick={switchReportType}>
                         <ArrowLeftRight size={17} />
                       </button>
                       <button ref={reportHelpTriggerRef} type="button" aria-label="How reporting works" aria-haspopup="dialog" aria-controls="reporting-help" aria-expanded={reportHelpOpen}
