@@ -268,6 +268,35 @@ html.theme-snapshot-transition::view-transition-new(root) {
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
 }
 
+.vq-report-choice-details {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: grid-template-rows 220ms ease, opacity 220ms ease, transform 220ms ease, visibility 220ms;
+}
+.vq-report-choice[data-expanded="true"] .vq-report-choice-details,
+.vq-report-choice:focus-visible .vq-report-choice-details {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+@media (hover: hover) {
+  .vq-report-choice:hover .vq-report-choice-details {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vq-report-choice-details {
+    transition: none;
+  }
+}
+
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .vq-report-choice:hover {
     transform: translateY(-4px) scale(1.015);

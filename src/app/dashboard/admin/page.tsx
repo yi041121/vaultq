@@ -220,14 +220,15 @@ export default function AdminDashboard() {
             </div>
 
             {/* Right column */}
-            <div className="flex flex-col gap-6 lg:pt-11">
-              <VCard className="p-5 lg:p-6 min-h-[276px] flex flex-col">
+            <div className="flex flex-col gap-6">
+              <section className="flex flex-col">
                 <div className="flex items-center justify-between gap-2 mb-4">
                   <h2 className={f.sectionTitle} style={{ color: c.text }}>Pending Claims</h2>
                   <button type="button" className="text-sm font-medium flex items-center gap-1 cursor-pointer hover:opacity-70" style={{ color: c.primary }} onClick={() => router.push("/dashboard/admin/claims")}>
                     View all <ChevronRight size={14} />
                   </button>
                 </div>
+                <VCard className="p-5 lg:p-6 min-h-[276px] flex flex-col">
                 <div className="flex flex-1 flex-col gap-3">
                   {dataLoading && pendingQueue.length === 0 ? <div className="h-24 rounded-xl animate-pulse" style={{ backgroundColor: c.fill }} /> : pendingQueue.map((claim) => (
                     <button key={claim.id} type="button" onClick={() => router.push(`/dashboard/admin/claims?open=${encodeURIComponent(claim.id)}`)}
@@ -242,13 +243,15 @@ export default function AdminDashboard() {
                   {!dataLoading && pendingQueue.length === 0 && <p className="flex flex-1 items-center justify-center py-5 text-sm" style={{ color: c.textMuted }}>No claims waiting for verification.</p>}
                 </div>
               </VCard>
-              <VCard className="p-5 lg:p-6 min-h-[276px] flex-1">
+              </section>
+              <section className="flex flex-1 flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className={f.sectionTitle} style={{ color: c.text }}>Pending Intake</h2>
                   <button type="button" className="text-sm font-medium flex items-center gap-1 cursor-pointer hover:opacity-70" style={{ color: c.primary }} onClick={() => router.push("/dashboard/admin/reports")}>
                     View all <ChevronRight size={14} />
                   </button>
                 </div>
+                <VCard className="p-5 lg:p-6 min-h-[276px] flex-1">
                 <div className="space-y-3">
                   {dataLoading && intake.length === 0 ? <div className="h-24 rounded-xl animate-pulse" style={{ backgroundColor: c.fill }} /> : intake.slice(0, 3).map((report) => (
                     <button key={report.id} type="button" onClick={() => router.push(`/dashboard/admin/reports?open=${encodeURIComponent(report.id)}`)}
@@ -264,6 +267,7 @@ export default function AdminDashboard() {
                   {!dataLoading && intake.length === 0 && <p className="text-sm text-center py-5" style={{ color: c.textMuted }}>No found reports waiting for intake.</p>}
                 </div>
               </VCard>
+              </section>
             </div>
           </div>
           </VContentPanel>

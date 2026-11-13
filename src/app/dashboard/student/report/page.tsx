@@ -126,6 +126,7 @@ function StudentReportContent() {
   const [reportKind, setReportKind] = useState<ReportType>("LOST");
 
   const [type, setType] = useState<ReportType | null>(null);
+  const [expandedChoice, setExpandedChoice] = useState<ReportType | null>(null);
   const [itemName, setItemName] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [description, setDescription] = useState("");
@@ -285,6 +286,7 @@ function StudentReportContent() {
 
   function resetForm() {
     setType(null);
+    setExpandedChoice(null);
     setItemName("");
     setCategory(null);
     setDescription("");
@@ -304,6 +306,15 @@ function StudentReportContent() {
   function selectType(next: ReportType) {
     setType(next);
     clearSubmission();
+  }
+
+  function activateChoice(next: ReportType) {
+    const tapToExpand = window.matchMedia("(hover: none), (max-width: 767px)").matches;
+    if (tapToExpand && expandedChoice !== next) {
+      setExpandedChoice(next);
+      return;
+    }
+    selectType(next);
   }
 
   function openCameraFor(target: "new" | "edit") {
@@ -1099,32 +1110,38 @@ function StudentReportContent() {
               ) : (
                 <div className={`flex flex-col py-4 lg:py-0 ${type ? "pointer-events-none select-none" : ""}`} aria-hidden={!!type}>
                   <div className="grid grid-cols-1 gap-5 w-full max-w-[420px] mx-auto">
-                    <button type="button" onClick={() => selectType("LOST")} aria-label="Report Lost Item"
+                    <button type="button" onClick={() => activateChoice("LOST")} aria-label="Report Lost Item"
+                      aria-expanded={expandedChoice === "LOST"} data-expanded={expandedChoice === "LOST"}
                       className="vq-report-choice group flex w-full flex-col items-center text-center rounded-2xl border-2 p-8 transition-all duration-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
                       style={{ borderColor: `color-mix(in srgb, ${c.primary} 55%, ${c.border})`, backgroundColor: c.card }}>
                       <div className="w-16 h-16 shrink-0 rounded-xl flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
                         <PackageSearch size={30} style={{ color: c.primary }} />
                       </div>
                       <h3 className="text-lg font-semibold mt-4" style={{ color: c.text }}>Lost Item</h3>
-                      <div className="w-full overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none max-h-0 opacity-0 -translate-y-2 group-hover:mt-4 group-hover:max-h-56 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:mt-4 group-focus-visible:max-h-56 group-focus-visible:opacity-100 group-focus-visible:translate-y-0">
+                      <div className="vq-report-choice-details w-full">
+                        <div className="min-h-0 overflow-hidden"><div className="pt-4">
                         <p className="text-sm mb-4" style={{ color: c.textMuted }}>I lost something on campus and need help finding it.</p>
                         <span className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.primary }}>
                           Select Lost Item <ChevronRight size={16} />
                         </span>
+                        </div></div>
                       </div>
                     </button>
-                    <button type="button" onClick={() => selectType("FOUND")} aria-label="Report Found Item"
+                    <button type="button" onClick={() => activateChoice("FOUND")} aria-label="Report Found Item"
+                      aria-expanded={expandedChoice === "FOUND"} data-expanded={expandedChoice === "FOUND"}
                       className="vq-report-choice group flex w-full flex-col items-center text-center rounded-2xl border-2 p-8 transition-all duration-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
                       style={{ borderColor: `color-mix(in srgb, ${FOUND_COLOR} 60%, ${c.border})`, backgroundColor: c.card }}>
                       <div className="w-16 h-16 shrink-0 rounded-xl flex items-center justify-center" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 10%, transparent)` }}>
                         <PackageCheck size={30} style={{ color: FOUND_COLOR }} />
                       </div>
                       <h3 className="text-lg font-semibold mt-4" style={{ color: FOUND_COLOR }}>Found Item</h3>
-                      <div className="w-full overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none max-h-0 opacity-0 -translate-y-2 group-hover:mt-4 group-hover:max-h-56 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:mt-4 group-focus-visible:max-h-56 group-focus-visible:opacity-100 group-focus-visible:translate-y-0">
+                      <div className="vq-report-choice-details w-full">
+                        <div className="min-h-0 overflow-hidden"><div className="pt-4">
                         <p className="text-sm mb-4" style={{ color: c.textMuted }}>I found an item and want to hand it in.</p>
                         <span className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: FOUND_BUTTON }}>
                           Select Found Item <ChevronRight size={16} />
                         </span>
+                        </div></div>
                       </div>
                     </button>
                   </div>
@@ -1313,7 +1330,7 @@ function StudentReportContent() {
                     <p className="text-[11px] mt-2 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
                   </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
+                  <div data-report-actions className="flex items-center justify-center gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
                     <VButton variant="secondary" size="lg" onClick={closeReportForm}>Cancel</VButton>
                     <VButton size="lg" onClick={handleSubmit} disabled={!formValid || submitting}>
                       {submitting && <Loader2 size={15} className="animate-spin" />}

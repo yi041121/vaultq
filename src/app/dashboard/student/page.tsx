@@ -188,7 +188,7 @@ export default function StudentDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className={f.sectionTitle} style={{ color: c.text }}>Latest Found Items</h2>
                 <button className="text-sm font-medium flex items-center gap-1 transition-opacity duration-200 hover:opacity-70 cursor-pointer"
-                  style={{ color: c.text }}
+                  style={{ color: c.primary }}
                   onClick={() => router.push("/dashboard/student/search")}>
                   View all <ChevronRight size={14} />
                 </button>
@@ -245,12 +245,15 @@ export default function StudentDashboard() {
             {/* Right column */}
             <div className="flex h-full flex-col gap-6">
               {/* My Claims */}
-              <VCard className="p-5 lg:p-6 mt-11 min-h-[276px] lg:min-h-[316px] flex flex-col cursor-pointer"
-                onClick={() => router.push("/dashboard/student/claims")}>
+              <section className="flex flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className={f.sectionTitle} style={{ color: c.text }}>My Claims</h2>
-                  <FileText size={16} style={{ color: c.textMuted }} />
+                  <button type="button" className="text-sm font-medium flex items-center gap-1 hover:opacity-70 cursor-pointer" style={{ color: c.primary }} onClick={() => router.push("/dashboard/student/claims")}>
+                    View all <ChevronRight size={14} />
+                  </button>
                 </div>
+              <VCard className="p-5 lg:p-6 min-h-[276px] lg:min-h-[316px] flex flex-col cursor-pointer"
+                onClick={() => router.push("/dashboard/student/claims")}>
                 <div className="flex flex-1 flex-col gap-3">
                   {latestClaims.map((claim) => (
                     <button key={claim.id} type="button"
@@ -270,14 +273,18 @@ export default function StudentDashboard() {
                   )}
                 </div>
               </VCard>
+              </section>
 
               {/* Announcements */}
-              <VCard className="p-5 lg:p-6 flex flex-col min-h-[300px] lg:min-h-[330px] cursor-pointer"
-                onClick={() => router.push("/dashboard/student/notifications")}>
+              <section className="flex flex-1 flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className={f.sectionTitle} style={{ color: c.text }}>Announcements</h2>
-                  <BellRing size={16} style={{ color: c.textMuted }} />
+                  <button type="button" className="text-sm font-medium flex items-center gap-1 hover:opacity-70 cursor-pointer" style={{ color: c.primary }} onClick={() => router.push("/dashboard/student/notifications")}>
+                    View all <ChevronRight size={14} />
+                  </button>
                 </div>
+              <VCard className="p-5 lg:p-6 flex flex-1 flex-col min-h-[264px] lg:min-h-[294px] cursor-pointer"
+                onClick={() => router.push("/dashboard/student/notifications")}>
                 <div className="divide-y flex-1" style={{ borderColor: c.border }}>
                   {announcements.map((announcement) => (
                     <button key={announcement.id} type="button" onClick={(event) => { event.stopPropagation(); openAnnouncement(announcement); }}
@@ -300,6 +307,7 @@ export default function StudentDashboard() {
                   )}
                 </div>
               </VCard>
+              </section>
             </div>
           </div>
           </VContentPanel>
