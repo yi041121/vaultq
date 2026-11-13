@@ -75,7 +75,7 @@ export function ItemDetailsModal({
 
   return (
     <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4`}>
-      <div className="absolute inset-0 vq-modal-backdrop" onClick={onClose} />
+      <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={onClose} />
       <VCard className={`relative w-full ${maxWidth} max-h-[90vh] overflow-auto`}>
         <div className={`w-full ${hasPhotos ? "h-56 lg:h-64" : "h-32 lg:h-36"} rounded-t-2xl flex items-center justify-center relative overflow-hidden`}
           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>

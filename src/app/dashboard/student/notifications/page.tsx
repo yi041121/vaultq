@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, AlertCircle, Loader2, RefreshCw, CheckCheck } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, VContentPanel, VSearchInput, VFilterButton, VPaginationFooter, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VSearchInput, VFilterButton, VPaginationFooter, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
 import {
   NOTIFICATION_META, relativeTime,
@@ -264,78 +264,81 @@ export default function StudentNotifications() {
           </div>
 
           {/* List */}
-          <VCard className={`overflow-hidden flex flex-col ${loading || error || filtered.length === 0 ? "flex-1" : ""}`}
-            style={{ border: 0, boxShadow: "none" }}>
-            {loading ? (
-              <div className="divide-y" style={{ borderColor: c.borderLight }}>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="flex gap-4 px-5 py-4 animate-pulse">
-                    <div className="w-10 h-10 rounded-xl shrink-0" style={{ backgroundColor: c.fill }} />
+          {loading ? (
+            <div className="flex flex-1 flex-col gap-3" aria-busy="true" aria-label="Loading notifications">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <VCard key={i} className="p-4 lg:p-5 animate-pulse">
+                  <div className="flex gap-3.5">
+                    <div className="w-11 h-11 rounded-xl shrink-0" style={{ backgroundColor: c.fill }} />
                     <div className="flex-1 space-y-2 py-0.5">
-                      <div className="h-3.5 w-2/3 rounded" style={{ backgroundColor: c.fill }} />
+                      <div className="h-4 w-2/3 rounded" style={{ backgroundColor: c.fill }} />
                       <div className="h-3 w-full rounded" style={{ backgroundColor: c.fill }} />
                       <div className="h-3 w-4/5 rounded" style={{ backgroundColor: c.fill }} />
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : error ? (
-              <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-                <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>
-                <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{error}</p>
-                <button type="button"
-                  className="h-10 px-4 rounded-xl text-sm font-semibold border bg-white cursor-pointer"
-                  style={{ borderColor: c.border, color: c.primary }}
-                  onClick={() => void load()}>
-                  <RefreshCw size={14} className="inline mr-1.5" /> Try again
-                </button>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                <BellRing size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-                <p className="text-base font-medium" style={{ color: c.textMuted }}>No notifications</p>
-                <p className="text-sm mt-1" style={{ color: c.textLight }}>
-                  {notifs.length === 0 ? "You're all caught up." : "Nothing matches these filters."}
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="divide-y flex-1" style={{ borderColor: c.borderLight }}>
-                  {paginated.map((n) => (
-                  <div key={n.id}
-                    className="relative flex gap-4 px-5 lg:px-6 py-4 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
+                </VCard>
+              ))}
+            </div>
+          ) : error ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>
+              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{error}</p>
+              <button type="button"
+                className="h-10 px-4 rounded-xl text-sm font-semibold border bg-white cursor-pointer"
+                style={{ borderColor: c.border, color: c.primary }}
+                onClick={() => void load()}>
+                <RefreshCw size={14} className="inline mr-1.5" /> Try again
+              </button>
+            </VCard>
+          ) : filtered.length === 0 ? (
+            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
+              <BellRing size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
+              <p className="text-base font-medium" style={{ color: c.textMuted }}>No notifications</p>
+              <p className="text-sm mt-1" style={{ color: c.textLight }}>
+                {notifs.length === 0 ? "You're all caught up." : "Nothing matches these filters."}
+              </p>
+            </VCard>
+          ) : (
+            <div className="flex flex-1 flex-col gap-3">
+              {paginated.map((n) => {
+                const link = resolveNotificationLink(n.link, n.title, n.message);
+                return (
+                  <VCard key={n.id}
+                    className="relative overflow-hidden p-4 lg:p-5 cursor-pointer transition-all duration-200 hover:shadow-md"
                     onClick={() => openNotification(n)}>
                     {!n.isRead && (
-                      <span className="absolute left-2 top-5 w-2 h-2 rounded-full" style={{ backgroundColor: c.primary }} />
+                      <span aria-hidden className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: n.color }} />
                     )}
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ml-1"
-                      style={{ backgroundColor: `color-mix(in srgb, ${n.color} 8%, transparent)` }}>
-                      <n.icon size={18} style={{ color: n.color }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-semibold truncate" style={{ color: c.text }}>{n.title}</p>
-                        <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: c.textLight }}>{relativeTime(n.createdAt)}</span>
+                    <div className="flex items-start gap-3.5 pl-1">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: `color-mix(in srgb, ${n.color} 10%, transparent)` }}>
+                        <n.icon size={19} style={{ color: n.color }} />
                       </div>
-                      <p className="text-xs mt-1 leading-relaxed" style={{ color: c.textMuted }}>{n.message}</p>
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: c.borderLight, color: c.textMuted }}>
-                          {n.category}
-                        </span>
-                        {n.link && (
-                          <span className="text-[11px] font-semibold" style={{ color: c.primary }}>
-                            View details →
-                          </span>
-                        )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm lg:text-base font-semibold line-clamp-1" style={{ color: c.text }}>{n.title}</p>
+                          <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: c.textLight }}>{relativeTime(n.createdAt)}</span>
+                        </div>
+                        <p className="text-xs lg:text-sm mt-1 leading-relaxed" style={{ color: c.textMuted }}>{n.message}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
+                          <VBadge color={n.color}>{n.category}</VBadge>
+                          {link && (
+                            <button type="button"
+                              onClick={(event) => { event.stopPropagation(); openNotification(n); }}
+                              className="h-8 px-3 rounded-lg text-[11px] font-semibold border bg-white transition-colors duration-150 hover:bg-[#f8fafc] cursor-pointer"
+                              style={{ borderColor: c.border, color: c.primary }}>
+                              View details
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-                </div>
-              </>
-            )}
-          </VCard>
+                  </VCard>
+                );
+              })}
+            </div>
+          )}
           {!loading && !error && (
             <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={filtered.length} onPage={setPage} />
           )}

@@ -74,7 +74,7 @@ export function PhotoCropModal({ src, onClose, onSave }: PhotoCropModalProps) {
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-      <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!saving) onClose(); }} />
+      <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!saving) onClose(); }} />
       <div className="relative w-full max-w-xl rounded-2xl border bg-white p-5" style={{ borderColor: c.border }}>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>

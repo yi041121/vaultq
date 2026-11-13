@@ -177,7 +177,7 @@ export default function BarcodeScanner({ open, onDetect, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 vq-modal-backdrop-strong" onClick={onClose} />
+      <div className="absolute inset-0 vq-modal-backdrop-strong" style={{ backgroundColor: "rgba(2,6,23,0.84)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }} onClick={onClose} />
       <div className="relative w-full max-w-md max-h-[92dvh] rounded-2xl overflow-hidden bg-black shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 bg-black/80 shrink-0">
           <span className="text-sm font-medium text-white flex items-center gap-2"><Camera size={16} /> Scan barcode</span>

@@ -845,7 +845,7 @@ export default function StudentSearch() {
       {/* Always offer the student's pending lost reports before claiming */}
       {linkPromptItem && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setLinkPromptItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setLinkPromptItem(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0">
@@ -913,7 +913,7 @@ export default function StudentSearch() {
       {/* Claim evidence modal */}
       {claimItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setClaimItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setClaimItem(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-5">
               <div>

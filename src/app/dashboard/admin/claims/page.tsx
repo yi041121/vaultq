@@ -1081,7 +1081,7 @@ export default function AdminClaims() {
 
       {approveTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!approving) setApproveTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!approving) setApproveTarget(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1121,7 +1121,7 @@ export default function AdminClaims() {
 
       {rejectTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!rejecting) setRejectTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!rejecting) setRejectTarget(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1170,7 +1170,7 @@ export default function AdminClaims() {
 
       {matchTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!matching) setMatchTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!matching) setMatchTarget(null); }} />
           <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1313,7 +1313,7 @@ export default function AdminClaims() {
 
       {compareClaim && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setCompareClaim(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setCompareClaim(null)} />
           <VCard role="dialog" aria-modal="true" aria-label="Claim Details" className="relative w-full min-w-0 max-w-2xl max-h-[90dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3 mb-1">
               <div>

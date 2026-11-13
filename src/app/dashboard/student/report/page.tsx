@@ -296,6 +296,11 @@ function StudentReportContent() {
     setPhotoSourceTarget(null);
   }
 
+  function closeReportForm() {
+    if (submitting) return;
+    resetForm();
+  }
+
   function selectType(next: ReportType) {
     setType(next);
     clearSubmission();
@@ -679,6 +684,10 @@ function StudentReportContent() {
 
   useEscapeKey(!!itemDetail && !viewer, () => setItemDetail(null));
   useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
+  useEscapeKey(
+    !!type && !submitted && !photoSourceTarget && !cameraTarget && editingPhoto === null && !categoryOpen && !dateOpen,
+    () => { if (!submitting) closeReportForm(); },
+  );
   useEscapeKey(!!editTarget && !viewer && !photoSourceTarget && !cameraTarget && editingEditPhoto === null, () => {
     if (savingEdit) return;
     if (editDateOpen) { setEditDateOpen(false); return; }
@@ -961,7 +970,7 @@ function StudentReportContent() {
               )}
             </div>
           ) : (
-            <div data-report-workspace className={`grid w-full min-w-0 mx-auto gap-6 items-start ${type ? "max-w-[1200px] xl:grid-cols-[minmax(0,1fr)_minmax(280px,400px)]" : "max-w-3xl flex-1 content-center"}`}>
+            <div data-report-workspace className="grid w-full min-w-0 mx-auto gap-6 items-start max-w-3xl flex-1 content-center">
               <div className="w-full min-w-0 max-w-3xl mx-auto xl:mx-0">
               {submitted ? (
                 <div className="space-y-5">
@@ -1087,49 +1096,56 @@ function StudentReportContent() {
                     </VCard>
                   )}
                 </div>
-              ) : !type ? (
-                <div className="flex flex-col py-4 lg:py-0">
-                  <div className="grid grid-cols-1 gap-5 w-full max-w-[336px] mx-auto">
-                    <button type="button" onClick={() => selectType("LOST")} aria-label="Select Lost Item"
-                      className="vq-report-choice group flex sm:aspect-square flex-col items-center text-center p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
+              ) : (
+                <div className={`flex flex-col py-4 lg:py-0 ${type ? "pointer-events-none select-none" : ""}`} aria-hidden={!!type}>
+                  <div className="grid grid-cols-1 gap-5 w-full max-w-[420px] mx-auto">
+                    <button type="button" onClick={() => selectType("LOST")} aria-label="Report Lost Item"
+                      className="vq-report-choice group flex w-full flex-col items-center text-center rounded-2xl border-2 p-8 transition-all duration-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
                       style={{ borderColor: `color-mix(in srgb, ${c.primary} 55%, ${c.border})`, backgroundColor: c.card }}>
-                      <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: c.primarySoft }}>
-                        <PackageSearch size={24} style={{ color: c.primary }} />
+                      <div className="w-16 h-16 shrink-0 rounded-xl flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
+                        <PackageSearch size={30} style={{ color: c.primary }} />
                       </div>
-                      <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Lost Item</h3>
-                      <p className="text-sm mb-2" style={{ color: c.textMuted }}>I lost something on campus and need help finding it.</p>
-                      <p className="text-xs font-medium mb-3" style={{ color: c.textMuted }}>Select this card to continue.</p>
-                      <span className="mt-auto w-full shrink-0 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.primary }}>
-                        Select Lost Item <ChevronRight size={16} className="transition-transform group-hover:translate-x-1 motion-reduce:transition-none" />
-                      </span>
+                      <h3 className="text-lg font-semibold mt-4" style={{ color: c.text }}>Lost Item</h3>
+                      <div className="w-full overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none max-h-0 opacity-0 -translate-y-2 group-hover:mt-4 group-hover:max-h-56 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:mt-4 group-focus-visible:max-h-56 group-focus-visible:opacity-100 group-focus-visible:translate-y-0">
+                        <p className="text-sm mb-4" style={{ color: c.textMuted }}>I lost something on campus and need help finding it.</p>
+                        <span className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.primary }}>
+                          Select Lost Item <ChevronRight size={16} />
+                        </span>
+                      </div>
                     </button>
-                    <button type="button" onClick={() => selectType("FOUND")} aria-label="Select Found Item"
-                      className="vq-report-choice group flex sm:aspect-square flex-col items-center text-center p-5 rounded-2xl border-2 transition-all duration-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
+                    <button type="button" onClick={() => selectType("FOUND")} aria-label="Report Found Item"
+                      className="vq-report-choice group flex w-full flex-col items-center text-center rounded-2xl border-2 p-8 transition-all duration-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
                       style={{ borderColor: `color-mix(in srgb, ${FOUND_COLOR} 60%, ${c.border})`, backgroundColor: c.card }}>
-                      <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 10%, transparent)` }}>
-                        <PackageCheck size={24} style={{ color: FOUND_COLOR }} />
+                      <div className="w-16 h-16 shrink-0 rounded-xl flex items-center justify-center" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 10%, transparent)` }}>
+                        <PackageCheck size={30} style={{ color: FOUND_COLOR }} />
                       </div>
-                      <h3 className="text-base font-semibold mb-1" style={{ color: FOUND_COLOR }}>Found Item</h3>
-                      <p className="text-sm mb-2" style={{ color: c.textMuted }}>I found an item and want to hand it in.</p>
-                      <p className="text-xs font-medium mb-3" style={{ color: c.textMuted }}>Select this card to continue.</p>
-                      <span className="mt-auto w-full shrink-0 inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: FOUND_BUTTON }}>
-                        Select Found Item <ChevronRight size={16} className="transition-transform group-hover:translate-x-1 motion-reduce:transition-none" />
-                      </span>
+                      <h3 className="text-lg font-semibold mt-4" style={{ color: FOUND_COLOR }}>Found Item</h3>
+                      <div className="w-full overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none max-h-0 opacity-0 -translate-y-2 group-hover:mt-4 group-hover:max-h-56 group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:mt-4 group-focus-visible:max-h-56 group-focus-visible:opacity-100 group-focus-visible:translate-y-0">
+                        <p className="text-sm mb-4" style={{ color: c.textMuted }}>I found an item and want to hand it in.</p>
+                        <span className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: FOUND_BUTTON }}>
+                          Select Found Item <ChevronRight size={16} />
+                        </span>
+                      </div>
                     </button>
                   </div>
                 </div>
-              ) : (
-                <VCard className="p-8 lg:p-10 flex flex-col">
+              )}
+              {type && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                  <div className="absolute inset-0" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+                    onClick={() => { if (!submitting) closeReportForm(); }} />
+                  <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-y-auto">
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+                  <VCard className="min-w-0 p-6 sm:p-8">
                   <div className="flex items-center justify-between mb-5">
                     <p className="text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
                     <button type="button" className="text-xs font-semibold underline hover:opacity-70 cursor-pointer" style={{ color: c.primary }}
-                      onClick={() => { setType(null); resetForm(); }}>
+                      onClick={closeReportForm}>
                       Change
                     </button>
                   </div>
-
                   {type === "FOUND" && (
                     <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 8%, transparent)`, color: c.textMuted }}>
                       <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: FOUND_COLOR }} />
@@ -1298,40 +1314,44 @@ function StudentReportContent() {
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
-                    <VButton variant="secondary" size="lg" onClick={() => { setType(null); resetForm(); }}>Cancel</VButton>
+                    <VButton variant="secondary" size="lg" onClick={closeReportForm}>Cancel</VButton>
                     <VButton size="lg" onClick={handleSubmit} disabled={!formValid || submitting}>
                       {submitting && <Loader2 size={15} className="animate-spin" />}
                       {submitting ? "Submitting..." : "Submit"}
                     </VButton>
                   </div>
-                </VCard>
+
+                  </VCard>
+                  <aside className="flex flex-col gap-4 lg:sticky lg:top-0">
+                    <VCard className="p-4">
+                      <h3 className="text-sm font-semibold mb-3" style={{ color: c.text }}>How reporting works</h3>
+                      <ol className="space-y-3">
+                        {[
+                          { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
+                          { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
+                          { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
+                        ].map((step, index) => (
+                          <li key={step.title} className="flex gap-2.5">
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold" style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
+                            <div>
+                              <p className="text-xs font-semibold mb-0.5" style={{ color: c.text }}>{step.title}</p>
+                              <p className="text-[11px] leading-relaxed" style={{ color: c.textMuted }}>{step.text}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    </VCard>
+                    <VCard className="p-4" style={{ backgroundColor: c.fill }}>
+                      <div className="flex items-center gap-2 mb-2" style={{ color: c.primary }}><FileText size={16} /><h3 className="text-sm font-semibold">Your reports</h3></div>
+                      <p className="text-xs leading-relaxed mb-3" style={{ color: c.textMuted }}>Review your lost and found reports, verification updates and possible matches in one place.</p>
+                      <VButton variant="secondary" size="sm" className="w-full" onClick={() => { closeReportForm(); switchTab("reports"); }}>View</VButton>
+                    </VCard>
+                  </aside>
+                  </div>
+                  </div>
+                </div>
               )}
               </div>
-              {type && <aside className="hidden xl:flex flex-col gap-5 sticky top-6" aria-label="Report guidance">
-                <VCard className="p-5 xl:p-6">
-                  <h2 className="text-base font-semibold mb-4" style={{ color: c.text }}>How reporting works</h2>
-                  <ol className="space-y-5">
-                    {[
-                      { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
-                      { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
-                      { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
-                    ].map((step, index) => (
-                      <li key={step.title} className="flex gap-3">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold" style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
-                        <div>
-                          <p className="text-sm font-semibold mb-1" style={{ color: c.text }}>{step.title}</p>
-                          <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>{step.text}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </VCard>
-                <VCard className="p-5 xl:p-6">
-                  <div className="flex items-center gap-2 mb-2" style={{ color: c.primary }}><FileText size={18} /><h2 className="text-sm font-semibold">Your reports</h2></div>
-                  <p className="text-xs leading-relaxed mb-4" style={{ color: c.textMuted }}>Review your lost and found reports, verification updates and possible matches in one place.</p>
-                  <VButton variant="secondary" className="w-full" onClick={() => switchTab("reports")}>View</VButton>
-                </VCard>
-              </aside>}
             </div>
           )}
           </VContentPanel>
@@ -1439,7 +1459,7 @@ function StudentReportContent() {
 
       {editTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!savingEdit) setEditTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!savingEdit) setEditTarget(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>

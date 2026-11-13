@@ -3,19 +3,17 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, MoreVertical, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NotificationBell } from "@/components/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAdminNavCounts } from "@/lib/use-admin-nav-counts";
-import { prefetchStudentData } from "@/lib/student-cache";
+import { getCachedUnread, prefetchStudentData } from "@/lib/student-cache";
 import { useIdleSession } from "@/lib/use-idle-session";
 import { clearClientSession } from "@/lib/idle-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
-import { useEscapeKey } from "@/lib/use-escape-key";
-import { FloatingPanel } from "@/components/date-calendar";
 import { quickActionsForRole } from "@/lib/quick-actions";
 
 interface NavItem {
@@ -63,14 +61,47 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [accountAnchor, setAccountAnchor] = useState<HTMLDivElement | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const [studentUnread, setStudentUnread] = useState(() => getCachedUnread());
   const adminCounts = useAdminNavCounts(userRole);
 
+  useEffect(() => {
+    if (userRole !== "STUDENT") return;
+    let cancelled = false;
+    async function load() {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      try {
+        const res = await fetch("/api/notifications?count=1", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => null);
+        if (!cancelled && res.ok && json?.success) {
+          setStudentUnread(Number(json.data?.unreadCount || 0));
+        }
+      } catch {
+        // Keep the last known badge if the count request fails.
+      }
+    }
+    void load();
+    const refresh = () => { if (document.visibilityState === "visible") void load(); };
+    const onUpdate = () => void load();
+    const interval = window.setInterval(refresh, 20_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("vaultq:notifications", onUpdate);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("vaultq:notifications", onUpdate);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [userRole]);
+
   function navBadge(label: string) {
-    return label === "Claims" ? adminCounts.claims : label === "Intake" ? adminCounts.intake : 0;
+    return label === "Claims" ? adminCounts.claims : label === "Intake" ? adminCounts.intake : label === "Notifications" ? studentUnread : 0;
   }
 
   function badgeText(value: number) {
@@ -78,7 +109,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   }
 
   function requestLogout() {
-    setAccountMenuOpen(false);
     setConfirmLogout(true);
   }
 
@@ -94,8 +124,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const navCount = navItems.length;
   const [indicatorIndex, setIndicatorIndex] = useState(activeIndex);
   const navTimerRef = useRef<number | null>(null);
-
-  useEscapeKey(accountMenuOpen, () => setAccountMenuOpen(false));
 
   // Keep the notch aligned if the active tab changes while the shell stays mounted.
   useEffect(() => {
@@ -153,51 +181,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
 
   // The desktop shortcut dock stays independent of navigation and page content.
 
-  const accountActions = (
-    <>
-      {userRole === "ADMIN" && (
-        <div ref={accountMenuRef} className={`relative ${sidebarOpen ? "w-full" : ""}`}>
-          <button type="button" onClick={() => { setAccountAnchor(accountMenuRef.current); setAccountMenuOpen((open) => !open); }}
-            aria-label="Account menu" title="Account menu" aria-haspopup="menu" aria-expanded={accountMenuOpen}
-            className={`flex items-center rounded-full cursor-pointer transition-colors duration-200 ${sidebarOpen ? "w-full h-11 px-4 gap-3" : "w-11 h-11 justify-center"}`}
-            style={{ backgroundColor: accountMenuOpen ? colors.primarySoft : "transparent" }}>
-            <MoreVertical size={18} style={{ color: accountMenuOpen ? colors.primary : colors.textMuted }} />
-            {sidebarOpen && <span className="text-sm font-medium" style={{ color: colors.textMuted }}>Account menu</span>}
-          </button>
-          {accountMenuOpen && (
-            <FloatingPanel anchor={accountAnchor} onClose={() => setAccountMenuOpen(false)}
-              offsetX={sidebarOpen ? 248 : 68} offsetY={-44} fallbackWidth={240} fallbackHeight={200}>
-            <div role="menu" aria-label="Account menu"
-              className="w-60 overflow-hidden rounded-xl border bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150"
-              style={{ borderColor: colors.border }}>
-              <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: colors.borderLight }}>
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                  style={{ backgroundColor: colors.primary }}>{userName.charAt(0).toUpperCase()}</div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold" style={{ color: colors.text }}>{userName}</p>
-                  <p className="text-[11px]" style={{ color: colors.textMuted }}>{userRole}</p>
-                </div>
-              </div>
-              <div className="p-1.5">
-                <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); router.push("/dashboard/admin/accounts"); }}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm cursor-pointer hover:bg-[#f8fafc]"
-                  style={{ color: colors.text }}>
-                  <User size={15} style={{ color: colors.textMuted }} /> Manage accounts
-                </button>
-                <button type="button" role="menuitem" onClick={requestLogout}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm cursor-pointer hover:bg-[#fef2f2]"
-                  style={{ color: colors.danger }}>
-                  <LogOut size={15} /> Sign out
-                </button>
-              </div>
-            </div>
-            </FloatingPanel>
-          )}
-        </div>
-      )}
-    </>
-  );
-
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
       <CenteredMessageHost />
@@ -250,20 +233,21 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
               <item.icon size={sidebarOpen ? iconSize.nav : 21} style={{ flexShrink: 0 }} />
               {sidebarOpen && <span className="whitespace-nowrap">{item.label}</span>}
               {navBadge(item.label) > 0 && (
-                <span className={`${sidebarOpen ? "ml-auto" : "absolute -right-0.5 top-0"} min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums`}
-                  style={{ backgroundColor: colors.danger, color: "#fff" }}>
-                  {badgeText(navBadge(item.label))}
-                </span>
+                item.label === "Notifications" ? (
+                  <span aria-label={`${studentUnread} unread notifications`} title={`${studentUnread} unread notifications`}
+                    className={`${sidebarOpen ? "ml-auto" : "absolute right-1 top-1"} w-2.5 h-2.5 rounded-full shrink-0`}
+                    style={{ backgroundColor: colors.danger }} />
+                ) : (
+                  <span className={`${sidebarOpen ? "ml-auto" : "absolute -right-0.5 top-0"} min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center tabular-nums`}
+                    style={{ backgroundColor: colors.danger, color: "#fff" }}>
+                    {badgeText(navBadge(item.label))}
+                  </span>
+                )
               )}
             </button>
             </React.Fragment>
           ))}
         </nav>
-        {userRole === "ADMIN" && <div role="group" aria-label="Account controls"
-          className={`shrink-0 flex flex-col gap-1 border-t py-3 ${sidebarOpen ? "px-5" : "items-center px-3"}`}
-          style={{ borderColor: colors.borderLight }}>
-          {desktop && accountActions}
-        </div>}
         <div className="shrink-0 px-3 py-4 border-t" style={{ borderColor: colors.borderLight }}>
           <div className={`flex items-center gap-3 ${sidebarOpen ? "px-2" : "flex-col"}`}>
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"

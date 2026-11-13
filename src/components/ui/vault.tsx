@@ -268,7 +268,7 @@ export function VPaginationFooter({ current, total, pageSize, itemCount, onPage 
 }) {
   if (itemCount === 0) return null;
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6" data-pagination-footer>
+    <div className="mt-auto flex shrink-0 flex-col sm:flex-row items-center justify-between gap-3 pt-6" data-pagination-footer>
       <span className="text-xs" style={{ color: colors.textMuted }}>
         Showing {((current - 1) * pageSize) + 1}-{Math.min(current * pageSize, itemCount)} of {itemCount} results
       </span>

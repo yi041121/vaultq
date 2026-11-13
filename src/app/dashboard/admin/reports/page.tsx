@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, PackageSearch, PackageCheck, FileText, Lock, Users, Search, Clock, MapPin,
-  CheckCircle2, XCircle, Eye, X, Loader2, RefreshCw, Camera, Grid3X3,
+  CheckCircle2, XCircle, Eye, X, Loader2, RefreshCw, Grid3X3,
   Sparkles, ChevronDown, Plus, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
@@ -15,7 +15,7 @@ import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import {
-  VCard, VContentPanel, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
+  VCard, VContentPanel, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, VPaginationFooter, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport, type ReportStatus } from "@/lib/report-mapper";
@@ -96,6 +96,8 @@ export default function AdminReports() {
 
   const [filterStatus, setFilterStatus] = useState<ReportStatus | "ALL">("PENDING");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [reportPhotoIndices, setReportPhotoIndices] = useState<Record<string, number>>({});
 
   const [matchTarget, setMatchTarget] = useState<UserReport | null>(null);
   const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
@@ -560,9 +562,14 @@ export default function AdminReports() {
   function resetFilters() {
     setQuery("");
     setFilterStatus("PENDING");
+    setPage(1);
   }
 
   const filtered = baseFiltered.filter((report) => filterStatus === "ALL" || report.status === filterStatus);
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedReports = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const matchResults = foundItems.filter((item) =>
     matchesSearch(matchQuery, [
@@ -588,14 +595,14 @@ export default function AdminReports() {
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full h-full flex flex-col">
           <FilterPanel
             search={
-              <VSearchInput value={query} onChange={setQuery} className="w-full"
+              <VSearchInput value={query} onChange={(value) => { setQuery(value); setPage(1); }} className="w-full"
                 size="lg" clearable placeholder="Search item or student..." />
             }
             filters={
               <AdminStatusFilters
                 options={statusOptions.map((value) => ({ value, label: statusLabel[value] }))}
                 value={filterStatus}
-                onChange={setFilterStatus}
+                onChange={(value) => { setFilterStatus(value); setPage(1); }}
               />
             }
             reset={<ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} />}
@@ -624,45 +631,66 @@ export default function AdminReports() {
               </p>
             </VCard>
           ) : (
+            <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 content-start min-w-0">
-              {filtered.map((report) => {
+              {paginatedReports.map((report) => {
                 const CategoryIcon = categoryIcon(report.category);
+                const activeIndex = Math.min(reportPhotoIndices[report.id] ?? 0, Math.max(0, report.images.length - 1));
+                const activePhoto = report.images[activeIndex] || report.imageUrl;
                 return (
                 <VCard key={report.id} className="p-5 min-w-0 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-                  <button type="button"
-                    aria-label={report.images.length ? `View ${report.itemName} photos` : `${report.itemName} has no photos`}
-                    disabled={report.images.length === 0}
-                    className={`vq-admin-photo rounded-xl mb-4 relative flex items-center justify-center group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
-                    style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
-                    onClick={() => {
-                      if (report.images.length) {
-                        setViewer({ photos: report.images, index: 0, title: report.itemName });
-                      }
-                    }}>
-                    {report.imageUrl ? (
-                      <img src={report.imageUrl} alt={report.itemName} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover bg-[#f8fafc]" />
-                    ) : (
+                  <div className="vq-admin-photo rounded-xl mb-4 relative flex items-center justify-center overflow-hidden"
+                    style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
+                    <button type="button"
+                      aria-label={report.images.length ? `View ${report.itemName} photos` : `${report.itemName} has no photos`}
+                      disabled={report.images.length === 0}
+                      className={`absolute inset-0 group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
+                      onClick={() => {
+                        if (report.images.length) {
+                          setViewer({ photos: report.images, index: activeIndex, title: report.itemName });
+                        }
+                      }}>
+                      {activePhoto ? (
+                        <img src={activePhoto} alt={report.itemName} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover bg-[#f8fafc]" />
+                      ) : (
+                        <>
+                          <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                          {report.type === "LOST"
+                            ? <PackageSearch size={38} style={{ color: c.primary, opacity: 0.6 }} />
+                            : <PackageCheck size={38} style={{ color: c.accent, opacity: 0.7 }} />}
+                        </>
+                      )}
+                      {report.images.length > 0 && (
+                        <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-center justify-center">
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
+                            <Eye size={13} /> View photos
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                    {report.images.length > 1 && (
                       <>
-                        <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                        {report.type === "LOST"
-                          ? <PackageSearch size={38} style={{ color: c.primary, opacity: 0.6 }} />
-                          : <PackageCheck size={38} style={{ color: c.accent, opacity: 0.7 }} />}
+                        <button type="button" aria-label="Previous photo"
+                          onClick={() => setReportPhotoIndices((prev) => ({ ...prev, [report.id]: (activeIndex - 1 + report.images.length) % report.images.length }))}
+                          className="absolute left-2 top-1/2 z-10 -translate-y-1/2 w-7 h-7 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/65 transition-colors duration-150 cursor-pointer">
+                          <ChevronLeft size={15} />
+                        </button>
+                        <button type="button" aria-label="Next photo"
+                          onClick={() => setReportPhotoIndices((prev) => ({ ...prev, [report.id]: (activeIndex + 1) % report.images.length }))}
+                          className="absolute right-2 top-1/2 z-10 -translate-y-1/2 w-7 h-7 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/65 transition-colors duration-150 cursor-pointer">
+                          <ChevronRight size={15} />
+                        </button>
+                        <div className="absolute bottom-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5" role="group" aria-label="Photo position">
+                          {report.images.map((_, index) => (
+                            <button key={index} type="button" aria-label={`Show photo ${index + 1}`} aria-current={index === activeIndex}
+                              onClick={() => setReportPhotoIndices((prev) => ({ ...prev, [report.id]: index }))}
+                              className="h-1.5 rounded-full transition-all duration-150 cursor-pointer"
+                              style={{ width: index === activeIndex ? 16 : 6, backgroundColor: index === activeIndex ? "#fff" : "rgba(255,255,255,0.55)" }} />
+                          ))}
+                        </div>
                       </>
                     )}
-                    {report.images.length > 0 && (
-                      <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-center justify-center">
-                        <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
-                          <Eye size={13} /> View photos
-                        </span>
-                      </span>
-                    )}
-                    {report.images.length > 1 && (
-                      <span className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold text-white"
-                        style={{ backgroundColor: "rgba(15,23,42,0.65)" }}>
-                        <Camera size={11} /> {report.images.length}
-                      </span>
-                    )}
-                  </button>
+                  </div>
 
                   <div className="flex items-center gap-2 mb-1 min-w-0">
                     <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
@@ -731,6 +759,8 @@ export default function AdminReports() {
                 );
               })}
             </div>
+            <VPaginationFooter current={currentPage} total={totalPages} pageSize={pageSize} itemCount={filtered.length} onPage={setPage} />
+            </>
           )}
           </VContentPanel>
         </div>
@@ -739,7 +769,7 @@ export default function AdminReports() {
       {/* Match modal (lost reports) */}
       {matchTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setMatchTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setMatchTarget(null)} />
           <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -894,7 +924,7 @@ export default function AdminReports() {
       {/* Verify modal */}
       {verifyReport && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!verifying) setVerifyReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!verifying) setVerifyReport(null); }} />
           <VCard className="relative w-full max-w-2xl max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1111,7 +1141,7 @@ export default function AdminReports() {
 
       {verifyReport && approveStage === "locker" && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!verifying) setApproveStage("form"); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!verifying) setApproveStage("form"); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1185,7 +1215,7 @@ export default function AdminReports() {
 
       {assignLockerReport && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1246,7 +1276,7 @@ export default function AdminReports() {
       {/* Reject modal */}
       {rejectReport && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => { if (!rejecting) setRejectReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!rejecting) setRejectReport(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Reject this report?</h3>
             <p className="text-xs mb-4" style={{ color: c.textMuted }}>

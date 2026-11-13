@@ -486,7 +486,7 @@ export default function AdminAccounts() {
       {/* Add student modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setShowModal(false)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setShowModal(false)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Add Student Account</h3>
@@ -550,7 +550,7 @@ export default function AdminAccounts() {
       {/* Single-confirm delete dialog */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setDeleteTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setDeleteTarget(null)} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "#fef2f2" }}>
               <AlertTriangle size={22} style={{ color: c.danger }} />
@@ -572,7 +572,7 @@ export default function AdminAccounts() {
       {/* Edit student modal */}
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" onClick={() => setEditTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setEditTarget(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Edit Student Account</h3>
