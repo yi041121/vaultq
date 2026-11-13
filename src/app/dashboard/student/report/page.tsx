@@ -1207,15 +1207,17 @@ function StudentReportContent() {
                     <p className="min-w-0 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
-                    <button type="button" aria-label="Change report type" title="Change report type"
-                      className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 hover:bg-[#e6eef5] lg:ml-auto"
-                      style={{ color: c.primary }}
-                      onClick={closeReportForm}>
-                      <ArrowLeftRight size={17} />
-                    </button>
-                    <button ref={reportHelpTriggerRef} type="button" aria-label="How reporting works" aria-haspopup="dialog" aria-controls="reporting-help" aria-expanded={reportHelpOpen}
-                      onClick={() => setReportHelpOpen(true)} className="ml-auto lg:hidden w-9 h-9 shrink-0 rounded-full flex items-center justify-center cursor-pointer"
-                      style={{ backgroundColor: c.primarySoft, color: c.primary }}><CircleAlert size={19} /></button>
+                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                      <button type="button" aria-label="Change report type" title="Change report type"
+                        className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 hover:bg-[#e6eef5]"
+                        style={{ color: c.primary }}
+                        onClick={closeReportForm}>
+                        <ArrowLeftRight size={17} />
+                      </button>
+                      <button ref={reportHelpTriggerRef} type="button" aria-label="How reporting works" aria-haspopup="dialog" aria-controls="reporting-help" aria-expanded={reportHelpOpen}
+                        onClick={() => setReportHelpOpen(true)} className="lg:hidden w-9 h-9 shrink-0 rounded-full flex items-center justify-center cursor-pointer"
+                        style={{ backgroundColor: c.primarySoft, color: c.primary }}><CircleAlert size={19} /></button>
+                    </div>
                   </div>
                   {type === "FOUND" && (
                     <div className="rounded-xl p-3.5 mb-5 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 8%, transparent)`, color: c.textMuted }}>
