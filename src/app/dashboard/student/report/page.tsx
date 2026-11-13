@@ -7,7 +7,7 @@ import {
   Loader2, RefreshCw, Plus, FileText, RotateCcw,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
   ChevronDown, ZoomIn, MapPin, Eye, Sparkles,
-  ChevronLeft, ChevronRight, CircleAlert,
+  ChevronLeft, ChevronRight, CircleAlert, ArrowLeftRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -33,19 +33,20 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
 
-function ReportingSteps({ type }: { type: ReportType }) {
+function ReportingSteps({ type, size = "sm" }: { type: ReportType; size?: "sm" | "md" }) {
+  const large = size === "md";
   return (
-    <ol className="space-y-3">
+    <ol className={large ? "space-y-4" : "space-y-3"}>
       {[
         { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
         { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
         { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
       ].map((step, index) => (
-        <li key={step.title} className="flex gap-2.5">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold" style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
+        <li key={step.title} className={large ? "flex gap-3" : "flex gap-2.5"}>
+          <span className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${large ? "h-7 w-7 text-xs" : "h-6 w-6 text-[11px]"}`} style={{ backgroundColor: c.primarySoft, color: c.primary }}>{index + 1}</span>
           <div>
-            <p className="text-xs font-semibold mb-0.5" style={{ color: c.text }}>{step.title}</p>
-            <p className="text-[11px] leading-relaxed" style={{ color: c.textMuted }}>{step.text}</p>
+            <p className={`font-semibold ${large ? "text-sm mb-1" : "text-xs mb-0.5"}`} style={{ color: c.text }}>{step.title}</p>
+            <p className={`leading-relaxed ${large ? "text-xs" : "text-[11px]"}`} style={{ color: c.textMuted }}>{step.text}</p>
           </div>
         </li>
       ))}
@@ -1200,15 +1201,17 @@ function StudentReportContent() {
                   <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
                     onClick={() => { if (!submitting) closeReportForm(); }} />
                   <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-y-auto">
-                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
                   <VCard className="min-w-0 p-6 sm:p-8">
                   <div className="flex items-center gap-2 mb-5">
                     <p className="min-w-0 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
                     </p>
-                    <button type="button" className="shrink-0 text-xs font-semibold underline hover:opacity-70 cursor-pointer lg:ml-auto" style={{ color: c.primary }}
+                    <button type="button" aria-label="Change report type" title="Change report type"
+                      className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 hover:bg-[#e6eef5] lg:ml-auto"
+                      style={{ color: c.primary }}
                       onClick={closeReportForm}>
-                      Change
+                      <ArrowLeftRight size={17} />
                     </button>
                     <button ref={reportHelpTriggerRef} type="button" aria-label="How reporting works" aria-haspopup="dialog" aria-controls="reporting-help" aria-expanded={reportHelpOpen}
                       onClick={() => setReportHelpOpen(true)} className="ml-auto lg:hidden w-9 h-9 shrink-0 rounded-full flex items-center justify-center cursor-pointer"
@@ -1391,9 +1394,9 @@ function StudentReportContent() {
 
                   </VCard>
                   <aside className="hidden lg:block lg:sticky lg:top-0">
-                    <VCard className="p-4">
-                      <h3 className="text-sm font-semibold mb-3" style={{ color: c.text }}>How reporting works</h3>
-                      <ReportingSteps type={type} />
+                    <VCard className="p-5">
+                      <h3 className="text-base font-semibold mb-4" style={{ color: c.text }}>How reporting works</h3>
+                      <ReportingSteps type={type} size="md" />
                     </VCard>
                   </aside>
                   </div>
