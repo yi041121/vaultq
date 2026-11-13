@@ -12,7 +12,7 @@ interface VButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function VButton({ variant = "primary", size: btnSize = "md", className = "", style, ...props }: VButtonProps) {
-  const base = `inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap ${radius.button} transition-all duration-200 cursor-pointer disabled:cursor-not-allowed`;
+  const base = `inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap ${radius.button} transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed`;
   const heights = { sm: "h-8 px-3 text-xs", md: "h-10 px-4 text-sm", lg: "h-11 px-6 text-sm" };
   const variants: Record<string, React.CSSProperties> = {
     primary: { backgroundColor: colors.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" },
@@ -51,7 +51,7 @@ export function VInput({ className = "", style, ...props }: VInputProps) {
   return (
     <input
       {...props}
-      className={`w-full ${size.input} px-3.5 text-sm border bg-white ${radius.input} transition-all duration-200 ${className}`}
+      className={`w-full ${size.input} px-3.5 text-sm border bg-white ${radius.input} transition-colors duration-150 ${className}`}
       style={{
         ...style,
         borderColor: focused ? colors.primary : style?.borderColor ?? colors.border,
@@ -69,7 +69,7 @@ export function VTextarea({ className = "", style, ...props }: React.TextareaHTM
   return (
     <textarea
       {...props}
-      className={`w-full px-3.5 py-2.5 text-sm border bg-white ${radius.input} transition-all duration-200 resize-none ${className}`}
+      className={`w-full px-3.5 py-2.5 text-sm border bg-white ${radius.input} transition-colors duration-150 resize-none ${className}`}
       style={{
         ...style,
         borderColor: focused ? colors.primary : style?.borderColor ?? colors.border,
@@ -190,6 +190,24 @@ export function VDropdown({ trigger, children, open, onOpenChange, align = "left
   width?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hoverCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function cancelHoverClose() {
+    if (hoverCloseRef.current) clearTimeout(hoverCloseRef.current);
+    hoverCloseRef.current = null;
+  }
+  useEffect(() => cancelHoverClose, []);
+  useEffect(() => {
+    const panel = containerRef.current?.closest("[data-filter-panel]");
+    if (!panel) return;
+    const switchFilter = (event: Event) => {
+      if ((event as CustomEvent).detail !== containerRef.current) {
+        cancelHoverClose();
+        onOpenChange(false);
+      }
+    };
+    panel.addEventListener("vaultq:filter-hover", switchFilter);
+    return () => panel.removeEventListener("vaultq:filter-hover", switchFilter);
+  }, [onOpenChange]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -206,12 +224,23 @@ export function VDropdown({ trigger, children, open, onOpenChange, align = "left
     };
   }, [open, onOpenChange]);
   return (
-    <div ref={containerRef} className="relative shrink-0">
+    <div ref={containerRef} className="relative shrink-0"
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "mouse" || !event.currentTarget.closest("[data-filter-panel]")) return;
+        cancelHoverClose();
+        event.currentTarget.closest("[data-filter-panel]")?.dispatchEvent(new CustomEvent("vaultq:filter-hover", { detail: event.currentTarget }));
+        onOpenChange(true);
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "mouse" || !event.currentTarget.closest("[data-filter-panel]")) return;
+        cancelHoverClose();
+        hoverCloseRef.current = setTimeout(() => onOpenChange(false), 180);
+      }}>
       {trigger}
       {open && (
         <>
           <div
-            className={`absolute top-11 z-20 ${align === "right" ? "right-0" : "left-0"} ${width} bg-white ${radius.dropdown} border py-1.5 shadow-lg max-h-[min(60vh,15rem)] overflow-y-auto overscroll-contain`}
+            className={`vq-dropdown-menu absolute top-11 z-20 ${align === "right" ? "right-0" : "left-0"} ${width} bg-white ${radius.dropdown} border py-1.5 shadow-lg max-h-[min(60vh,15rem)] overflow-y-auto overscroll-contain`}
             style={{ borderColor: colors.border }}
           >
             {children(() => onOpenChange(false))}
@@ -228,14 +257,11 @@ export function VDropdownItem({ children, active, onSelect, style }: {
   onSelect?: () => void;
   style?: React.CSSProperties;
 }) {
-  const [hover, setHover] = useState(false);
   return (
     <button
       type="button"
-      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors duration-150"
-      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: hover ? "#e2e8f0" : active ? colors.primarySoft : "transparent", fontWeight: active ? 600 : 400, ...style }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      className="vq-dropdown-item w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left cursor-pointer"
+      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: active ? colors.primarySoft : "transparent", fontWeight: active ? 600 : 400, ...style }}
       onClick={onSelect}
     >
       {children}

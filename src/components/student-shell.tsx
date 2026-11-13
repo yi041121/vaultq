@@ -14,7 +14,7 @@ import { getCachedUnread, prefetchStudentData } from "@/lib/student-cache";
 import { useIdleSession } from "@/lib/use-idle-session";
 import { clearClientSession } from "@/lib/idle-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
-import { quickActionsForRole } from "@/lib/quick-actions";
+import { QUICK_ACTION_EVENT, quickActionsForRole } from "@/lib/quick-actions";
 
 interface NavItem {
   label: string;
@@ -277,7 +277,13 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
             {shortcutDockOpen ? <X size={17} /> : <LayoutGrid size={17} />}
           </button>
           {shortcutDockOpen && quickActions.map((action) => (
-            <button key={action.label} type="button" onClick={() => router.push(action.path)}
+            <button key={action.label} type="button" onClick={() => {
+              const target = new URL(action.path, window.location.origin);
+              if (userRole === "ADMIN" && target.pathname === window.location.pathname && (target.searchParams.has("add") || target.searchParams.has("edit"))) {
+                window.dispatchEvent(new CustomEvent(QUICK_ACTION_EVENT, { detail: action.path }));
+              } else router.push(action.path);
+              setShortcutDockOpen(false);
+            }}
               aria-label={action.label} title={action.label}
               className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ backgroundColor: colors.borderLight, color: colors.textMuted }}
@@ -391,8 +397,11 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
       {/* Logout confirm dialog */}
       <ConfirmDialog
         open={confirmLogout}
-        title="Log out?"
-        subtitle="You will need to sign in again to access your account."
+        title="Are you sure you want to log out?"
+        subtitle="You can sign back in anytime to access your reports, claims and notifications."
+        icon="logout"
+        tone="primary"
+        cancelLabel="Stay logged in"
         confirmLabel="Log out"
         onCancel={() => setConfirmLogout(false)}
         onConfirm={() => { setConfirmLogout(false); clearClientSession(); logout(); }}

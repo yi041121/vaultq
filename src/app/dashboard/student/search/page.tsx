@@ -567,7 +567,12 @@ export default function StudentSearch() {
                     </>
                   )}
                 </VDropdown>
-                <div ref={dateFilterRef} className="relative min-w-0 w-full sm:w-auto sm:shrink-0">
+                <div ref={dateFilterRef} className="relative min-w-0 w-full sm:w-auto sm:shrink-0"
+                  onPointerEnter={(event) => {
+                    if (event.pointerType !== "mouse") return;
+                    event.currentTarget.closest("[data-filter-panel]")?.dispatchEvent(new CustomEvent("vaultq:filter-hover", { detail: event.currentTarget }));
+                    if (!dateRangeOpen) openDateCalendar();
+                  }}>
                   <VFilterButton active={!!dateFrom} className="justify-between w-full sm:w-auto sm:min-w-[160px] sm:max-w-[16rem]"
                     aria-haspopup="dialog" aria-expanded={dateRangeOpen} aria-controls="search-date-range"
                     onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
@@ -586,7 +591,7 @@ export default function StudentSearch() {
                     <ChevronDown size={13} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
                   </VFilterButton>
                   {dateRangeOpen && (
-                    <FloatingPanel anchor={dateFilterRef.current} onClose={closeDateCalendar}
+                    <FloatingPanel anchor={dateFilterRef.current} onClose={closeDateCalendar} closeOnPointerLeave
                       offsetY={8} fallbackWidth={300} fallbackHeight={380}>
                       <div id="search-date-range" role="dialog" aria-label="Select date range"
                         className="w-[300px] max-w-[calc(100vw-3rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
@@ -845,7 +850,7 @@ export default function StudentSearch() {
       {/* Always offer the student's pending lost reports before claiming */}
       {linkPromptItem && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setLinkPromptItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setLinkPromptItem(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0">
@@ -913,7 +918,7 @@ export default function StudentSearch() {
       {/* Claim evidence modal */}
       {claimItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setClaimItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setClaimItem(null)} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-5">
               <div>

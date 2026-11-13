@@ -12,6 +12,7 @@ import { compressImageFile } from "@/lib/image-compression";
 import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { usePageQuickAction } from "@/lib/use-page-quick-action";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
@@ -130,6 +131,7 @@ export default function AdminItems() {
   const [saving, setSaving] = useState(false);
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
   const [viewItem, setViewItem] = useState<Item | null>(null);
+  const dashboardItemOpened = useRef(false);
 
   function authHeaders(): Record<string, string> {
     const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -160,6 +162,19 @@ export default function AdminItems() {
       const list = (data.data || []).map(mapApiItem);
       setItems(list);
       itemsCache = list;
+      const openId = new URLSearchParams(window.location.search).get("open");
+      if (openId && !dashboardItemOpened.current) {
+        dashboardItemOpened.current = true;
+        const target = list.find((item: Item) => item.id === openId);
+        if (target) {
+          setQuery(target.name);
+          setStatusFilter(target.status);
+          setPage(1);
+          setViewItem(target);
+        } else {
+          showCenteredMessage("error", "This inventory item is no longer available");
+        }
+      }
     } catch (e: any) {
       if (!itemsCache) setItems([]);
       setLoadError(e?.message || "Failed to load items");
@@ -196,15 +211,10 @@ export default function AdminItems() {
       const params = new URLSearchParams(window.location.search);
       const q = params.get("q");
       if (q) setQuery(q);
-      const add = params.get("add");
-      if (add === "1") {
-        setEditing(null);
-        setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null); setFormDateOpen(false); setFormLockerOpen(false);
-        setShowModal(true);
-        window.history.replaceState(null, "", window.location.pathname);
-      }
     }
   }, []);
+
+  usePageQuickAction("add", openAdd);
 
   function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
 
@@ -247,7 +257,7 @@ export default function AdminItems() {
 
   function openAdd() {
     setEditing(null);
-    setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(today); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
+    setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
   }
   function openEdit(it: Item) {
@@ -600,16 +610,22 @@ export default function AdminItems() {
         </div>
       </main>
 
-      {viewItem && <ItemDetailsModal title={viewItem.name} statusLabel={viewItem.status === "RETRIEVED" ? "Retrieved" : "Claimed"}
+      {viewItem && <ItemDetailsModal title={viewItem.name} statusLabel={viewItem.status === "RETRIEVED" ? "Retrieved" : viewItem.status === "CLAIMED" ? "Claimed" : viewItem.status === "EXPIRED" ? "Expired" : "Found"}
         statusColor={statusColor(viewItem.status)} category={viewItem.category} location={viewItem.location} date={fmtDay(viewItem.date)}
         description={viewItem.description} photos={viewItem.imageUrl ? [viewItem.imageUrl] : []}
         onViewPhoto={() => void openItemPhotos(viewItem)} onClose={() => setViewItem(null)}
-        footer={<VButton variant="secondary" onClick={() => setViewItem(null)}>Close</VButton>} />}
+        footer={<>
+          {viewItem.status !== "CLAIMED" && viewItem.status !== "RETRIEVED" && <>
+            <VButton onClick={() => { const item = viewItem; setViewItem(null); openEdit(item); }}>Edit item</VButton>
+            <VButton variant="danger" onClick={() => { const item = viewItem; setViewItem(null); openDelete(item); }}>Delete item</VButton>
+          </>}
+          <VButton variant="secondary" onClick={() => setViewItem(null)}>Close</VButton>
+        </>} />}
 
       {/* Add/Edit modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={closeItemModal} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeItemModal} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>{editing ? "Edit Item" : "Add New Item"}</h3>
@@ -745,7 +761,7 @@ export default function AdminItems() {
       {/* Live camera modal for desktop */}
       {showCamera && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={closeLiveCamera} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeLiveCamera} />
           <VCard className="relative w-full max-w-md p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Take Photo</h3>
@@ -776,7 +792,7 @@ export default function AdminItems() {
       {/* Single-confirm delete dialog */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={closeDelete} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeDelete} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "#fef2f2" }}>
               <Trash2 size={22} style={{ color: c.danger }} />

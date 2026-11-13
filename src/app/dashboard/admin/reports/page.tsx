@@ -107,6 +107,7 @@ export default function AdminReports() {
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
 
   const [verifyReport, setVerifyReport] = useState<UserReport | null>(null);
+  const openedDashboardReport = useRef(false);
   const [verifyForm, setVerifyForm] = useState({
     itemName: "", category: "", location: "", date: "", description: "",
   });
@@ -166,6 +167,12 @@ export default function AdminReports() {
       const list = (data.data as any[]).map(mapReport);
       setReports(list);
       reportsCache = list;
+      const openId = new URLSearchParams(window.location.search).get("open");
+      if (openId && !openedDashboardReport.current) {
+        openedDashboardReport.current = true;
+        const target = list.find((report: UserReport) => report.id === openId && report.type === "FOUND" && report.status === "PENDING");
+        if (target) void openVerify(target);
+      }
     } catch (e) {
       if (!reportsCache) setReports([]);
       setLoadError(e instanceof Error ? e.message : "Failed to load reports");
@@ -769,7 +776,7 @@ export default function AdminReports() {
       {/* Match modal (lost reports) */}
       {matchTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setMatchTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setMatchTarget(null)} />
           <VCard className="relative w-full max-w-2xl max-h-[90vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -924,7 +931,7 @@ export default function AdminReports() {
       {/* Verify modal */}
       {verifyReport && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!verifying) setVerifyReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { if (!verifying) setVerifyReport(null); }} />
           <VCard className="relative w-full max-w-2xl max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
@@ -1141,7 +1148,7 @@ export default function AdminReports() {
 
       {verifyReport && approveStage === "locker" && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!verifying) setApproveStage("form"); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { if (!verifying) setApproveStage("form"); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1215,7 +1222,7 @@ export default function AdminReports() {
 
       {assignLockerReport && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -1276,7 +1283,7 @@ export default function AdminReports() {
       {/* Reject modal */}
       {rejectReport && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!rejecting) setRejectReport(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { if (!rejecting) setRejectReport(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <h3 className="text-base font-semibold mb-1" style={{ color: c.text }}>Reject this report?</h3>
             <p className="text-xs mb-4" style={{ color: c.textMuted }}>

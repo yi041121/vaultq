@@ -47,7 +47,7 @@ export default function AuthCallback() {
     <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
       {/* Centered "Login successful" popup — identical style to the sign-in form */}
       {succeeded && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: colors.card, boxShadow: "0 20px 48px rgba(0,0,0,0.28)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>

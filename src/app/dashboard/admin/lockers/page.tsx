@@ -18,6 +18,7 @@ import { ItemDetailsModal } from "@/components/item-details-modal";
 import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch } from "@/lib/search";
+import { usePageQuickAction } from "@/lib/use-page-quick-action";
 import {
   VCard, VContentPanel, VButton, VInput, VSearchInput, vcolors as c, font as f,
 } from "@/components/ui/vault";
@@ -91,6 +92,7 @@ export default function AdminLockers() {
   const [changingLocker, setChangingLocker] = useState(false);
   const [releaseTarget, setReleaseTarget] = useState<Locker | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  usePageQuickAction("edit", () => setManageOpen(true));
   const [newLockerNumber, setNewLockerNumber] = useState("");
   const [addingLocker, setAddingLocker] = useState(false);
   const [loading, setLoading] = useState(lockersCache === null);
@@ -390,7 +392,7 @@ export default function AdminLockers() {
       <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full h-full flex flex-col bg-white">
           <FilterPanel
-            actions={<VButton variant="secondary" size="md" onClick={() => setManageOpen(true)}><Pencil size={14} /> Edit Lockers</VButton>}
+            actions={<VButton size="md" onClick={() => setManageOpen(true)}><Pencil size={14} /> Edit Lockers</VButton>}
             search={
               <VSearchInput value={query} onChange={setQuery} className="w-full"
                 size="lg" clearable placeholder="Search locker or item..." />
@@ -497,7 +499,7 @@ export default function AdminLockers() {
 
       {releaseTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setReleaseTarget(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setReleaseTarget(null)} />
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: c.primarySoft }}>
               <Unlock size={22} style={{ color: c.primary }} />
@@ -516,7 +518,7 @@ export default function AdminLockers() {
 
       {manageOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setManageOpen(false)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setManageOpen(false)} />
           <VCard className="relative w-full max-w-md max-h-[90vh] overflow-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Manage lockers</h3>
@@ -568,7 +570,7 @@ export default function AdminLockers() {
       {/* Assign modal */}
       {assignLocker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setAssignLocker(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setAssignLocker(null)} />
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Assign to {assignLocker.number}</h3>
@@ -611,7 +613,7 @@ export default function AdminLockers() {
       {/* Change locker modal */}
       {changeLocker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!changingLocker) setChangeLocker(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { if (!changingLocker) setChangeLocker(null); }} />
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Change locker</h3>

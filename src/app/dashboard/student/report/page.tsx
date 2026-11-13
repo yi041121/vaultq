@@ -1132,7 +1132,7 @@ function StudentReportContent() {
               )}
               {type && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                  <div className="absolute inset-0" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+                  <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
                     onClick={() => { if (!submitting) closeReportForm(); }} />
                   <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-y-auto">
                   <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
@@ -1459,7 +1459,7 @@ function StudentReportContent() {
 
       {editTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => { if (!savingEdit) setEditTarget(null); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { if (!savingEdit) setEditTarget(null); }} />
           <VCard className="relative w-full max-w-lg max-h-[92vh] overflow-auto p-5 lg:p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>

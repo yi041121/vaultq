@@ -142,6 +142,7 @@ export interface FloatingPanelProps {
   /** Measured size fallback for the first paint. */
   fallbackWidth?: number;
   fallbackHeight?: number;
+  closeOnPointerLeave?: boolean;
 }
 
 /**
@@ -157,12 +158,52 @@ export function FloatingPanel({
   offsetY = 8,
   fallbackWidth = 300,
   fallbackHeight = 340,
+  closeOnPointerLeave = false,
 }: FloatingPanelProps) {
   const [mounted, setMounted] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!mounted || !closeOnPointerLeave || !anchor) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function onMove(event: PointerEvent) {
+      if (event.pointerType !== "mouse") return;
+      // A portal backdrop sits over the trigger, so use coordinates rather
+      // than event.target to recognize the field beneath it.
+      const inside = (element: HTMLElement | null) => {
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right
+          && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      };
+      if (inside(anchor) || inside(boxRef.current)) {
+        clearTimeout(timer);
+        timer = undefined;
+      } else if (!timer) {
+        timer = setTimeout(onClose, 180);
+      }
+    }
+    const filterPanel = anchor.closest("[data-filter-panel]");
+    const switchFilter = (event: Event) => {
+      if ((event as CustomEvent).detail !== anchor) onClose();
+    };
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!anchor.contains(target) && !boxRef.current?.contains(target)) onClose();
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerdown", outside);
+    filterPanel?.addEventListener("vaultq:filter-hover", switchFilter);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerdown", outside);
+      filterPanel?.removeEventListener("vaultq:filter-hover", switchFilter);
+    };
+  }, [mounted, closeOnPointerLeave, anchor, onClose]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -209,7 +250,7 @@ export function FloatingPanel({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[90]" onClick={onClose} />
+      <div className={`fixed inset-0 z-[90] ${closeOnPointerLeave ? "[@media(hover:hover)_and_(pointer:fine)]:pointer-events-none" : ""}`} onClick={onClose} />
       <div
         ref={boxRef}
         className="fixed z-[95] max-h-[calc(100vh-1.5rem)] overflow-auto overscroll-contain"

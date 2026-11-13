@@ -10,6 +10,8 @@ export interface QuickAction {
   path: string;
 }
 
+export const QUICK_ACTION_EVENT = "vaultq:quick-action";
+
 export const studentQuickActions: QuickAction[] = [
   { label: "Report Lost Item", icon: AlertCircle, desc: "Submit a lost item report", path: "/dashboard/student/report?tab=new&type=lost" },
   { label: "Report Found Item", icon: PlusCircle, desc: "Log a found item", path: "/dashboard/student/report?tab=new&type=found" },
@@ -19,9 +21,9 @@ export const studentQuickActions: QuickAction[] = [
 
 export const adminQuickActions: QuickAction[] = [
   { label: "Verify Claims", icon: Shield, desc: "Review pending", path: "/dashboard/admin/claims" },
-  { label: "Register Item", icon: PlusCircle, desc: "Add found item", path: "/dashboard/admin/items?add=1" },
-  { label: "Manage Lockers", icon: Lock, desc: "Assign lockers", path: "/dashboard/admin/lockers" },
-  { label: "Manage Accounts", icon: Users, desc: "Student accounts", path: "/dashboard/admin/accounts" },
+  { label: "Add Item", icon: PlusCircle, desc: "Add a found item", path: "/dashboard/admin/items?add=1" },
+  { label: "Edit Lockers", icon: Lock, desc: "Open locker editor", path: "/dashboard/admin/lockers?edit=1" },
+  { label: "Add Student", icon: Users, desc: "Add a student account", path: "/dashboard/admin/accounts?add=1" },
 ];
 
 export function quickActionsForRole(role: string): QuickAction[] {

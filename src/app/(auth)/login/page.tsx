@@ -170,7 +170,8 @@ export default function LoginPage() {
         phase === "intro" ? "scale-100" : "scale-105"
       }`}
         style={{
-          filter: phase !== "intro" ? "blur(6px) brightness(0.7)" : "none",
+          filter: phase !== "intro" ? "blur(2px) brightness(0.7)" : "none",
+          contain: "strict",
         }}>
         <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${c.bg}, ${c.fill})` }} />
         <LockerIllustration hideIdCard={phase !== "intro"} animated={phase === "intro"} />
@@ -305,7 +306,7 @@ export default function LoginPage() {
       )}
       {/* Centered "Logged out" popup — same style as the success popup */}
       {loggedOut && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
@@ -320,7 +321,7 @@ export default function LoginPage() {
       {/* Centered "Account created" popup — the sign-up flow never auto-logs in */}
       {registered && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-          style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} onClick={() => setRegistered(false)}>
+          style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setRegistered(false)}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>
@@ -335,7 +336,7 @@ export default function LoginPage() {
       {/* Centered error popup — same style as the success popup */}
       {error && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-          style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+          style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
           onClick={() => setError(null)}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
@@ -350,7 +351,7 @@ export default function LoginPage() {
 
       {/* Centered success popup — page-scoped, never shows on the dashboard */}
       {succeeded && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}>
           <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
             style={{ background: c.card, boxShadow: "0 20px 48px rgba(53,92,138,0.18)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: `color-mix(in srgb, #16a34a 14%, transparent)` }}>

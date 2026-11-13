@@ -278,14 +278,14 @@ html.theme-snapshot-transition::view-transition-new(root) {
 /* Shared modal backdrop: dim the page and blur it consistently. */
 .vq-modal-backdrop {
   background-color: rgba(2, 6, 23, 0.72);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
 
 .vq-modal-backdrop-strong {
   background-color: rgba(2, 6, 23, 0.84);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 /* Empty states merge into the shared page surface instead of nesting borders. */
@@ -296,19 +296,55 @@ html.theme-snapshot-transition::view-transition-new(root) {
   transform: none !important;
 }
 
-/* Content cards lift gently on hover; modal cards stay fixed. */
+/* Hover is CSS-only and immediate: no React update or delayed colour tween. */
+.vq-dropdown-menu {
+  contain: layout paint style;
+  scroll-behavior: auto;
+}
+.vq-dropdown-item:hover,
+.vq-dropdown-item:focus-visible {
+  background-color: var(--vq-border-light) !important;
+  transition: none;
+}
+
+/* Avoid :has() on every card: dropdown hover otherwise invalidates large
+   ancestor subtrees. Fixed dialogs override content-card motion directly. */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  main .vq-card {
-    transition: transform 200ms ease, box-shadow 200ms ease;
+  main .vq-content-panel .vq-card {
+    transition: transform 140ms ease;
   }
-  main .vq-card:hover {
-    transform: translateY(-4px) scale(1.012);
-    box-shadow: 0 22px 44px rgba(15, 23, 42, 0.2) !important;
+  main .vq-content-panel .vq-card:hover {
+    transform: translateY(-2px);
   }
-  main .fixed .vq-card:hover {
-    transform: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02) !important;
+  .fixed .vq-card,
+  main .vq-content-panel .vq-card:focus-within {
+    transition: none !important;
+    transform: none !important;
   }
+}
+
+/* Keep wheel/scrollbar input inside the open dialog, not its background page. */
+html:has(.vq-modal-backdrop, .vq-modal-backdrop-strong) {
+  overflow: hidden;
+}
+.fixed .vq-card {
+  isolation: isolate;
+  /* Promote foreground painting without a transform (which would trap any
+     nested fixed-position photo/scanner overlays in the form's bounds). */
+  will-change: opacity;
+}
+.fixed .overflow-auto,
+.fixed .overflow-y-auto {
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+  will-change: scroll-position;
+}
+
+/* Give a stationary backdrop its own compositing layer. */
+.vq-modal-backdrop,
+.vq-modal-backdrop-strong {
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Badge colours stay readable in both themes. */
@@ -439,6 +475,7 @@ html.theme-snapshot-transition::view-transition-new(root) {
 .locker-static *,
 .locker-static *::before,
 .locker-static *::after {
-  animation-play-state: paused !important;
+  animation: none !important;
   will-change: auto !important;
+  transform-style: flat !important;
 }

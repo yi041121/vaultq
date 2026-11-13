@@ -32,7 +32,7 @@ export function PhotoViewerModal({ photos, index, title, onIndexChange, onClose 
   return (
     <div
       className="fixed inset-0 z-[85] flex flex-col bg-black/90 backdrop-blur-md p-4"
-      style={{ backgroundColor: "rgba(2,6,23,0.9)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
+      style={{ backgroundColor: "rgba(2,6,23,0.9)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
       role="dialog"
       aria-modal="true"
       aria-label={title ? `${title} photo` : "Photo viewer"}>

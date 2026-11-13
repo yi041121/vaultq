@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import { Cloud } from "lucide-react";
 import { colors } from "@/lib/design";
 
-export default function LockerIllustration({ hideIdCard, animated = true }: { hideIdCard?: boolean; animated?: boolean }) {
+export default memo(function LockerIllustration({ hideIdCard, animated = true }: { hideIdCard?: boolean; animated?: boolean }) {
   const [timer, setTimer] = useState(0);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export default function LockerIllustration({ hideIdCard, animated = true }: { hi
       style={{ background: `linear-gradient(135deg, ${colors.bg}, ${colors.fill})`, perspective: "1000px", transformStyle: "preserve-3d" }}>
       {/* Floating particles with 3D depth */}
       <div className="absolute inset-0" style={{ transformStyle: "preserve-3d" }}>
-        {Array.from({ length: animated ? 180 : 24 }, (_, i) => {
+        {Array.from({ length: animated ? 48 : 24 }, (_, i) => {
           const a = i * 97.3, b = i * 53.7, c = i * 141.1;
           return {
             l: ((a * 1.7 + b * 0.3) % 96) + 2,
@@ -271,4 +271,4 @@ export default function LockerIllustration({ hideIdCard, animated = true }: { hi
       `}</style>
     </div>
   );
-}
+});
