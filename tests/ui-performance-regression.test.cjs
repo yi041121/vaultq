@@ -194,6 +194,15 @@ test("mobile report form keeps its scrollbar inside the form card", () => {
   assert.match(source, /max-h-\[92dvh\] overflow-visible lg:overflow-y-auto/);
 });
 
+test("report form uses an always-visible blue custom scroll indicator", () => {
+  const report = fs.readFileSync(path.join(__dirname, "../src/app/dashboard/student/report/page.tsx"), "utf8");
+  const component = fs.readFileSync(path.join(__dirname, "../src/components/custom-scrollbar.tsx"), "utf8");
+  const css = fs.readFileSync(path.join(__dirname, "../src/app/globals.css"), "utf8");
+  assert.match(report, /<CustomScrollbar targetRef=\{formScrollRef\} \/>/);
+  assert.match(component, /var\(--vq-primary\)/);
+  assert.match(css, /\.vq-form-scroll::-webkit-scrollbar \{\s*display: none/);
+});
+
 test("phone quick-action FAB reuses the role actions without the theme toggle", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/components/student-shell.tsx"), "utf8");
   const start = source.indexOf("{/* Phone quick-action FAB");
@@ -204,6 +213,8 @@ test("phone quick-action FAB reuses the role actions without the theme toggle", 
   assert.match(fab, /runQuickAction\(action\)/);
   assert.match(fab, /mobileFabOpen/);
   assert.doesNotMatch(fab, /ThemeToggle/);
+  assert.match(source, /pointerdown/);
+  assert.match(source, /mobileFabRef/);
   assert.match(source, /function runQuickAction\(action: QuickAction\)/);
   assert.match(source, /const quickActions = quickActionsForRole\(userRole\)/);
 });

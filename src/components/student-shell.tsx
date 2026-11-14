@@ -63,6 +63,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
   const [mobileFabOpen, setMobileFabOpen] = useState(false);
+  const mobileFabRef = useRef<HTMLDivElement>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [studentUnread, setStudentUnread] = useState(() => getCachedUnread());
@@ -127,8 +128,17 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileFabOpen(false);
     };
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (mobileFabRef.current && !mobileFabRef.current.contains(event.target as Node)) {
+        setMobileFabOpen(false);
+      }
+    };
     document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePress, true);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePress, true);
+    };
   }, [mobileFabOpen]);
 
   function requestLogout() {
@@ -434,6 +444,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
           without the theme toggle. */}
       {!desktop && (
         <div
+          ref={mobileFabRef}
           className="fixed right-4 z-40 flex flex-col items-end gap-2.5 lg:hidden"
           style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
         >

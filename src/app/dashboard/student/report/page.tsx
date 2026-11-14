@@ -21,6 +21,7 @@ import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { PhotoPicker } from "@/components/photo-picker";
+import { CustomScrollbar } from "@/components/custom-scrollbar";
 import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { StudentShell } from "@/components/student-shell";
 import {
@@ -194,6 +195,7 @@ function StudentReportContent() {
   const [editingEditPhoto, setEditingEditPhoto] = useState<number | null>(null);
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
   const editCameraInputRef = useRef<HTMLInputElement>(null);
+  const formScrollRef = useRef<HTMLDivElement>(null);
 
   const formValid = !!(
     type && itemName.trim().length >= 2 && category && description.trim().length >= 5 &&
@@ -1198,7 +1200,9 @@ function StudentReportContent() {
                     onClick={() => { if (!submitting) closeReportForm(); }} />
                   <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-visible lg:overflow-y-auto">
                   <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
-                  <VCard className="vq-form-scroll min-w-0 p-6 sm:p-8 max-h-[calc(92dvh-2rem)] overflow-y-auto overscroll-contain lg:max-h-none lg:overflow-visible">
+                  <div className="relative min-w-0">
+                  <div ref={formScrollRef} className="vq-card vq-form-scroll bg-white rounded-2xl border min-w-0 p-6 sm:p-8 max-h-[calc(92dvh-2rem)] overflow-y-auto overscroll-contain lg:max-h-none lg:overflow-visible"
+                    style={{ borderColor: c.border, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
                   <div className="flex items-center gap-2 mb-5">
                     <p className="min-w-0 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
@@ -1391,7 +1395,9 @@ function StudentReportContent() {
                     </VButton>
                   </div>
 
-                  </VCard>
+                  </div>
+                  <CustomScrollbar targetRef={formScrollRef} />
+                  </div>
                   <aside className="hidden lg:block lg:sticky lg:top-0">
                     <VCard className="p-5">
                       <h3 className="text-base font-semibold mb-4" style={{ color: c.text }}>How reporting works</h3>

@@ -122,7 +122,7 @@ export function ItemDetailsModal({
           )}
           <button type="button" onClick={onClose} aria-label="Close details"
             className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
-            style={{ backgroundColor: "rgba(15,23,42,0.6)", color: "#fff", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.45))" }}>
+            style={{ backgroundColor: c.primary, color: "#fff", boxShadow: "0 2px 8px rgba(15,23,42,0.28)" }}>
             <X size={16} />
           </button>
         </div>
@@ -135,6 +135,8 @@ export function ItemDetailsModal({
 
           <div className="flex flex-wrap gap-x-4 gap-y-2 mb-5 text-sm" style={{ color: c.textMuted }}>
             <span className="flex items-center gap-1">
+              {/* categoryIcon returns a stable icon from a static map. */}
+              {/* eslint-disable-next-line react-hooks/static-components */}
               <CatIcon size={14} style={{ color: c.primary }} /> {category}
             </span>
             <span className="flex items-center gap-1"><MapPin size={14} /> {location || "—"}</span>

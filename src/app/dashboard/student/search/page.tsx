@@ -9,6 +9,7 @@ import {
   ChevronDown, Monitor, Grid3X3, ArrowUpDown,
   MapPin, Clock, ChevronLeft, ChevronRight, X, Upload, Eye, Crop, FileText,
   RefreshCw, CheckCircle2, Plus, RotateCcw,
+  type LucideIcon,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ItemDetailsModal } from "@/components/item-details-modal";
@@ -43,7 +44,7 @@ const categories = [
   { label: "Others", icon: Grid3X3, color: "#355C8A" },
 ];
 
-const filterIcons: Record<string, any> = {
+const filterIcons: Record<string, LucideIcon> = {
   Electronics: Monitor,
   Bags: Briefcase,
   "Student Cards": CreditCard,
@@ -125,15 +126,15 @@ export default function StudentSearch() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success || !Array.isArray(data.data)) return [];
-      const list: LostReportOption[] = (data.data as any[])
+      const list: LostReportOption[] = (data.data as Record<string, unknown>[])
         .filter((report) => report.type === "LOST" && report.status === "PENDING")
         .map((report) => ({
-          id: report.id,
-          itemName: report.itemName || "Untitled report",
-          category: report.category || "Others",
+          id: String(report.id),
+          itemName: typeof report.itemName === "string" ? report.itemName : "Untitled report",
+          category: typeof report.category === "string" ? report.category : "Others",
           date: String(report.date || report.createdAt || "").slice(0, 10),
-          description: report.description || "",
-          location: report.location || "",
+          description: typeof report.description === "string" ? report.description : "",
+          location: typeof report.location === "string" ? report.location : "",
           images: uniquePhotos(Array.isArray(report.imageUrls) && report.imageUrls.length
             ? report.imageUrls
             : report.imageUrl
@@ -161,11 +162,13 @@ export default function StudentSearch() {
       if (!itemsRes.ok || !itemsJson?.success) {
         throw new Error(itemsJson?.error || "Failed to load items");
       }
-      const mapped = (itemsJson.data as any[]).map(mapApiItem);
+      const mapped = ((itemsJson.data ?? []) as Record<string, unknown>[]).map(mapApiItem);
 
       const claimsJson = claimsRes.ok ? await claimsRes.json().catch(() => null) : null;
       const claimedIds = claimsJson?.success && Array.isArray(claimsJson.data)
-        ? (claimsJson.data as any[]).map((cl) => cl.itemId as string)
+        ? (claimsJson.data as Record<string, unknown>[])
+          .map((cl) => (typeof cl.itemId === "string" ? cl.itemId : ""))
+          .filter(Boolean)
         : [];
       const claimedSet = new Set(claimedIds);
 
@@ -229,6 +232,8 @@ export default function StudentSearch() {
   }
 
   useEffect(() => {
+    // Client-only mount flag; this is the standard hydration guard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
     const token = localStorage.getItem("token");
@@ -840,7 +845,7 @@ export default function StudentSearch() {
           photos={viewItem.imageUrl ? [viewItem.imageUrl] : []}
           onClose={() => setViewItem(null)}
           footer={<>
-            <VButton variant="ghost" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
+            <VButton variant="secondary" className="flex-1" onClick={() => setViewItem(null)}>Close</VButton>
             <VButton
               className="flex-1"
               onClick={() => openClaim(viewItem)}
@@ -886,8 +891,8 @@ export default function StudentSearch() {
                 </p>
               </div>
               <button type="button" onClick={() => setLinkPromptItem(null)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0 ml-3"
-                style={{ color: c.textMuted }} aria-label="Close link lost report dialog">
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 cursor-pointer shrink-0 ml-3"
+                style={{ backgroundColor: c.primarySoft, color: c.primary }} aria-label="Close link lost report dialog">
                 <X size={16} />
               </button>
             </div>
@@ -951,7 +956,7 @@ export default function StudentSearch() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Item</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{claimItem.name} · {claimItem.category} · {claimItem.location || "—"}</p>
               </div>
-              <button type="button" onClick={closeClaim} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={closeClaim} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ backgroundColor: c.primarySoft, color: c.primary }}><X size={16} /></button>
             </div>
 
             {claimPrefilling && <p role="status" className="text-xs mb-3" style={{ color: c.primary }}>Loading photos from your lost report…</p>}
@@ -988,7 +993,16 @@ export default function StudentSearch() {
                   <label className="text-sm font-medium" style={{ color: c.text }}>
                     Photo Evidence <span style={{ color: c.danger }}>*</span>
                   </label>
-                  <span className="text-[11px]" style={{ color: c.textLight }}>{claimPhotos.length}/3</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px]" style={{ color: c.textLight }}>{claimPhotos.length}/3</span>
+                    {claimPhotos.length > 0 && claimPhotos.length < 3 && (
+                      <button type="button" onClick={() => setClaimPhotoSourceOpen(true)}
+                        className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
+                        style={{ borderColor: c.border, color: c.primary }}>
+                        <Plus size={13} /> Add photo
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoChange} />
                 <input ref={claimCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
@@ -1032,21 +1046,12 @@ export default function StudentSearch() {
                         </div>
                       ))}
                     </div>
-                    <div className="flex items-center justify-end mt-2">
-                      {claimPhotos.length < 3 && (
-                        <button type="button" onClick={() => setClaimPhotoSourceOpen(true)}
-                          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
-                          style={{ borderColor: c.border, color: c.primary }}>
-                          <Plus size={13} /> Add photo
-                        </button>
-                      )}
-                    </div>
                   </div>
                 )}
                 <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex items-center justify-center gap-3 pt-2">
                 <VButton variant="secondary" onClick={closeClaim}>Cancel</VButton>
                 <VButton onClick={handleSubmitClaim} disabled={claimPrefilling || claimSubmitting || !claimReason.trim() || claimPhotos.length === 0}>
                   <Upload size={14} /> {claimSubmitting ? "Submitting..." : "Submit Claim"}
