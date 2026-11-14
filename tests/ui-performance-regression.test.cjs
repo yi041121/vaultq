@@ -194,6 +194,20 @@ test("mobile report form keeps its scrollbar inside the form card", () => {
   assert.match(source, /max-h-\[92dvh\] overflow-visible lg:overflow-y-auto/);
 });
 
+test("phone quick-action FAB reuses the role actions without the theme toggle", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/components/student-shell.tsx"), "utf8");
+  const start = source.indexOf("{/* Phone quick-action FAB");
+  const end = source.indexOf("{/* Logout confirm dialog */}");
+  assert.ok(start >= 0 && end > start, "FAB block exists");
+  const fab = source.slice(start, end);
+  assert.match(fab, /quickActions\.map/);
+  assert.match(fab, /runQuickAction\(action\)/);
+  assert.match(fab, /mobileFabOpen/);
+  assert.doesNotMatch(fab, /ThemeToggle/);
+  assert.match(source, /function runQuickAction\(action: QuickAction\)/);
+  assert.match(source, /const quickActions = quickActionsForRole\(userRole\)/);
+});
+
 function quickActionHarness(href) {
   const source = fs.readFileSync(path.join(__dirname, "../src/lib/use-page-quick-action.ts"), "utf8");
   const code = ts.transpileModule(source, {

@@ -7,6 +7,7 @@ import {
   Package, FileText, Clock, QrCode, CheckCircle2,
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3,
   MapPin, Camera, Timer, Lock, X, Loader2, RefreshCw, Eye,
+  type LucideIcon,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -28,7 +29,7 @@ import { clearStudentCache, getCachedClaims, setCachedClaims } from "@/lib/stude
 
 interface User { id: string; name: string; email: string; role: string; }
 
-const filterIcons: Record<string, any> = {
+const filterIcons: Record<string, LucideIcon> = {
   Electronics: Monitor,
   Bags: Briefcase,
   "Student Cards": CreditCard,
@@ -97,7 +98,7 @@ export default function StudentClaims() {
       const res = await fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
-      const mapped = (data.data as any[]).map(mapUserClaim);
+      const mapped = ((data.data ?? []) as Record<string, unknown>[]).map(mapUserClaim);
       setClaims(mapped);
       setCachedClaims(mapped);
     } catch (e) {
@@ -109,6 +110,8 @@ export default function StudentClaims() {
   }
 
   useEffect(() => {
+    // Client-only mount flag; this is the standard hydration guard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
     const token = localStorage.getItem("token");
@@ -276,8 +279,8 @@ export default function StudentClaims() {
       setResubmitClaim(null);
       setResubmitPhotos([]);
       await loadClaims(token);
-    } catch (e: any) {
-      showCenteredMessage("error", e?.message || "Failed to resubmit claim");
+    } catch (e) {
+      showCenteredMessage("error", e instanceof Error ? e.message : "Failed to resubmit claim");
     } finally {
       setResubmitting(false);
     }
@@ -588,28 +591,30 @@ export default function StudentClaims() {
               </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               {detailsClaim.approvedAt && detailsClaim.displayStatus !== "Rejected" && (
-                <p className="text-xs mr-auto" style={{ color: c.textMuted }}>
+                <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>
                   Approved by admin on <time className="vq-date">{fmtTimestamp(detailsClaim.approvedAt)}</time>
                 </p>
               )}
-              <VButton variant="secondary" onClick={() => setDetailsClaim(null)}>Close</VButton>
-              {detailsClaim.displayStatus === "Rejected" && (
-                <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); openResubmit(target); }}>
-                  <RefreshCw size={14} /> Resubmit
-                </VButton>
-              )}
-              {detailsClaim.displayStatus === "Pending" && (
-                <VButton variant="danger" onClick={() => { const target = detailsClaim; setDetailsClaim(null); setCancelTarget(target); }}>
-                  Cancel claim
-                </VButton>
-              )}
-              {detailsClaim.displayStatus === "QR Ready" && (
-                <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); void openQR(target); }}>
-                  <QrCode size={14} /> {detailsClaim.hasValidQr ? "View QR" : "Get QR Code"}
-                </VButton>
-              )}
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                <VButton variant="secondary" onClick={() => setDetailsClaim(null)}>Close</VButton>
+                {detailsClaim.displayStatus === "Rejected" && (
+                  <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); openResubmit(target); }}>
+                    <RefreshCw size={14} /> Resubmit
+                  </VButton>
+                )}
+                {detailsClaim.displayStatus === "Pending" && (
+                  <VButton variant="danger" onClick={() => { const target = detailsClaim; setDetailsClaim(null); setCancelTarget(target); }}>
+                    Cancel claim
+                  </VButton>
+                )}
+                {detailsClaim.displayStatus === "QR Ready" && (
+                  <VButton onClick={() => { const target = detailsClaim; setDetailsClaim(null); void openQR(target); }}>
+                    <QrCode size={14} /> {detailsClaim.hasValidQr ? "View QR" : "Get QR Code"}
+                  </VButton>
+                )}
+              </div>
             </div>
           </VCard>
         </div>

@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X, Plus } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost, { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -15,7 +15,7 @@ import { useIdleSession } from "@/lib/use-idle-session";
 import { clearClientSession } from "@/lib/idle-session";
 import { endServerSession } from "@/lib/browser-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
-import { QUICK_ACTION_EVENT, quickActionsForRole } from "@/lib/quick-actions";
+import { QUICK_ACTION_EVENT, quickActionsForRole, type QuickAction } from "@/lib/quick-actions";
 
 interface NavItem {
   label: string;
@@ -62,6 +62,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
+  const [mobileFabOpen, setMobileFabOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [studentUnread, setStudentUnread] = useState(() => getCachedUnread());
@@ -110,6 +111,26 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     return value > 99 ? "99+" : String(value);
   }
 
+  function runQuickAction(action: QuickAction) {
+    const target = new URL(action.path, window.location.origin);
+    if (userRole === "ADMIN" && target.pathname === window.location.pathname && (target.searchParams.has("add") || target.searchParams.has("edit"))) {
+      window.dispatchEvent(new CustomEvent(QUICK_ACTION_EVENT, { detail: action.path }));
+    } else {
+      router.push(action.path);
+    }
+    setShortcutDockOpen(false);
+    setMobileFabOpen(false);
+  }
+
+  useEffect(() => {
+    if (!mobileFabOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileFabOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [mobileFabOpen]);
+
   function requestLogout() {
     setConfirmLogout(true);
   }
@@ -144,6 +165,12 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIndicatorIndex(activeIndex);
   }, [activeIndex]);
+
+  useEffect(() => {
+    // A bottom-nav change should also dismiss the phone quick actions.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMobileFabOpen(false);
+  }, [active]);
 
   useEffect(() => () => {
     if (navTimerRef.current) window.clearTimeout(navTimerRef.current);
@@ -292,13 +319,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
             {shortcutDockOpen ? <X size={17} /> : <LayoutGrid size={17} />}
           </button>
           {shortcutDockOpen && quickActions.map((action) => (
-            <button key={action.label} type="button" onClick={() => {
-              const target = new URL(action.path, window.location.origin);
-              if (userRole === "ADMIN" && target.pathname === window.location.pathname && (target.searchParams.has("add") || target.searchParams.has("edit"))) {
-                window.dispatchEvent(new CustomEvent(QUICK_ACTION_EVENT, { detail: action.path }));
-              } else router.push(action.path);
-              setShortcutDockOpen(false);
-            }}
+            <button key={action.label} type="button" onClick={() => runQuickAction(action)}
               aria-label={action.label} title={action.label}
               className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ backgroundColor: colors.borderLight, color: colors.textMuted }}
@@ -408,6 +429,61 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
           </div>
         </div>
       </nav>
+
+      {/* Phone quick-action FAB: same actions as the desktop shortcut dock,
+          without the theme toggle. */}
+      {!desktop && (
+        <div
+          className="fixed right-4 z-40 flex flex-col items-end gap-2.5 lg:hidden"
+          style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
+        >
+          {mobileFabOpen && (
+            <div id="mobile-quick-actions" role="menu" aria-label="Quick actions"
+              className="flex flex-col items-end gap-2.5">
+              {quickActions.map((action, index) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => runQuickAction(action)}
+                  aria-label={action.label}
+                  className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex items-center gap-2.5 rounded-full cursor-pointer touch-manipulation focus-visible:outline-2 focus-visible:outline-offset-2"
+                  style={{ animationDelay: `${index * 35}ms`, outlineColor: colors.primary }}
+                >
+                  <span className="max-w-[10.5rem] truncate rounded-full border bg-white px-3 py-1.5 text-[11px] font-semibold shadow-md"
+                    style={{ borderColor: colors.border, color: colors.text }}>
+                    {action.label}
+                  </span>
+                  <span className="w-12 h-12 shrink-0 rounded-full border bg-white flex items-center justify-center shadow-lg"
+                    style={{ borderColor: colors.border, color: colors.primary }}>
+                    <action.icon size={19} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setMobileFabOpen((open) => !open)}
+            aria-label={mobileFabOpen ? "Close quick actions" : "Open quick actions"}
+            aria-expanded={mobileFabOpen}
+            aria-haspopup="menu"
+            aria-controls={mobileFabOpen ? "mobile-quick-actions" : undefined}
+            className="w-14 h-14 shrink-0 rounded-full flex items-center justify-center text-white cursor-pointer touch-manipulation transition-transform duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{
+              backgroundColor: colors.primary,
+              boxShadow: "0 8px 20px rgba(47,85,128,0.28)",
+              outlineColor: colors.primary,
+            }}
+          >
+            <Plus
+              size={24}
+              className="transition-transform duration-200"
+              style={{ transform: mobileFabOpen ? "rotate(45deg)" : "none" }}
+            />
+          </button>
+        </div>
+      )}
 
       {/* Logout confirm dialog */}
       <ConfirmDialog
