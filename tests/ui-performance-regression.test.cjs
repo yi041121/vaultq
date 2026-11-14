@@ -95,6 +95,59 @@ test("dropdown option hover does not use React state or event-driven redraws", (
   assert.equal(item.props.style.backgroundColor, "lightblue");
 });
 
+test("pagination scrolls to the top and avoids the mobile tap/focus flash", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/components/ui/vault.tsx"), "utf8");
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  const element = (type, props) => ({ type, props });
+  const calls = { pages: [], scrolls: [] };
+  const window = {
+    matchMedia: () => ({ matches: false }),
+    requestAnimationFrame: (callback) => { callback(); return 1; },
+    scrollTo: (options) => calls.scrolls.push(options),
+  };
+  const dependencies = {
+    react: { useState: (value) => [value, () => {}], useEffect: () => {}, useRef: () => ({}) },
+    "react/jsx-runtime": { jsx: element, jsxs: element },
+    "lucide-react": { ChevronDown: "ChevronDown", ChevronLeft: "ChevronLeft", ChevronRight: "ChevronRight", Search: "Search", X: "X" },
+    "@/lib/design": {
+      colors: { primary: "#123456", textMuted: "#456789", primarySoft: "#dbe4ee", border: "#ccd5df", textLight: "#8a97a6" },
+      radius: {}, size: {}, font: {}, iconSize: {},
+    },
+  };
+  const exports = {};
+  vm.runInNewContext(code, { exports, window, require: (name) => dependencies[name] });
+
+  const footer = exports.VPaginationFooter({
+    current: 1, total: 2, pageSize: 8, itemCount: 10,
+    onPage: (page) => calls.pages.push(page),
+  });
+  const pager = footer.props.children.find((child) => child?.type === exports.VPagination);
+  assert.ok(pager, "footer renders the pagination control");
+  pager.props.onPage(2);
+  assert.deepEqual(calls.pages, [2]);
+  assert.equal(calls.scrolls.length, 1);
+  assert.equal(calls.scrolls[0].top, 0);
+  assert.equal(calls.scrolls[0].behavior, "smooth");
+
+  const footerOnPageTwo = exports.VPaginationFooter({
+    current: 2, total: 2, pageSize: 8, itemCount: 10,
+    onPage: (page) => calls.pages.push(page),
+  });
+  const pagerOnPageTwo = footerOnPageTwo.props.children.find((child) => child?.type === exports.VPagination);
+  pagerOnPageTwo.props.onPage(2);
+  assert.deepEqual(calls.pages, [2], "clicking the current page is a no-op");
+  assert.equal(calls.scrolls.length, 1, "no extra scroll for the current page");
+
+  const control = exports.VPagination({ current: 1, total: 2, onPage: () => {} });
+  const pageButtons = control.props.children.flat(Infinity).filter((child) => child?.type === "button" && typeof child.props.children === "number");
+  const active = pageButtons.find((child) => child.props.children === 1);
+  assert.equal(active.props["aria-current"], "page");
+  assert.equal(active.props.style.WebkitTapHighlightColor, "transparent");
+  assert.doesNotMatch(active.props.className, /transition-all/);
+});
+
 function quickActionHarness(href) {
   const source = fs.readFileSync(path.join(__dirname, "../src/lib/use-page-quick-action.ts"), "utf8");
   const code = ts.transpileModule(source, {

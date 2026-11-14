@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { colors, radius, size, font, iconSize } from "@/lib/design";
 
 /* ---------------------------------- Button --------------------------------- */
@@ -44,7 +44,7 @@ export function VButton({ variant = "primary", size: btnSize = "md", className =
 
 /* ---------------------------------- Input ---------------------------------- */
 
-interface VInputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+type VInputProps = React.InputHTMLAttributes<HTMLInputElement>;
 
 export function VInput({ className = "", style, ...props }: VInputProps) {
   const [focused, setFocused] = useState(false);
@@ -293,12 +293,25 @@ export function VPaginationFooter({ current, total, pageSize, itemCount, onPage 
   onPage: (p: number) => void;
 }) {
   if (itemCount === 0) return null;
+
+  function changePage(next: number) {
+    if (next === current) return;
+    onPage(next);
+    if (typeof window === "undefined") return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    // Wait for the new page to render before moving the viewport, so the
+    // scroll starts from the new content height instead of the old page's.
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+    });
+  }
+
   return (
     <div className="mt-auto flex shrink-0 flex-col sm:flex-row items-center justify-between gap-3 pt-6" data-pagination-footer>
       <span className="text-xs" style={{ color: colors.textMuted }}>
         Showing {((current - 1) * pageSize) + 1}-{Math.min(current * pageSize, itemCount)} of {itemCount} results
       </span>
-      <VPagination current={current} total={total} onPage={onPage} />
+      <VPagination current={current} total={total} onPage={changePage} />
     </div>
   );
 }
@@ -314,8 +327,8 @@ export function VPagination({ current, total, onPage }: {
     <div className="vq-scroll-x flex max-w-full items-center gap-1.5 sm:gap-2" role="group" aria-label="Pagination">
       <button
         type="button"
-        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
-        style={{ borderColor: colors.border, color: colors.textMuted }}
+        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center border bg-white touch-manipulation select-none transition-colors duration-150 disabled:opacity-40 cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+        style={{ borderColor: colors.border, color: colors.textMuted, WebkitTapHighlightColor: "transparent", outlineColor: colors.primary }}
         disabled={current === 1}
         aria-label="Previous page"
         onClick={() => onPage(current - 1)}
@@ -329,12 +342,16 @@ export function VPagination({ current, total, onPage }: {
           <button
             key={p}
             type="button"
-            className="w-9 h-9 shrink-0 rounded-full text-sm font-medium transition-all duration-200 cursor-pointer"
+            aria-current={current === p ? "page" : undefined}
+            className="w-9 h-9 shrink-0 rounded-full text-sm font-medium touch-manipulation select-none transition-[background-color,color,border-color,box-shadow] duration-200 cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{
               backgroundColor: current === p ? colors.primary : "#fff",
               color: current === p ? "#fff" : colors.textMuted,
               border: `1px solid ${current === p ? colors.primary : colors.border}`,
-              boxShadow: current === p ? "0 2px 8px rgba(53,92,138,0.3)" : "none",
+              boxShadow: current === p ? "0 1px 4px rgba(53,92,138,0.22)" : "none",
+              fontWeight: current === p ? 600 : 500,
+              WebkitTapHighlightColor: "transparent",
+              outlineColor: colors.primary,
             }}
             onClick={() => onPage(p)}
           >
@@ -344,8 +361,8 @@ export function VPagination({ current, total, onPage }: {
       )}
       <button
         type="button"
-        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center border bg-white transition-all duration-200 disabled:opacity-40 cursor-pointer"
-        style={{ borderColor: colors.border, color: colors.textMuted }}
+        className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center border bg-white touch-manipulation select-none transition-colors duration-150 disabled:opacity-40 cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2"
+        style={{ borderColor: colors.border, color: colors.textMuted, WebkitTapHighlightColor: "transparent", outlineColor: colors.primary }}
         disabled={current === total}
         aria-label="Next page"
         onClick={() => onPage(current + 1)}
@@ -358,7 +375,7 @@ export function VPagination({ current, total, onPage }: {
 
 /* ------------------------------ Category chip ------------------------------ */
 
-export function CategoryIcon({ label, icon: Icon, color, size = 15 }: {
+export function CategoryIcon({ icon: Icon, color, size = 15 }: {
   label: string;
   icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
   color: string;

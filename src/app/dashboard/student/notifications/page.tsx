@@ -105,6 +105,8 @@ export default function StudentNotifications() {
   }, [notifs, unreadCount]);
 
   useEffect(() => {
+    // Client-only mount flag; this is the standard hydration guard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
     const token = localStorage.getItem("token");
@@ -139,6 +141,8 @@ export default function StudentNotifications() {
   }, [mounted, load]);
 
   useEffect(() => {
+    // Reset to the first page when a filter or search changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
   }, [filter, showUnreadOnly, query]);
 
