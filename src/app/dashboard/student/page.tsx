@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   FileText, Clock,
   Package, ChevronRight,
-  BellRing, RefreshCw, AlertCircle,
+  RefreshCw, AlertCircle,
   Eye, MapPin
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
@@ -36,6 +36,7 @@ export default function StudentDashboard() {
   const [notifications, setNotifications] = useState<CachedNotification[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
 
   function viewItemDetails(name: string) {
     router.push(`/dashboard/student/search?view=${encodeURIComponent(name)}`);
@@ -84,6 +85,8 @@ export default function StudentDashboard() {
   }, []);
 
   useEffect(() => {
+    // Client-only mount flag; this is the standard hydration guard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
     const token = localStorage.getItem("token");
@@ -104,6 +107,8 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     if (!mounted) return;
+    // Initial data load is asynchronous; state updates happen after fetches.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboard();
   }, [mounted, loadDashboard]);
 
@@ -115,7 +120,7 @@ export default function StudentDashboard() {
 
   if (!user || !mounted) return null;
 
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const activeClaims = claims.filter(
     (claim) => claim.displayStatus === "Pending" || claim.displayStatus === "QR Ready",
   ).length;
@@ -253,12 +258,11 @@ export default function StudentDashboard() {
                     View all <ChevronRight size={14} />
                   </button>
                 </div>
-              <VCard className="p-5 lg:p-6 min-h-[276px] lg:min-h-[316px] flex flex-col cursor-pointer"
-                onClick={() => router.push("/dashboard/student/claims")}>
+              <VCard className="p-5 lg:p-6 min-h-[276px] lg:min-h-[316px] flex flex-col">
                 <div className="flex flex-1 flex-col gap-3">
                   {latestClaims.map((claim) => (
                     <button key={claim.id} type="button"
-                      onClick={(event) => { event.stopPropagation(); router.push("/dashboard/student/claims"); }}
+                      onClick={() => router.push("/dashboard/student/claims")}
                       className="flex w-full items-center justify-between p-2.5 lg:p-3 rounded-xl transition-colors duration-200 hover:bg-[#dbe4ee] cursor-pointer"
                       style={{ backgroundColor: c.borderLight }}>
                       <div className="flex-1 min-w-0 text-left">
@@ -284,11 +288,10 @@ export default function StudentDashboard() {
                     View all <ChevronRight size={14} />
                   </button>
                 </div>
-              <VCard className="p-5 lg:p-6 flex flex-1 flex-col min-h-[264px] lg:min-h-[294px] cursor-pointer"
-                onClick={() => router.push("/dashboard/student/notifications")}>
+              <VCard className="p-5 lg:p-6 flex flex-1 flex-col min-h-[264px] lg:min-h-[294px]">
                 <div className="divide-y flex-1" style={{ borderColor: c.border }}>
                   {announcements.map((announcement) => (
-                    <button key={announcement.id} type="button" onClick={(event) => { event.stopPropagation(); openAnnouncement(announcement); }}
+                    <button key={announcement.id} type="button" onClick={() => openAnnouncement(announcement)}
                       className="flex w-full gap-3 py-2.5 first:pt-0 last:pb-0 text-left rounded-lg transition-colors duration-150 hover:bg-[#f8fafc] cursor-pointer">
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                         style={{ backgroundColor: c.borderLight }}>

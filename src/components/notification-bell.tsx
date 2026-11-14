@@ -35,28 +35,28 @@ function NotificationRow({ n, onOpen }: { n: BellNotification; onOpen: (n: BellN
     <button
       type="button"
       onClick={() => onOpen(n)}
-      className="w-full flex gap-2.5 sm:gap-3 px-3.5 sm:px-4 py-2.5 sm:py-3 text-left border-b last:border-0 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
+      className="w-full flex gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 text-left border-b last:border-0 transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
       style={{ borderColor: colors.borderLight }}
     >
       <span
-        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0"
         style={{ backgroundColor: `color-mix(in srgb, ${meta.color} 8%, transparent)` }}
       >
-        <Icon size={15} style={{ color: meta.color }} />
+        <Icon size={14} style={{ color: meta.color }} />
       </span>
       <span className="flex-1 min-w-0">
         <span className="flex items-start justify-between gap-2">
-          <span className="text-xs font-semibold truncate" style={{ color: colors.text }}>{n.title}</span>
-          <span className="text-[10px] whitespace-nowrap shrink-0" style={{ color: colors.textLight }}>
+          <span className="text-[11px] sm:text-xs font-semibold truncate" style={{ color: colors.text }}>{n.title}</span>
+          <span className="text-[9px] sm:text-[10px] whitespace-nowrap shrink-0" style={{ color: colors.textLight }}>
             {relativeTime(n.createdAt)}
           </span>
         </span>
-        <span className="block text-[11px] leading-relaxed line-clamp-2 mt-0.5" style={{ color: colors.textMuted }}>
+        <span className="block text-[10px] sm:text-[11px] leading-relaxed line-clamp-2 mt-0.5" style={{ color: colors.textMuted }}>
           {n.message}
         </span>
-        <span className="flex items-center gap-1.5 mt-1">
+        <span className="flex items-center gap-1.5 mt-0.5 sm:mt-1">
           {!n.isRead && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colors.primary }} />}
-          <span className="text-[10px] font-medium" style={{ color: meta.color }}>{meta.category}</span>
+          <span className="text-[9px] sm:text-[10px] font-medium" style={{ color: meta.color }}>{meta.category}</span>
         </span>
       </span>
     </button>
@@ -128,6 +128,9 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
   }
 
   useEffect(() => {
+    // Badge refresh is asynchronous; state changes only after the request
+    // resolves, not synchronously during this effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadCount();
     const refresh = () => {
       if (document.visibilityState === "visible") void loadCount();
@@ -238,10 +241,10 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
         <div
           role="dialog"
           aria-label="Notifications"
-          className={shortcut ? "flex w-[360px] max-w-[calc(100vw-2rem)] max-h-[min(70dvh,32rem)] flex-col overflow-hidden rounded-2xl border bg-white shadow-xl" : "fixed inset-x-3 top-[calc(env(safe-area-inset-top)_+_4rem)] z-50 flex max-h-[min(70dvh,30rem)] w-auto flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-[3.125rem] sm:max-h-[min(70vh,32rem)] sm:w-[360px] sm:max-w-[calc(100vw-2rem)] sm:rounded-xl sm:shadow-xl"}
+          className={shortcut ? "flex w-[360px] max-w-[calc(100vw-2rem)] max-h-[min(70dvh,32rem)] flex-col overflow-hidden rounded-2xl border bg-white shadow-xl" : "fixed right-3 left-auto top-[calc(env(safe-area-inset-top)_+_3.75rem)] z-50 flex max-h-[min(58dvh,23rem)] w-[min(21rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border bg-white shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-[3.125rem] sm:max-h-[min(65vh,28rem)] sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-xl sm:shadow-xl"}
           style={{ borderColor: colors.border }}
         >
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b px-3.5 py-2.5 sm:px-4 sm:py-3" style={{ borderColor: colors.borderLight }}>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b px-3 py-2 sm:px-4 sm:py-3" style={{ borderColor: colors.borderLight }}>
               <div>
                 <p className="text-sm font-semibold" style={{ color: colors.text }}>Notifications</p>
                 <p className="text-[11px]" style={{ color: colors.textMuted }}>
@@ -263,10 +266,10 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               {loading && items.length === 0 ? (
-                <div className="px-4 py-3 space-y-3">
+                <div className="px-3 py-2.5 space-y-3">
                   {[0, 1, 2].map((i) => (
-                    <div key={i} className="flex gap-3">
-                      <div className="w-8 h-8 rounded-lg shrink-0" style={{ backgroundColor: colors.borderLight }} />
+                    <div key={i} className="flex gap-2.5">
+                      <div className="w-7 h-7 rounded-lg shrink-0" style={{ backgroundColor: colors.borderLight }} />
                       <div className="flex-1 space-y-2 pt-0.5">
                         <div className="h-3 w-3/4 rounded" style={{ backgroundColor: colors.borderLight }} />
                         <div className="h-2.5 w-full rounded" style={{ backgroundColor: colors.borderLight }} />
@@ -275,7 +278,7 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
                   ))}
                 </div>
               ) : error && items.length === 0 ? (
-                <div className="px-4 py-8 text-center">
+                <div className="px-4 py-6 text-center">
                   <p className="text-xs font-medium" style={{ color: colors.textMuted }}>Could not load notifications</p>
                   <p className="text-[11px] mt-1" style={{ color: colors.textLight }}>{error}</p>
                   <button
@@ -288,7 +291,7 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
                   </button>
                 </div>
               ) : items.length === 0 ? (
-                <div className="px-4 py-8 text-center">
+                <div className="px-4 py-6 text-center">
                   <BellRing size={26} className="mx-auto mb-2" style={{ color: colors.textLight }} />
                   <p className="text-xs font-medium" style={{ color: colors.textMuted }}>No notifications</p>
                   <p className="text-[11px] mt-0.5" style={{ color: colors.textLight }}>You&apos;re all caught up.</p>
@@ -305,7 +308,7 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
                   setOpen(false);
                   router.push("/dashboard/student/notifications");
                 }}
-                className="w-full shrink-0 flex items-center justify-center gap-1 border-t px-4 py-2.5 text-[11px] font-semibold transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
+                className="w-full shrink-0 flex items-center justify-center gap-1 border-t px-4 py-2 sm:py-2.5 text-[11px] font-semibold transition-colors duration-150 cursor-pointer hover:bg-[#f8fafc]"
                 style={{ borderColor: colors.borderLight, color: colors.primary }}
               >
                 View all notifications <ChevronRight size={13} />
