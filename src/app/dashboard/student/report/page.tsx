@@ -9,6 +9,7 @@ import {
   Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
   ChevronDown, ZoomIn, MapPin, Eye, Sparkles,
   ChevronLeft, ChevronRight, CircleAlert, ArrowLeftRight,
+  type LucideIcon,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -55,11 +56,11 @@ function ReportingSteps({ type, size = "sm" }: { type: ReportType; size?: "sm" |
   );
 }
 
-function ReportingHelpDialog({ type, onClose, returnFocus }: { type: ReportType; onClose: () => void; returnFocus: HTMLButtonElement | null }) {
+function ReportingHelpDialog({ type, onClose, returnFocus }: { type: ReportType; onClose: () => void; returnFocus: { current: HTMLButtonElement | null } }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEscapeKey(true, onClose);
   useEffect(() => {
-    const previous = returnFocus ?? document.activeElement as HTMLElement | null;
+    const previous = returnFocus.current ?? document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     return () => { queueMicrotask(() => { if (previous?.isConnected) previous.focus(); }); };
   }, [returnFocus]);
@@ -110,7 +111,7 @@ type ReportSuggestion = {
   reasons: string[];
 };
 
-const categoryIcons: Record<string, any> = {
+const categoryIcons: Record<string, LucideIcon> = {
   Electronics: Monitor,
   Bags: Briefcase,
   "Student Cards": CreditCard,
@@ -210,7 +211,7 @@ function StudentReportContent() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load reports");
-      const mapped = (data.data as any[]).map(mapReport);
+      const mapped = ((data.data ?? []) as Record<string, unknown>[]).map(mapReport);
       setReports(mapped);
       setCachedReports(mapped);
     } catch (e) {
@@ -260,6 +261,8 @@ function StudentReportContent() {
   }
 
   useEffect(() => {
+    // Client-only mount flag; this is the standard hydration guard.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
     const token = localStorage.getItem("token");
@@ -286,6 +289,8 @@ function StudentReportContent() {
   useEffect(() => {
     if (!mounted) return;
     const kind = searchParams.get("kind");
+    // URL-driven tab/type sync; the query string is an external input.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (kind === "LOST" || kind === "FOUND") setReportKind(kind);
     const typeParam = searchParams.get("type");
     if (typeParam === "lost") setType("LOST");
@@ -683,7 +688,7 @@ function StudentReportContent() {
       const fresh = data?.data;
       if (!res.ok || !data?.success || !fresh) return;
       const reportImages: string[] = Array.isArray(fresh.reports)
-        ? fresh.reports.flatMap((r: any) => (Array.isArray(r.imageUrls) ? r.imageUrls : []))
+        ? fresh.reports.flatMap((r: { imageUrls?: unknown }) => (Array.isArray(r.imageUrls) ? r.imageUrls as string[] : []))
         : [];
       // Prefer the original item image from the details response over the
       // signed list URL, so the same photo is not shown twice.
@@ -1191,9 +1196,9 @@ function StudentReportContent() {
                 <div inert={reportHelpOpen} className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                   <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
                     onClick={() => { if (!submitting) closeReportForm(); }} />
-                  <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-y-auto">
+                  <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-visible lg:overflow-y-auto">
                   <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
-                  <VCard className="min-w-0 p-6 sm:p-8">
+                  <VCard className="vq-form-scroll min-w-0 p-6 sm:p-8 max-h-[calc(92dvh-2rem)] overflow-y-auto overscroll-contain lg:max-h-none lg:overflow-visible">
                   <div className="flex items-center gap-2 mb-5">
                     <p className="min-w-0 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
@@ -1397,7 +1402,7 @@ function StudentReportContent() {
                   </div>
                 </div>
               )}
-              {type && reportHelpOpen && <ReportingHelpDialog type={type} onClose={() => setReportHelpOpen(false)} returnFocus={reportHelpTriggerRef.current} />}
+              {type && reportHelpOpen && <ReportingHelpDialog type={type} onClose={() => setReportHelpOpen(false)} returnFocus={reportHelpTriggerRef} />}
               </div>
             </div>
           )}

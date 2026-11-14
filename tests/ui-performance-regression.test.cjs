@@ -102,19 +102,16 @@ test("pagination scrolls to the top and avoids the mobile tap/focus flash", () =
   }).outputText;
   const element = (type, props) => ({ type, props });
   const calls = { pages: [], scrolls: [] };
-  const window = {
-    matchMedia: () => ({ matches: false }),
-    requestAnimationFrame: (callback) => { callback(); return 1; },
-    scrollTo: (options) => calls.scrolls.push(options),
-  };
+  const window = {};
   const dependencies = {
     react: { useState: (value) => [value, () => {}], useEffect: () => {}, useRef: () => ({}) },
     "react/jsx-runtime": { jsx: element, jsxs: element },
-    "lucide-react": { ChevronDown: "ChevronDown", ChevronLeft: "ChevronLeft", ChevronRight: "ChevronRight", Search: "Search", X: "X" },
+    "lucide-react": { ChevronLeft: "ChevronLeft", ChevronRight: "ChevronRight", Search: "Search", X: "X" },
     "@/lib/design": {
       colors: { primary: "#123456", textMuted: "#456789", primarySoft: "#dbe4ee", border: "#ccd5df", textLight: "#8a97a6" },
       radius: {}, size: {}, font: {}, iconSize: {},
     },
+    "@/lib/scroll-to-top": { scrollPageToTop: () => calls.scrolls.push("top") },
   };
   const exports = {};
   vm.runInNewContext(code, { exports, window, require: (name) => dependencies[name] });
@@ -127,9 +124,7 @@ test("pagination scrolls to the top and avoids the mobile tap/focus flash", () =
   assert.ok(pager, "footer renders the pagination control");
   pager.props.onPage(2);
   assert.deepEqual(calls.pages, [2]);
-  assert.equal(calls.scrolls.length, 1);
-  assert.equal(calls.scrolls[0].top, 0);
-  assert.equal(calls.scrolls[0].behavior, "smooth");
+  assert.deepEqual(calls.scrolls, ["top"]);
 
   const footerOnPageTwo = exports.VPaginationFooter({
     current: 2, total: 2, pageSize: 8, itemCount: 10,
@@ -146,6 +141,57 @@ test("pagination scrolls to the top and avoids the mobile tap/focus flash", () =
   assert.equal(active.props["aria-current"], "page");
   assert.equal(active.props.style.WebkitTapHighlightColor, "transparent");
   assert.doesNotMatch(active.props.className, /transition-all/);
+});
+
+function scrollToTopHarness({ reduceMotion = false, start = 400 } = {}) {
+  const frames = [];
+  const positions = [];
+  const window = {
+    scrollY: start,
+    pageYOffset: start,
+    matchMedia: () => ({ matches: reduceMotion }),
+    requestAnimationFrame: (callback) => { frames.push(callback); return frames.length; },
+    cancelAnimationFrame: () => {},
+    scrollTo: (_x, y) => positions.push(y),
+  };
+  const source = fs.readFileSync(path.join(__dirname, "../src/lib/scroll-to-top.ts"), "utf8");
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports = {};
+  vm.runInNewContext(code, { exports, window });
+  return { exports, frames, positions };
+}
+
+test("phone pagination animates to the top without native smooth-scroll support", () => {
+  const h = scrollToTopHarness();
+  h.exports.scrollPageToTop({ duration: 100 });
+  assert.equal(h.frames.length, 1);
+
+  let time = 0;
+  while (h.frames.length) {
+    const callback = h.frames.shift();
+    callback(time);
+    time += 50;
+    assert.ok(time < 1000, "animation terminates");
+  }
+
+  assert.equal(h.positions[0], 400);
+  assert.ok(h.positions.length >= 3);
+  assert.equal(h.positions[h.positions.length - 1], 0);
+});
+
+test("reduced motion jumps straight to the top", () => {
+  const h = scrollToTopHarness({ reduceMotion: true });
+  h.exports.scrollPageToTop();
+  assert.deepEqual(h.positions, [0]);
+  assert.equal(h.frames.length, 0);
+});
+
+test("mobile report form keeps its scrollbar inside the form card", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/app/dashboard/student/report/page.tsx"), "utf8");
+  assert.match(source, /vq-form-scroll[^"]*max-h-\[calc\(92dvh-2rem\)\][^"]*overflow-y-auto/);
+  assert.match(source, /max-h-\[92dvh\] overflow-visible lg:overflow-y-auto/);
 });
 
 function quickActionHarness(href) {

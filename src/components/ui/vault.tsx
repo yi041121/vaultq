@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import { colors, radius, size, font, iconSize } from "@/lib/design";
+import { scrollPageToTop } from "@/lib/scroll-to-top";
 
 /* ---------------------------------- Button --------------------------------- */
 
@@ -297,13 +298,9 @@ export function VPaginationFooter({ current, total, pageSize, itemCount, onPage 
   function changePage(next: number) {
     if (next === current) return;
     onPage(next);
-    if (typeof window === "undefined") return;
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-    // Wait for the new page to render before moving the viewport, so the
-    // scroll starts from the new content height instead of the old page's.
-    window.requestAnimationFrame(() => {
-      window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
-    });
+    // The helper waits for the next animation frame, so it runs after the new
+    // page has rendered. It also provides a reliable smooth scroll on phones.
+    scrollPageToTop();
   }
 
   return (

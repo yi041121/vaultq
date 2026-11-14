@@ -481,6 +481,24 @@ html:has(.vq-modal-backdrop, .vq-modal-backdrop-strong) {
   color: var(--vq-text) !important;
 }
 
+/* Keep the report form's scrollbar inside the form card on phones instead of
+   at the modal edge, and make its position obvious while scrolling. */
+.vq-form-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vq-border) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.vq-form-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.vq-form-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.vq-form-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vq-border) 82%, transparent);
+  border-radius: 999px;
+}
+
 /* Mobile usability helpers */
 .vq-scroll-x {
   max-width: 100%;
