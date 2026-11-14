@@ -96,6 +96,9 @@ export default function AdminReports() {
   const [confirmMatchItem, setConfirmMatchItem] = useState<FoundItem | null>(null);
   const [matchQuery, setMatchQuery] = useState("");
   const [showMatchSearch, setShowMatchSearch] = useState(false);
+  const [matchItemsLoading, setMatchItemsLoading] = useState(false);
+  const [matchItemsError, setMatchItemsError] = useState<string | null>(null);
+  const matchRequestRef = useRef(0);
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
 
   const [verifyReport, setVerifyReport] = useState<UserReport | null>(null);
@@ -390,6 +393,27 @@ export default function AdminReports() {
     }
   }
 
+  async function openMatchFor(report: UserReport) {
+    const requestId = ++matchRequestRef.current;
+    setMatchTarget(report);
+    setConfirmMatchItem(null);
+    setMatchQuery("");
+    setShowMatchSearch(false);
+    setFoundItems([]);
+    setMatchItemsLoading(true);
+    setMatchItemsError(null);
+    try {
+      const res = await fetch("/api/items?status=FOUND&light=1", { headers: authHeaders(), cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Could not load found items");
+      if (requestId === matchRequestRef.current) setFoundItems(data.data as FoundItem[]);
+    } catch (e) {
+      if (requestId === matchRequestRef.current) setMatchItemsError(e instanceof Error ? e.message : "Could not load found items");
+    } finally {
+      if (requestId === matchRequestRef.current) setMatchItemsLoading(false);
+    }
+  }
+
   async function handleMatch(itemId: string) {
     if (!matchTarget || busyAction) return;
     setBusyAction(true);
@@ -401,7 +425,7 @@ export default function AdminReports() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data.error || "Failed to match report");
-      showCenteredMessage("success", "Report matched — pending claim created for review");
+      showCenteredMessage("success", "Report matched — claim approved and collection enabled");
       setMatchTarget(null);
       invalidateAdminData();
       await fetchReports();
@@ -753,7 +777,7 @@ export default function AdminReports() {
                           <CheckCircle2 size={14} /> Verify
                         </VButton>
                       ) : (
-                        <VButton className="flex-1" onClick={() => { setMatchTarget(report); setMatchQuery(""); setShowMatchSearch(false); if (foundItems.length === 0) void fetchSupporting(); }}>
+                        <VButton className="flex-1" onClick={() => void openMatchFor(report)}>
                           <Search size={14} /> Match
                         </VButton>
                       )}
@@ -788,16 +812,19 @@ export default function AdminReports() {
             </div>
 
             <p className="text-xs mb-3" style={{ color: c.textMuted }}>
-              The student is notified and can submit a claim with evidence.
+              Verify ownership before approving. Confirming a match immediately approves the claim, closes this lost report, and enables collection. Suggestions are not proof of ownership.
             </p>
 
-            {!showMatchSearch && suggestionRows.length > 0 && (
+            {matchItemsLoading && <p role="status" className="flex items-center gap-2 py-4 text-xs" style={{ color: c.textMuted }}><Loader2 size={16} className="animate-spin" /> Loading available items…</p>}
+            {matchItemsError && <div role="alert" className="space-y-3 py-4 text-xs" style={{ color: c.danger }}><p>{matchItemsError}</p><VButton variant="secondary" size="sm" onClick={() => void openMatchFor(matchTarget)}>Try again</VButton></div>}
+
+            {!matchItemsLoading && !matchItemsError && !showMatchSearch && suggestionRows.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-semibold flex items-center gap-1.5 mb-2" style={{ color: c.text }}>
                   <Sparkles size={13} style={{ color: c.primary }} /> Suggested matches
                 </p>
                 <div className="space-y-2">
-                  {suggestionRows.map(({ item, score }) => {
+                  {suggestionRows.map(({ item, score, reasons }) => {
                     const chip =
                       score >= 70
                         ? { backgroundColor: "#dcfce7", color: "#15803d" }
@@ -805,7 +832,7 @@ export default function AdminReports() {
                           ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
                           : { backgroundColor: c.fill, color: c.textMuted };
                     return (
-                      <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
+                      <div key={`suggest-${item.id}`} className="flex flex-wrap items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
                         style={{ borderColor: c.borderLight, backgroundColor: c.card }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
@@ -815,22 +842,23 @@ export default function AdminReports() {
                             <Package size={16} style={{ color: c.primary }} />
                           </div>
                         )}
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-[140px]">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                             <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={chip}>
-                              {suggestionLabel(score)} {score}
+                              {suggestionLabel(score)} · {score}/100
                             </span>
                           </div>
                           <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
                             {item.category || "Others"} · <time className="vq-date">{fmtDay(item.foundDate)}</time>{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                           </p>
+                          <p className="mt-1 text-[10px] leading-relaxed" style={{ color: c.textMuted }}>{reasons.join(" · ")}</p>
                         </div>
                         <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
                           View
                         </VButton>
                         <VButton size="sm" disabled={busyAction} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
-                          Match
+                          Review &amp; approve
                         </VButton>
                       </div>
                     );
@@ -839,7 +867,7 @@ export default function AdminReports() {
               </div>
             )}
 
-            {suggestionRows.length > 0 && !showMatchSearch ? (
+            {!matchItemsLoading && !matchItemsError && (suggestionRows.length > 0 && !showMatchSearch ? (
               <button type="button"
                 className="text-[11px] font-semibold underline hover:opacity-70 cursor-pointer"
                 style={{ color: c.primary }}
@@ -853,7 +881,7 @@ export default function AdminReports() {
                   {matchResults.length === 0 ? (
                     <p className="text-xs py-3 text-center" style={{ color: c.textLight }}>No found items match your search.</p>
                   ) : matchResults.map((item) => (
-                    <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
+                    <div key={item.id} className="flex flex-wrap items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
                       onClick={() => void openMatchPreview(item)}>
                       {item.imageUrl ? (
                         <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
@@ -862,7 +890,7 @@ export default function AdminReports() {
                           <Package size={16} style={{ color: c.primary }} />
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-[140px]">
                         <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                         <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
                           {item.category || "Others"} · {item.foundLocation || "—"} · <time className="vq-date">{fmtDay(item.foundDate)}</time>{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
@@ -872,13 +900,13 @@ export default function AdminReports() {
                         View
                       </VButton>
                       <VButton size="sm" disabled={busyAction} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
-                        Match
+                        Review &amp; approve
                       </VButton>
                     </div>
                   ))}
                 </div>
               </>
-            )}
+            ))}
 
           </VCard>
         </div>
@@ -886,9 +914,10 @@ export default function AdminReports() {
 
       <ConfirmDialog
         open={!!confirmMatchItem}
-        title="Match this item?"
+        title="Match and approve this item?"
+        subtitle={confirmMatchItem && matchTarget ? `Approve ${confirmMatchItem.itemName} for ${matchTarget.studentName}? This closes their lost report for ${matchTarget.itemName} and enables collection. Competing pending claims for the item will be rejected. Confirm only after verifying ownership.` : undefined}
         tone="primary"
-        confirmLabel="Match"
+        confirmLabel="Match & approve"
         onCancel={() => setConfirmMatchItem(null)}
         onConfirm={() => {
           const item = confirmMatchItem;

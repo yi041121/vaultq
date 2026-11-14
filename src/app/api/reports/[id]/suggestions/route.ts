@@ -44,7 +44,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     if (report.userId !== user.id) {
       return NextResponse.json({ success: false, error: "Not your report" }, { status: 403 });
     }
-    if (report.type !== "LOST") {
+    if (report.type !== "LOST" || report.status !== "PENDING" || report.itemId) {
       return NextResponse.json({ success: true, data: [] });
     }
 
@@ -58,10 +58,8 @@ export async function GET(request: NextRequest, { params }: Ctx) {
           description: true,
           foundLocation: true,
           foundDate: true,
-          imageUrl: true,
         },
         orderBy: { createdAt: "desc" },
-        take: 200,
       }),
       prisma.report.findMany({
         where: {
@@ -110,10 +108,18 @@ export async function GET(request: NextRequest, { params }: Ctx) {
     );
 
     const itemById = new Map(items.map((item) => [item.id, item]));
+    // Score all available metadata, not just the newest 200 items. Load image
+    // bytes only for the five winners rather than for the whole inventory.
+    const photos = suggestions.length ? await prisma.item.findMany({
+      where: { id: { in: suggestions.map((suggestion) => suggestion.itemId) }, status: "FOUND" },
+      select: { id: true, imageUrl: true },
+    }) : [];
+    const photoById = new Map(photos.map((item) => [item.id, item.imageUrl]));
     const data = suggestions
       .map((suggestion) => {
         const item = itemById.get(suggestion.itemId);
-        if (!item) return null;
+        if (!item || !photoById.has(item.id)) return null;
+        const imageUrl = photoById.get(item.id);
         return {
           id: item.id,
           itemName: item.itemName,
@@ -121,7 +127,7 @@ export async function GET(request: NextRequest, { params }: Ctx) {
           description: item.description,
           foundLocation: item.foundLocation,
           foundDate: toDateOnly(item.foundDate),
-          imageUrl: item.imageUrl ? signedImageUrl("item", item.id, 0, item.imageUrl) : null,
+          imageUrl: imageUrl ? signedImageUrl("item", item.id, 0, imageUrl) : null,
           score: suggestion.score,
           label: suggestionLabel(suggestion.score),
           reasons: suggestion.reasons.slice(0, 3),

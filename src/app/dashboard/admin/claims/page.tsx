@@ -2,7 +2,7 @@
 import { formatDisplayDate as fmtDateValue } from "@/lib/date-format";
 import { activeLinkedReportIds } from "@/lib/claim-report-link";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -211,6 +211,9 @@ export default function AdminClaims() {
   const [foundItems, setFoundItems] = useState<FoundItem[]>([]);
   const [matchQuery, setMatchQuery] = useState("");
   const [showMatchSearch, setShowMatchSearch] = useState(false);
+  const [matchItemsLoading, setMatchItemsLoading] = useState(false);
+  const [matchItemsError, setMatchItemsError] = useState<string | null>(null);
+  const matchRequestRef = useRef(0);
   const [matchPreview, setMatchPreview] = useState<MatchPreview | null>(null);
   const [confirmMatchItem, setConfirmMatchItem] = useState<FoundItem | null>(null);
   const [matching, setMatching] = useState(false);
@@ -532,13 +535,19 @@ export default function AdminClaims() {
   }
 
   async function openMatchFor(report: LostReport) {
+    const requestId = ++matchRequestRef.current;
     setMatchTarget(report);
+    setConfirmMatchItem(null);
     setMatchQuery("");
     setShowMatchSearch(false);
+    setFoundItems([]);
+    setMatchItemsLoading(true);
+    setMatchItemsError(null);
     try {
       const res = await fetch("/api/items?status=FOUND&light=1", { headers: authHeaders(), cache: "no-store" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.success) return;
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Could not load found items");
+      if (requestId !== matchRequestRef.current) return;
       setFoundItems(
         (data.data as any[]).map((it) => ({
           id: it.id,
@@ -551,8 +560,10 @@ export default function AdminClaims() {
           locker: it.locker || null,
         })),
       );
-    } catch {
-      showCenteredMessage("error", "Could not load found items");
+    } catch (e) {
+      if (requestId === matchRequestRef.current) setMatchItemsError(e instanceof Error ? e.message : "Could not load found items");
+    } finally {
+      if (requestId === matchRequestRef.current) setMatchItemsLoading(false);
     }
   }
 
@@ -1186,16 +1197,19 @@ export default function AdminClaims() {
             </div>
 
             <p className="text-xs mb-3" style={{ color: c.textMuted }}>
-              The lost report is matched and the claim is approved immediately. The student gets a pickup QR right away.
+              Verify ownership before approving. Confirming a match immediately approves the claim, closes this lost report, and enables collection. Suggestions are not proof of ownership.
             </p>
 
-            {!showMatchSearch && suggestionRows.length > 0 && (
+            {matchItemsLoading && <p role="status" className="flex items-center gap-2 py-4 text-xs" style={{ color: c.textMuted }}><Loader2 size={16} className="animate-spin" /> Loading available items…</p>}
+            {matchItemsError && <div role="alert" className="space-y-3 py-4 text-xs" style={{ color: c.danger }}><p>{matchItemsError}</p><VButton variant="secondary" size="sm" onClick={() => void openMatchFor(matchTarget)}>Try again</VButton></div>}
+
+            {!matchItemsLoading && !matchItemsError && !showMatchSearch && suggestionRows.length > 0 && (
               <div className="mb-4">
                 <p className="text-xs font-semibold flex items-center gap-1.5 mb-2" style={{ color: c.text }}>
                   <Sparkles size={13} style={{ color: c.primary }} /> Suggested matches
                 </p>
                 <div className="space-y-2">
-                  {suggestionRows.map(({ item, score }) => {
+                  {suggestionRows.map(({ item, score, reasons }) => {
                     const chip =
                       score >= 70
                         ? { backgroundColor: "#dcfce7", color: "#15803d" }
@@ -1203,7 +1217,7 @@ export default function AdminClaims() {
                           ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
                           : { backgroundColor: c.fill, color: c.textMuted };
                     return (
-                      <div key={`suggest-${item.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
+                      <div key={`suggest-${item.id}`} className="flex flex-wrap items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150"
                         style={{ borderColor: c.borderLight, backgroundColor: c.card }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
@@ -1213,22 +1227,23 @@ export default function AdminClaims() {
                             <Package size={16} style={{ color: c.primary }} />
                           </div>
                         )}
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-[140px]">
                           <div className="flex items-center gap-2 min-w-0">
                             <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                             <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={chip}>
-                              {suggestionLabel(score)} {score}
+                              {suggestionLabel(score)} · {score}/100
                             </span>
                           </div>
                           <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
                             {item.category || "Others"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                           </p>
+                          <p className="mt-1 text-[10px] leading-relaxed" style={{ color: c.textMuted }}>{reasons.join(" · ")}</p>
                         </div>
                         <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
                           View
                         </VButton>
                         <VButton size="sm" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
-                          Match
+                          Review &amp; approve
                         </VButton>
                       </div>
                     );
@@ -1237,7 +1252,7 @@ export default function AdminClaims() {
               </div>
             )}
 
-            {suggestionRows.length > 0 && !showMatchSearch ? (
+            {!matchItemsLoading && !matchItemsError && (suggestionRows.length > 0 && !showMatchSearch ? (
               <button type="button"
                 className="text-[11px] font-semibold underline hover:opacity-70 cursor-pointer"
                 style={{ color: c.primary }}
@@ -1251,7 +1266,7 @@ export default function AdminClaims() {
                   {matchResults.length === 0 ? (
                     <p className="text-xs py-3 text-center" style={{ color: c.textLight }}>No found items match your search.</p>
                   ) : matchResults.map((item) => (
-                    <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
+                    <div key={item.id} className="flex flex-wrap items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
                       onClick={() => void openMatchPreview(item)}>
                       {item.imageUrl ? (
                         <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-contain" />
@@ -1260,7 +1275,7 @@ export default function AdminClaims() {
                           <Package size={16} style={{ color: c.primary }} />
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-[140px]">
                         <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                         <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
                           {item.category || "Others"} · {item.foundLocation || "—"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
@@ -1270,13 +1285,13 @@ export default function AdminClaims() {
                         View
                       </VButton>
                       <VButton size="sm" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
-                        Match
+                          Review &amp; approve
                       </VButton>
                     </div>
                   ))}
                 </div>
               </>
-            )}
+            ))}
           </VCard>
         </div>
       )}
@@ -1284,6 +1299,7 @@ export default function AdminClaims() {
       <ConfirmDialog
         open={!!confirmMatchItem}
         title="Match and approve this item?"
+        subtitle={confirmMatchItem && matchTarget ? `Approve ${confirmMatchItem.itemName} for ${matchTarget.student}? This closes their lost report for ${matchTarget.itemName} and enables collection. Competing pending claims for the item will be rejected. Confirm only after verifying ownership.` : undefined}
         tone="primary"
         confirmLabel="Match & approve"
         onCancel={() => setConfirmMatchItem(null)}

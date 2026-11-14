@@ -30,15 +30,31 @@ export const SUGGESTION_THRESHOLD = 40;
 
 const STOPWORDS = new Set([
   "a", "an", "and", "at", "for", "from", "in", "is", "my", "of", "on", "or", "the", "to", "with",
+  "item", "lost", "found", "it", "has", "have", "this", "that", "was", "its",
+]);
+
+// Small, explicit vocabulary rather than broad stemming (e.g. notebook is not
+// always a laptop). Used by students, admin suggestions and notifications alike.
+const SYNONYMS: Record<string, string> = {
+  backpack: "bag", backpacks: "bag", rucksack: "bag", rucksacks: "bag", bags: "bag",
+  cellphone: "phone", cellphones: "phone", smartphone: "phone", smartphones: "phone", phones: "phone",
+  bottles: "bottle", waterbottle: "bottle", keys: "key", wallets: "wallet",
+  laptops: "laptop", grey: "gray",
+};
+const GENERIC_NAME_TOKENS = new Set([
+  "black", "white", "blue", "red", "green", "yellow", "pink", "purple", "gray", "brown", "orange",
+  "small", "large", "new", "old",
 ]);
 
 function tokens(value: string | null | undefined): string[] {
   if (!value) return [];
   return value
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
-    .filter((token) => token.length > 1 && !STOPWORDS.has(token));
+    .filter((token) => token.length > 1 && !STOPWORDS.has(token))
+    .map((token) => Object.hasOwn(SYNONYMS, token) ? SYNONYMS[token] : token);
 }
 
 function jaccard(a: string[], b: string[]): number {
@@ -59,7 +75,7 @@ function nameSimilarity(a: string, b: string): number {
 
   const joinedA = tokensA.join(" ");
   const joinedB = tokensB.join(" ");
-  const contains = joinedA.includes(joinedB) || joinedB.includes(joinedA);
+  const contains = ` ${joinedA} `.includes(` ${joinedB} `) || ` ${joinedB} `.includes(` ${joinedA} `);
   return Math.min(1, jaccard(tokensA, tokensB) + (contains ? 0.35 : 0));
 }
 
@@ -69,7 +85,8 @@ function dayNumber(value: string | null | undefined): number | null {
   const iso = value.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   const time = Date.parse(`${iso}T00:00:00.000Z`);
-  return Number.isNaN(time) ? null : Math.round(time / 86_400_000);
+  return Number.isNaN(time) || new Date(time).toISOString().slice(0, 10) !== iso
+    ? null : Math.round(time / 86_400_000);
 }
 
 function datePoints(lostDate?: string | null, foundDate?: string | null): { points: number; reason: string | null } {
@@ -88,7 +105,10 @@ function datePoints(lostDate?: string | null, foundDate?: string | null): { poin
 
 /**
  * Scores candidate found items against a lost report.
- * Weights: name 60, category 20, date proximity 12, location 8.
+ * Weights: name 50, category 15, description 15, date proximity 12, location 8.
+ * A shared item-name term or multiple descriptive details are required first:
+ * category/date/location alone must never trigger an ownership suggestion.
+ * Scores express similarity, not a probability of ownership.
  */
 export function suggestMatches(
   report: LostReportDetails,
@@ -96,11 +116,22 @@ export function suggestMatches(
   options: { excludeItemId?: string | null; limit?: number } = {},
 ): MatchSuggestion[] {
   const limit = options.limit ?? 5;
+  if (limit <= 0) return [];
   const reportCategory = report.category || null;
   const reportLocation = tokens(report.location);
+  const reportName = tokens(report.itemName);
+  const reportDetails = tokens(report.description);
 
   return candidates
     .filter((candidate) => candidate.id !== options.excludeItemId)
+    .filter((candidate) => {
+      const candidateName = new Set(tokens(candidate.itemName));
+      if (reportName.some((token) => !GENERIC_NAME_TOKENS.has(token) && candidateName.has(token))) return true;
+      const candidateDetails = tokens(candidate.description);
+      const detailSet = new Set(candidateDetails);
+      const sharedDetails = new Set(reportDetails.filter((token) => !GENERIC_NAME_TOKENS.has(token) && detailSet.has(token)));
+      return sharedDetails.size >= 2 && jaccard(reportDetails, candidateDetails) >= 0.4;
+    })
     .map((candidate) => {
       const reasons: string[] = [];
       const name = nameSimilarity(report.itemName, candidate.itemName);
@@ -109,10 +140,13 @@ export function suggestMatches(
       const categoryPoints =
         reportCategory && candidate.category
           ? reportCategory === candidate.category
-            ? 20
+            ? 15
             : 0
           : 5;
-      if (categoryPoints === 20) reasons.push("Same category");
+      if (categoryPoints === 15) reasons.push("Same category");
+
+      const description = jaccard(reportDetails, tokens(candidate.description));
+      if (description >= 0.3) reasons.push("Similar identifying details");
 
       const date = datePoints(report.date, candidate.foundDate);
       if (date.reason) reasons.push(date.reason);
@@ -123,7 +157,7 @@ export function suggestMatches(
 
       const score = Math.min(
         100,
-        Math.round(name * 60) + categoryPoints + date.points + locationPoints,
+        Math.round(name * 50) + categoryPoints + Math.round(description * 15) + date.points + locationPoints,
       );
 
       return {
@@ -133,7 +167,7 @@ export function suggestMatches(
       };
     })
     .filter((suggestion) => suggestion.score >= SUGGESTION_THRESHOLD)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score || a.itemId.localeCompare(b.itemId))
     .slice(0, limit);
 }
 

@@ -16,7 +16,7 @@ export async function notifyInventoryMatches(scope: { itemId?: string; reportId?
         const item = await tx.item.findUnique({
           where: { id },
           select: {
-            id: true, itemName: true, category: true, foundLocation: true, foundDate: true, status: true,
+            id: true, itemName: true, category: true, description: true, foundLocation: true, foundDate: true, status: true,
             reports: { where: { type: "FOUND", status: "VERIFIED" }, select: { userId: true } },
             claims: { where: { status: { in: ["PENDING", "APPROVED"] } }, select: { userId: true } },
           },
@@ -29,7 +29,7 @@ export async function notifyInventoryMatches(scope: { itemId?: string; reportId?
             ...(scope.reportId ? { id: scope.reportId } : {}),
             userId: { notIn: excludedUsers },
           },
-          select: { id: true, userId: true, itemName: true, category: true, location: true, date: true },
+          select: { id: true, userId: true, itemName: true, category: true, description: true, location: true, date: true },
         });
         const candidate = { ...item, foundDate: item.foundDate?.toISOString() || null };
         const alerts = reports.flatMap((report) => {

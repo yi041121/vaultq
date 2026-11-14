@@ -32,6 +32,8 @@ import { mapReport, type UserReport } from "@/lib/report-mapper";
 import { clearStudentCache, getCachedReports, setCachedReports } from "@/lib/student-cache";
 import { startsWithNumber } from "@/lib/text-validation";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { reportNextStep } from "@/lib/student-workflow";
+import { scrollPageToTop } from "@/lib/scroll-to-top";
 
 interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
@@ -176,6 +178,17 @@ function StudentReportContent() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
   const [suggestionDetail, setSuggestionDetail] = useState<ReportSuggestion | null>(null);
+  const [matchesReport, setMatchesReport] = useState<UserReport | null>(null);
+  const suggestionRequestRef = useRef(0);
+  const matchesHeadingRef = useRef<HTMLHeadingElement>(null);
+  const activeSuggestionReportId = matchesReport?.id ?? submittedReportId;
+
+  useEffect(() => () => { suggestionRequestRef.current++; }, []);
+  useEffect(() => {
+    if (!matchesReport) return;
+    matchesHeadingRef.current?.focus({ preventScroll: true });
+    scrollPageToTop();
+  }, [matchesReport]);
 
   const [reports, setReports] = useState<UserReport[]>(() => getCachedReports() ?? []);
   const [reportsLoading, setReportsLoading] = useState(() => getCachedReports() === null);
@@ -225,6 +238,7 @@ function StudentReportContent() {
   }
 
   async function loadSuggestions(reportId: string, token: string) {
+    const requestId = ++suggestionRequestRef.current;
     setSuggestionsLoading(true);
     setSuggestionsError(null);
     setSuggestions([]);
@@ -237,27 +251,41 @@ function StudentReportContent() {
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Could not check for matches");
       }
-      setSuggestions(Array.isArray(data.data) ? data.data : []);
+      if (requestId === suggestionRequestRef.current) setSuggestions(Array.isArray(data.data) ? data.data : []);
     } catch (e) {
-      setSuggestionsError(e instanceof Error ? e.message : "Could not check for matches");
+      if (requestId === suggestionRequestRef.current) setSuggestionsError(e instanceof Error ? e.message : "Could not check for matches");
     } finally {
-      setSuggestionsLoading(false);
+      if (requestId === suggestionRequestRef.current) setSuggestionsLoading(false);
     }
   }
 
   function clearSubmission() {
+    suggestionRequestRef.current++;
+    setMatchesReport(null);
     setSubmitted(null);
     setSubmittedReportId(null);
     setSuggestions([]);
     setSuggestionsError(null);
     setSuggestionDetail(null);
+    setSuggestionsLoading(false);
+  }
+
+  function checkReportMatches(report: UserReport) {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      showCenteredMessage("error", "Session expired — please sign in again");
+      return;
+    }
+    setMatchesReport(report);
+    setSuggestionDetail(null);
+    void loadSuggestions(report.id, token);
   }
 
   function claimSuggestion(suggestion: ReportSuggestion) {
-    if (!submittedReportId) return;
+    if (!activeSuggestionReportId) return;
     const params = new URLSearchParams({
       item: suggestion.id,
-      report: submittedReportId,
+      report: activeSuggestionReportId,
     });
     router.push(`/dashboard/student/search?${params.toString()}`);
   }
@@ -458,6 +486,7 @@ function StudentReportContent() {
       const newReportId = typeof data.data?.id === "string" ? data.data.id : null;
       resetForm();
       setSubmitted(submittedType);
+      setMatchesReport(null);
       setSubmittedReportId(newReportId);
       setSuggestions([]);
       setSuggestionsError(null);
@@ -763,17 +792,17 @@ function StudentReportContent() {
             <button type="button"
               className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={{ backgroundColor: tab === "new" ? c.primary : "transparent", color: tab === "new" ? "#fff" : c.textMuted }}
-              onClick={() => switchTab("new")}>
+              onClick={() => { clearSubmission(); switchTab("new"); }}>
               New report
             </button>
             <button type="button"
               className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
               style={{ backgroundColor: tab === "reports" ? c.primary : "transparent", color: tab === "reports" ? "#fff" : c.textMuted }}
-              onClick={() => switchTab("reports")}>
+              onClick={() => { clearSubmission(); switchTab("reports"); }}>
               My reports{reports.length > 0 ? ` (${reports.length})` : ""}
             </button>
           </div>
-          {tab === "reports" && (
+          {tab === "reports" && !matchesReport && (
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto" role="group" aria-label="Filter reports by type">
               <VFilterButton active={reportKind === "LOST"} onClick={() => setReportKind("LOST")}>
                 <PackageSearch size={14} style={{ color: reportKind === "LOST" ? c.primary : c.textMuted }} />
@@ -788,7 +817,10 @@ function StudentReportContent() {
           </div>
 
           <VContentPanel>
-          {tab === "reports" ? (
+          <p className="mb-4 text-xs leading-relaxed" style={{ color: c.textMuted }}>
+            <strong>Report:</strong> tell us what you lost or found. <strong>Claim:</strong> request a specific found item. An admin verifies ownership before collection.
+          </p>
+          {tab === "reports" && !matchesReport ? (
             <div className="w-full min-w-0 flex-1 flex flex-col">
               {reportsLoading ? (
                 <div className="space-y-4" aria-busy="true" aria-label="Loading your reports">
@@ -1001,6 +1033,22 @@ function StudentReportContent() {
 
                         {!showsItemFirst && itemBlock}
 
+                        <p className="mb-3 rounded-xl p-3 text-xs leading-relaxed" style={{ backgroundColor: c.primarySoft, color: c.textMuted }}>
+                          {reportNextStep(report.type, report.status)}
+                        </p>
+
+                        {report.type === "LOST" && report.status === "PENDING" && !report.item && (
+                          <VButton className="mb-3 w-full" size="sm" onClick={() => checkReportMatches(report)}>
+                            <Sparkles size={14} /> Check possible matches
+                          </VButton>
+                        )}
+
+                        {report.type === "LOST" && (report.status === "MATCHED" || report.status === "CLOSED") && (
+                          <VButton variant="secondary" className="mb-3 w-full" size="sm" onClick={() => router.push("/dashboard/student/claims")}>
+                            View my claims
+                          </VButton>
+                        )}
+
 
                         {report.type === "FOUND" && report.status === "PENDING" && (
                           <div className="rounded-xl p-3.5 mb-3 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 7%, transparent)`, color: c.textMuted }}>
@@ -1030,29 +1078,31 @@ function StudentReportContent() {
           ) : (
             <div data-report-workspace className="grid w-full min-w-0 mx-auto gap-6 items-start max-w-3xl flex-1 content-center">
               <div className="w-full min-w-0 max-w-3xl mx-auto xl:mx-0">
-              {submitted ? (
+              {submitted || matchesReport ? (
                 <div className="space-y-5">
                   <VCard className="p-8 lg:p-10 text-center">
-                    <CheckCircle2 size={56} className="mb-5 mx-auto" style={{ color: c.accent }} />
-                    <h2 className="text-2xl font-bold mb-2" style={{ color: c.text }}>
-                      {submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
+                    {matchesReport
+                      ? <PackageSearch size={48} className="mb-5 mx-auto" style={{ color: c.primary }} />
+                      : <CheckCircle2 size={56} className="mb-5 mx-auto" style={{ color: c.accent }} />}
+                    <h2 ref={matchesHeadingRef} tabIndex={-1} className="text-2xl font-bold mb-2" style={{ color: c.text }}>
+                      {matchesReport ? `Matches for ${matchesReport.itemName}` : submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
                     </h2>
                     <p className="text-base mb-4 max-w-lg mx-auto" style={{ color: c.textMuted }}>
-                      {submitted === "LOST"
-                        ? "We compared your report with the current Lost & Found inventory. Review the possible matches below."
+                      {submitted === "LOST" || matchesReport
+                        ? "Review possible matches below. Suggestions are not proof of ownership; an admin reviews every claim."
                         : "Please hand the item to the Lost & Found office so it can be verified and stored in a locker."}
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-3">
-                      <VButton variant="secondary" size="lg" onClick={() => { clearSubmission(); resetForm(); }}>
+                      {!matchesReport && <VButton variant="secondary" size="lg" onClick={() => { clearSubmission(); resetForm(); }}>
                         Report another
-                      </VButton>
-                      <VButton size="lg" onClick={() => { const kind = submitted; clearSubmission(); if (kind) setReportKind(kind); switchTab("reports"); }}>
-                        View
+                      </VButton>}
+                      <VButton size="lg" onClick={() => { const kind = matchesReport?.type ?? submitted; clearSubmission(); if (kind) setReportKind(kind); switchTab("reports"); }}>
+                        {matchesReport ? "Back to my reports" : "View my reports"}
                       </VButton>
                     </div>
                   </VCard>
 
-                  {submitted === "LOST" && (
+                  {(submitted === "LOST" || matchesReport) && (
                     <VCard className="p-5 lg:p-6 text-left">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
@@ -1061,7 +1111,7 @@ function StudentReportContent() {
                             Possible matches
                           </h3>
                           <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-                            Based on your item name, category, date, and location.
+                            Based on your item name, identifying details, category, date, and location. Similarity scores are not ownership probabilities.
                           </p>
                         </div>
                         {!suggestionsLoading && !suggestionsError && suggestions.length > 0 && (
@@ -1081,7 +1131,7 @@ function StudentReportContent() {
                           <VButton variant="secondary" size="sm"
                             onClick={() => {
                               const token = localStorage.getItem("token");
-                              if (token && submittedReportId) void loadSuggestions(submittedReportId, token);
+                              if (token && activeSuggestionReportId) void loadSuggestions(activeSuggestionReportId, token);
                             }}>
                             <RefreshCw size={13} /> Try again
                           </VButton>
@@ -1118,7 +1168,7 @@ function StudentReportContent() {
                                       : suggestion.score >= 50
                                         ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
                                         : { backgroundColor: c.fill, color: c.textMuted }}>
-                                    {suggestion.label} match · {suggestion.score}%
+                                    {suggestion.label} similarity · {suggestion.score}/100
                                   </span>
                                 </div>
                                 <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>
@@ -1138,10 +1188,10 @@ function StudentReportContent() {
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 <VButton size="sm" onClick={() => claimSuggestion(suggestion)}>
-                                  Claim
+                                  Start claim
                                 </VButton>
                                 <VButton variant="secondary" size="sm" onClick={() => setSuggestionDetail(suggestion)}>
-                                  Reference
+                                  View item details
                                 </VButton>
                               </div>
                             </div>
@@ -1696,7 +1746,7 @@ function StudentReportContent() {
           photos={suggestionDetail.imageUrl ? [suggestionDetail.imageUrl] : []}
           photoIndex={0}
           onClose={() => setSuggestionDetail(null)}
-          footerNote="Reference only — no claim yet."
+          footerNote="Possible match only — ownership has not been verified. Start a claim if you believe this item is yours."
           footer={
             <>
               <VButton variant="secondary" onClick={() => setSuggestionDetail(null)}>Close</VButton>
@@ -1705,7 +1755,7 @@ function StudentReportContent() {
                 setSuggestionDetail(null);
                 claimSuggestion(item);
               }}>
-                Claim this item
+                Start claim
               </VButton>
             </>
           }

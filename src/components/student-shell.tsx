@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X, Plus } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X, Plus, MessageCircle } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost, { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -16,6 +16,7 @@ import { clearClientSession } from "@/lib/idle-session";
 import { endServerSession } from "@/lib/browser-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
 import { QUICK_ACTION_EVENT, quickActionsForRole, type QuickAction } from "@/lib/quick-actions";
+import { GuidedAssistant } from "@/components/guided-assistant";
 
 interface NavItem {
   label: string;
@@ -63,6 +64,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
   const [mobileFabOpen, setMobileFabOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const mobileFabRef = useRef<HTMLDivElement>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -340,6 +342,12 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
           ))}
           {shortcutDockOpen && <span aria-hidden="true" className="mx-0.5 h-6 w-px" style={{ backgroundColor: colors.borderLight }} />}
           <ThemeToggle />
+          <button type="button" onClick={() => { setShortcutDockOpen(false); setAssistantOpen(true); }}
+            aria-label="Open VaultQ assistant" title="VaultQ Assistant" aria-haspopup="dialog"
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ backgroundColor: colors.primarySoft, color: colors.primary }}>
+            <MessageCircle size={18} />
+          </button>
         </div>
       )}
 
@@ -354,6 +362,12 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
             <span className="text-base font-bold lg:hidden" style={{ color: colors.text }}>VaultQ</span>
           </div>
           <div className="flex items-center gap-3">
+            <button type="button" onClick={() => { setMobileFabOpen(false); setAssistantOpen(true); }}
+              aria-label="Open VaultQ assistant" title="VaultQ Assistant" aria-haspopup="dialog"
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{ backgroundColor: colors.primarySoft, color: colors.primary }}>
+              <MessageCircle size={18} />
+            </button>
             {!desktop && <ThemeToggle />}
             {!desktop && (bell ?? <NotificationBell role={userRole} />)}
             {/* Phone: sign out lives beside the notification bell, no drawer. */}
@@ -495,6 +509,8 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
           </button>
         </div>
       )}
+
+      {assistantOpen && <GuidedAssistant role={userRole} onClose={() => setAssistantOpen(false)} />}
 
       {/* Logout confirm dialog */}
       <ConfirmDialog

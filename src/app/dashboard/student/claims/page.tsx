@@ -1,4 +1,5 @@
 "use client";
+import { claimNextStep } from "@/lib/student-workflow";
 import { formatDisplayDate as fmtDay, formatDisplayDate as fmtDate, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
@@ -461,6 +462,9 @@ export default function StudentClaims() {
                         </p>
                       </div>
 
+                      <p className="mt-3 text-xs leading-relaxed" style={{ color: c.textMuted }}>
+                        {claimNextStep(cl.displayStatus)}
+                      </p>
                       <div className="mt-auto pt-5">
                         <div className="flex items-center gap-2.5 border-t pt-4" style={{ borderColor: c.borderLight }}>
                           {canShowQr && (
