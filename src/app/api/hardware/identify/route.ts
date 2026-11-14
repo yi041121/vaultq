@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   SESSION_SECONDS,
   createLockerSession,
-  isDeviceKeyValid,
+  authenticateHardwareDevice,
   isHardwareConfigured,
 } from "@/lib/hardware-auth";
 
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * the pickup QR in /api/hardware/verify.
  *
  * POST /api/hardware/identify
- * Header: x-device-key: <HARDWARE_API_KEY>
+ * Header: x-device-key: <this device's registered apiKey>
  * Body: { deviceId, cardBarcode }
  */
 export async function POST(request: NextRequest) {
@@ -26,21 +26,21 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-  if (!isDeviceKeyValid(request.headers.get("x-device-key"))) {
-    return NextResponse.json({ success: false, error: "Unauthorized device" }, { status: 401 });
-  }
-
-  let body: any;
+  let body: { cardBarcode?: unknown; deviceId?: unknown };
   try {
-    body = await request.json();
+    const input: unknown = await request.json();
+    if (!input || typeof input !== "object" || Array.isArray(input)) return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
+    body = input;
   } catch {
     return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
   const cardBarcode = typeof body?.cardBarcode === "string" ? body.cardBarcode.trim() : "";
-  const deviceId = typeof body?.deviceId === "string" ? body.deviceId : "locker-01";
+  const deviceId = typeof body?.deviceId === "string" ? body.deviceId : "";
+  const device = authenticateHardwareDevice(deviceId, request.headers.get("x-device-key"));
+  if (!device) return NextResponse.json({ success: false, error: "Unauthorized device" }, { status: 401 });
 
-  if (!cardBarcode) {
+  if (!cardBarcode || !/^[A-Za-z0-9]{6,32}$/.test(cardBarcode)) {
     return NextResponse.json({ success: false, error: "Card barcode required" }, { status: 400 });
   }
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sessionToken = createLockerSession(student.id, deviceId);
+    const sessionToken = createLockerSession(student.id, device);
 
     console.log(`Hardware identify: device=${deviceId} student=${student.id}`);
 

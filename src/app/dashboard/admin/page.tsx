@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as formatDate } from "@/lib/date-format";
 
 import { useCallback, useState, useEffect } from "react";
@@ -49,7 +50,7 @@ export default function AdminDashboard() {
   const [dataError, setDataError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       setDataLoading(false);
       return;
@@ -88,7 +89,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       setUser({ id: "1", name: "Admin User", email: "admin@vaultq.edu", role: "ADMIN" });
       return;
@@ -102,7 +103,7 @@ export default function AdminDashboard() {
   }, [mounted, loadDashboard]);
 
   function handleLogout() {
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }

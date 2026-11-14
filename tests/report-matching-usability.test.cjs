@@ -73,6 +73,7 @@ function suggestionsHarness(options = {}) {
   const route = load("src/app/api/reports/[id]/suggestions/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => ({ body, status: init?.status ?? 200 }) } },
     "@/lib/auth": { authenticateRequest: async () => options.user === undefined ? { id: "owner", role: "STUDENT" } : options.user },
+    "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null },
     "@/lib/prisma": { prisma: {
       report: {
         findUnique: async () => options.missing ? null : ({ ...report, id: "report-1", userId: "owner", type: "LOST", status: "PENDING", itemId: null, ...options.report }),

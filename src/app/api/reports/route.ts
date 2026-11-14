@@ -9,6 +9,7 @@ import { REPORT_INCLUDE } from "@/lib/report-include";
 import { VALID_REPORT_TYPES, validateReportDetails } from "@/lib/report-validation";
 import { signedImageUrl } from "@/lib/image-url";
 import { uniquePhotos } from "@/lib/photo-gallery";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 const VALID_STATUS = ["PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"] as const;
 
@@ -23,6 +24,8 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || "";
     const q = searchParams.get("q")?.trim() || "";
     const category = searchParams.get("category") || "";
+    const cursor = searchParams.get("cursor");
+    if (cursor && !/^[A-Za-z0-9_-]{1,128}$/.test(cursor)) return NextResponse.json({ success: false, error: "Invalid report cursor" }, { status: 400 });
 
     const where: any = user.role === "ADMIN" ? {} : { userId: user.id };
     if ((VALID_REPORT_TYPES as readonly string[]).includes(type)) where.type = type;
@@ -35,12 +38,14 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const reports = await prisma.report.findMany({
+    const fetched = await prisma.report.findMany({
       where,
       include: REPORT_INCLUDE,
-      orderBy: { createdAt: "desc" },
-      take: 200,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 201,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
+    const reports = fetched.slice(0, 200);
 
     // Students do not get storage locations from report cards. Pickup details
     // are delivered through the approved claim instead.
@@ -82,7 +87,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data, pagination: { nextCursor: fetched.length > 200 ? reports.at(-1)?.id ?? null : null } });
   } catch (e) {
     console.error("Reports list failed", e);
     return NextResponse.json({ success: false, error: "Failed to list reports" }, { status: 500 });
@@ -96,6 +101,8 @@ export async function POST(request: NextRequest) {
   if (user.role !== "STUDENT") {
     return NextResponse.json({ success: false, error: "Only students can submit reports" }, { status: 403 });
   }
+  const limited = await enforceAuthRateLimit(request, "report", user.id);
+  if (limited) return limited;
 
   try {
     let type: string | null = null;

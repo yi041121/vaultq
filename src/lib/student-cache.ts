@@ -1,10 +1,12 @@
 "use client";
+import { getBrowserSessionKey } from "./browser-session-store";
 
 import { mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
 import type { NotificationType } from "@/lib/notification-ui";
 import { clearAdminData } from "@/lib/admin-data";
+import { fetchReportPages } from "./report-pages";
 
 export interface CachedNotification {
   id: string;
@@ -22,6 +24,7 @@ let notificationsUnread = 0;
 let itemsCache: FoundItem[] | null = null;
 let claimedIdsCache: Set<string> | null = null;
 let reportsCache: UserReport[] | null = null;
+let reportsOwner: string | null = null;
 
 const REPORTS_CACHE_KEY = "vaultq:reports-cache";
 const REPORTS_CACHE_TTL = 10 * 60 * 1000;
@@ -39,17 +42,19 @@ export const setCachedUnread = (value: number) => { notificationsUnread = value;
 export const getCachedSearchItems = () => itemsCache;
 export const getCachedClaimedIds = () => claimedIdsCache;
 export const getCachedReports = () => {
-  if (reportsCache) return reportsCache;
+  if (reportsCache && reportsOwner === getBrowserSessionKey()) return reportsCache;
+  reportsCache = null;
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(REPORTS_CACHE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { at?: number; reports?: UserReport[] };
-    if (!parsed.at || Date.now() - parsed.at > REPORTS_CACHE_TTL || !Array.isArray(parsed.reports)) {
+    const parsed = JSON.parse(raw) as { at?: number; reports?: UserReport[]; owner?: string };
+    if (parsed.owner !== getBrowserSessionKey() || !parsed.at || Date.now() - parsed.at > REPORTS_CACHE_TTL || !Array.isArray(parsed.reports)) {
       window.sessionStorage.removeItem(REPORTS_CACHE_KEY);
       return null;
     }
     reportsCache = parsed.reports;
+    reportsOwner = parsed.owner ?? null;
     return reportsCache;
   } catch {
     return null;
@@ -57,13 +62,14 @@ export const getCachedReports = () => {
 };
 export const setCachedReports = (value: UserReport[] | null) => {
   reportsCache = value;
+  reportsOwner = getBrowserSessionKey();
   if (typeof window === "undefined") return;
   try {
     if (!value) {
       window.sessionStorage.removeItem(REPORTS_CACHE_KEY);
       return;
     }
-    window.sessionStorage.setItem(REPORTS_CACHE_KEY, JSON.stringify({ at: Date.now(), reports: value }));
+    window.sessionStorage.setItem(REPORTS_CACHE_KEY, JSON.stringify({ at: Date.now(), owner: getBrowserSessionKey(), reports: value }));
   } catch {
     // Session storage can be unavailable in private browsing.
   }
@@ -90,6 +96,7 @@ export function clearStudentCache() {
   itemsCache = null;
   claimedIdsCache = null;
   reportsCache = null;
+  reportsOwner = null;
   lastPrefetch = 0;
   if (typeof window !== "undefined") {
     try {
@@ -106,8 +113,8 @@ async function getJson(url: string, token: string, signal: AbortSignal): Promise
   data?: unknown;
   unreadCount?: unknown;
 }> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = url.startsWith("/api/reports?") ? await fetchReportPages(url, token, signal) : await fetch(url, {
+    headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
     cache: "no-store",
     signal,
   });
@@ -133,7 +140,7 @@ export function prefetchStudentData(token: string): Promise<void> {
   ) {
     try {
       const json = await getJson(url, token, controller.signal);
-      if (controller.signal.aborted || localStorage.getItem("token") !== token) return;
+      if (controller.signal.aborted || getBrowserSessionKey() !== token) return;
       apply(json);
     } catch {
       // Prefetching is best-effort; each tab still refreshes normally.

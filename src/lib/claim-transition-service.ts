@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "./prisma";
 import { ACTIVE_CLAIM_STATUSES } from "./claim-report-link";
+import { NO_PHOTO_REASON_MIN_LENGTH } from "./claim-validation";
 
 export class ClaimTransitionError extends Error {
   constructor(message: string, public readonly status: 400 | 403 | 404 | 409) {
@@ -75,8 +76,9 @@ export async function cancelPendingClaim(id: string, ownerId: string) {
   });
 }
 
-export async function resubmitRejectedClaim(id: string, ownerId: string, input: { claimReason: string; evidenceImageUrls: string[] }) {
-  if (!input.claimReason.trim() || !input.evidenceImageUrls.length) throw new ClaimTransitionError("Claim explanation and photo evidence are required", 400);
+export async function resubmitRejectedClaim(id: string, ownerId: string, input: { claimReason: string; evidenceImageUrls: string[]; noPhoto?: boolean }) {
+  if (!input.claimReason.trim()) throw new ClaimTransitionError("Claim explanation is required", 400);
+  if (!input.evidenceImageUrls.length && (!input.noPhoto || input.claimReason.trim().length < NO_PHOTO_REASON_MIN_LENGTH)) throw new ClaimTransitionError(`Photo evidence is required unless you select in-person verification and provide at least ${NO_PHOTO_REASON_MIN_LENGTH} characters.`, 400);
   return prisma.$transaction(async (tx) => {
     const claim = await lockClaim(tx, id, ownerId);
     if (claim.status !== "REJECTED") throw new ClaimTransitionError("Only rejected claims can be resubmitted", 409);
@@ -106,7 +108,7 @@ export async function resubmitRejectedClaim(id: string, ownerId: string, input: 
     const changed = await tx.claim.updateMany({
       where: { id, userId: ownerId, status: "REJECTED" },
       data: {
-        claimReason: input.claimReason.trim(), evidenceImageUrl: input.evidenceImageUrls[0], evidenceImageUrls: input.evidenceImageUrls,
+        claimReason: input.claimReason.trim(), evidenceImageUrl: input.evidenceImageUrls[0] || null, evidenceImageUrls: input.evidenceImageUrls,
         status: "PENDING", approvedAt: null, adminNote: null,
       },
     });

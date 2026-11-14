@@ -6,6 +6,7 @@ import { REPORT_INCLUDE } from "@/lib/report-include";
 import { validateReportDetails } from "@/lib/report-validation";
 import { ImageValidationError, normalizeImageSources } from "@/lib/image-validation";
 import { ClaimReviewError, isReviewWriteConflict, reviewUnclaimedReport } from "@/lib/claim-review-service";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -39,6 +40,10 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
+  if (user.role === "STUDENT") {
+    const limited = await enforceAuthRateLimit(request, "report", user.id);
+    if (limited) return limited;
+  }
 
   try {
     const body = await request.json();

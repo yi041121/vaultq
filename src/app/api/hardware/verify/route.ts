@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collectPickup, PickupError } from "@/lib/pickup-service";
 import {
-  LOCKER_NUMBER,
   UNLOCK_MS,
-  isDeviceKeyValid,
+  authenticateHardwareDevice,
   isHardwareConfigured,
   readLockerSession,
 } from "@/lib/hardware-auth";
@@ -16,7 +15,7 @@ export const dynamic = "force-dynamic";
  * just scanned their card, and to this locker.
  *
  * POST /api/hardware/verify
- * Header: x-device-key: <HARDWARE_API_KEY>
+ * Header: x-device-key: <this device's registered apiKey>
  * Body: { deviceId, sessionToken, token, dryRun? }
  *
  * On success the QR is marked used, the item is marked retrieved, and the
@@ -28,10 +27,6 @@ export async function POST(request: NextRequest) {
       { success: false, error: "Hardware API is not configured" },
       { status: 500 },
     );
-  }
-
-  if (!isDeviceKeyValid(request.headers.get("x-device-key"))) {
-    return NextResponse.json({ success: false, error: "Unauthorized device" }, { status: 401 });
   }
 
   let body: { token?: unknown; sessionToken?: unknown; deviceId?: unknown; dryRun?: unknown } | null;
@@ -47,7 +42,9 @@ export async function POST(request: NextRequest) {
 
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const sessionToken = typeof body?.sessionToken === "string" ? body.sessionToken.trim() : "";
-  const deviceId = typeof body?.deviceId === "string" ? body.deviceId : "locker-01";
+  const deviceId = typeof body?.deviceId === "string" ? body.deviceId : "";
+  const device = authenticateHardwareDevice(deviceId, request.headers.get("x-device-key"));
+  if (!device) return NextResponse.json({ success: false, error: "Unauthorized device" }, { status: 401 });
   const dryRun = body?.dryRun === true && process.env.NODE_ENV !== "production";
 
   if (!token || token.length > 256) {
@@ -67,7 +64,7 @@ export async function POST(request: NextRequest) {
       { status: 401 },
     );
   }
-  if (session.deviceId !== deviceId || session.locker !== LOCKER_NUMBER) {
+  if (session.deviceId !== device.deviceId || session.locker !== device.lockerNumber) {
     return NextResponse.json(
       { success: false, error: "Session belongs to another locker" },
       { status: 401 },
@@ -78,7 +75,7 @@ export async function POST(request: NextRequest) {
     const data = await collectPickup({
       token,
       expectedUserId: session.userId,
-      expectedLockerNumber: LOCKER_NUMBER,
+      expectedLockerNumber: device.lockerNumber,
       dryRun,
     });
 

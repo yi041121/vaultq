@@ -142,7 +142,8 @@ the new revocable session.
   must exist, be unexpired, belong to the account, and the account must still
   be active with the claimed role.
 - **API handlers** use `authenticateRequest`, which performs the same
-  persisted-session check for bearer tokens.
+  persisted-session check for the HttpOnly `vq_session` cookie. Bearer-only
+  requests are rejected. Mutations must additionally pass the same-origin check.
 - `vq_role` remains only as a display hint for legacy UI code. It is never
   used for authentication or authorization.
 
@@ -154,32 +155,36 @@ check close to the data.
 
 - Logout posts to `/api/auth/logout`, revokes the persisted session, and
   clears both `vq_session` and `vq_role`.
-- A stale tab logging out with an old bearer token does not clear a newer
-  browser's session cookie.
+- A stale tab logging out with an old public session key receives `409` and
+  cannot revoke or clear a newer browser session cookie.
 - Client logout requests are queued so a sign-out cannot race a session
   restore. The shared shell waits for server revocation before clearing local
   state and navigating away.
-- Mutating auth endpoints require an exact same-origin `Origin`, or an
+- All cookie-authenticated mutations require an exact same-origin `Origin`, or an
   explicit `X-VaultQ-Request: 1` header with no cross-site/same-site fetch
   metadata. Cross-origin browser posts are rejected before the body, database,
   or rate limiter is touched.
 
-## 7. Bearer/localStorage compatibility boundary
+## 7. Cookie-only browser/API authentication
 
-This step does **not** complete a cookie-only migration:
+- The HttpOnly `vq_session` cookie authenticates dashboard routes and APIs.
+- Login and `GET /api/auth/session` return `user`, `sessionKey`, and `expiresAt`.
+  The public session key is a cache/cross-tab identifier; it cannot authenticate
+  without the signed HttpOnly cookie. JWTs are never included in those JSON
+  responses, browser storage or redirect URLs.
+- The legacy bearer-to-cookie session import endpoint is removed.
+- Browser clients send `X-VaultQ-Session` as a stale-session guard and
+  `X-VaultQ-Request: 1` as a same-origin AJAX marker. An exact same-origin
+  `Origin` also passes CSRF protection. Cross-origin cookie mutations fail.
+- Legacy `localStorage.token` entries are removed. Non-secret profile, session
+  key and expiry metadata remain for UX/cache purposes, never authorization.
+- Changing accounts in another tab reloads the stale UI; report sessionStorage
+  caches are owner-scoped. A missing/expired cookie requires sign-in, not bearer
+  restoration. Old tabs should refresh when this version is deployed.
 
-- The HttpOnly `vq_session` cookie is used for dashboard routing and session
-  bootstrap.
-- APIs still accept `Authorization: Bearer <token>`.
-- `/api/auth/session` returns the verified token to same-origin JavaScript,
-  and existing browser clients still store it in `localStorage`.
-
-Consequently, an XSS vulnerability can still read the bearer token from
-`localStorage`. The HttpOnly cookie alone is not an XSS-proof credential
-boundary while APIs accept bearer tokens. Moving every API and client to
-cookie-only credentials, adding CSRF tokens for all mutations, and removing
-the localStorage token is a separate change. Do not describe the current
-state as cookie-only.
+An XSS vulnerability can still act as the signed-in user while executing inside
+the app. This change prevents exporting the browser's JWT for later replay; it
+does not replace XSS prevention or dependency/security-header hardening.
 
 ## 8. Verification performed
 

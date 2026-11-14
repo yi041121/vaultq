@@ -9,6 +9,7 @@ const crypto = require("node:crypto");
 const { validation, png } = require("./helpers/image-validation.cjs");
 
 function load(file, dependencies = {}) {
+  dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -115,12 +116,29 @@ function harness(options = {}) {
       finally { release?.(); }
     },
   };
-  const service = load("src/lib/claim-transition-service.ts", { "./prisma": { prisma }, "./claim-report-link": links });
+  const service = load("src/lib/claim-transition-service.ts", { "./prisma": { prisma }, "./claim-report-link": links, "./claim-validation": load("src/lib/claim-validation.ts") });
   return { ...service, prisma, state: () => structuredClone(state), writes };
 }
 
 const resubmission = { claimReason: "  Blue bottle with a sticker  ", evidenceImageUrls: ["sanitized-photo"] };
 const rejected = { claim: { status: "REJECTED", adminNote: "Not enough evidence", approvedAt: new Date() }, report: { status: "PENDING", itemId: null } };
+
+test("no-photo resubmission requires explicit consent and 80 ownership characters", async () => {
+  for (const input of [
+    { claimReason: "x".repeat(80), evidenceImageUrls: [] },
+    { claimReason: "x".repeat(79), evidenceImageUrls: [], noPhoto: true },
+  ]) {
+    const h = harness(rejected);
+    await assert.rejects(() => h.resubmitRejectedClaim("claim-1", "student", input), error => error.status === 400);
+    assert.equal(h.writes.length, 0);
+  }
+  const h = harness(rejected);
+  const result = await h.resubmitRejectedClaim("claim-1", "student", { claimReason: "x".repeat(80), evidenceImageUrls: [], noPhoto: true });
+  assert.equal(result.status, "PENDING");
+  assert.equal(result.evidenceImageUrl, null);
+  assert.equal(result.evidenceImageUrls.length, 0);
+  assert.equal(h.state().reports[0].status, "MATCHED");
+});
 
 test("rejecting a linked claim atomically restores its report without losing claim history", async () => {
   const h = harness();
@@ -304,6 +322,7 @@ function routes(h, user) {
   const dependencies = {
     "next/server": { NextResponse: Response }, "@/lib/prisma": { prisma: h.prisma },
     "@/lib/auth": { authenticateRequest: async () => user }, "@/lib/claim-transition-service": h,
+    "@/lib/claim-validation": load("src/lib/claim-validation.ts"),
     "@/lib/image-validation": validation, "@/lib/notification-service": { notifyUser: async () => {}, notifyUsers: async () => {} },
     "@/lib/claim-review-service": load("src/lib/claim-review-service.ts", {
       "./prisma": { prisma: h.prisma }, "./image-validation": validation, "./report-include": { REPORT_INCLUDE: {} }, "node:crypto": crypto,

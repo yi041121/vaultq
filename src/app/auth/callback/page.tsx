@@ -7,6 +7,7 @@ import { colors } from "@/lib/design";
 import { markSessionActivity } from "@/lib/idle-session";
 import { clearStudentCache } from "@/lib/student-cache";
 import { getServerSession } from "@/lib/browser-session";
+import { storeBrowserSession } from "@/lib/browser-session-store";
 
 // Google establishes a server session first. No credentials/profile data are
 // accepted from URL parameters or exposed in browser redirect history.
@@ -24,8 +25,7 @@ export default function AuthCallback() {
         if (cancelled) return;
         if (!session) { router.replace("/login?skip=1"); return; }
         clearStudentCache();
-        localStorage.setItem("token", session.token);
-        localStorage.setItem("user", JSON.stringify(session.user));
+        storeBrowserSession(session);
         markSessionActivity();
         setSucceeded(true);
         timer = setTimeout(() => router.replace(session.user.role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student"), 800);

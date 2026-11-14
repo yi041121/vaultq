@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch, Upload, Loader2 } from "lucide-react";
@@ -88,8 +89,8 @@ export default function AdminAccounts() {
   const [apiLive, setApiLive] = useState(accountsCacheLive);
 
   function authHeaders(): Record<string, string> {
-    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    const t = getBrowserSessionKey();
+    return t ? { "X-VaultQ-Session": t, "X-VaultQ-Request": "1" } : {};
   }
 
   function mapApiUser(raw: any): Student {
@@ -130,7 +131,7 @@ export default function AdminAccounts() {
     if (!accountsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetchAdminData("/api/accounts", localStorage.getItem("token") || "", force);
+      const res = await fetchAdminData("/api/accounts", getBrowserSessionKey() || "", force);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load accounts");
       // Admin accounts never appear on this page
@@ -161,7 +162,7 @@ export default function AdminAccounts() {
 
   usePageQuickAction("add", openAdd);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
+  function handleLogout() { clearStoredBrowserSession(); router.push("/login?skip=1&loggedOut=1"); }
   if (!user || !mounted) return null;
 
   const filtered = students.filter((st) => {

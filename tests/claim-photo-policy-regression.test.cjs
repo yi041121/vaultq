@@ -34,6 +34,7 @@ function loadClaimsRoute() {
           },
         },
         "@/lib/auth": { authenticateRequest: async () => ({ id: "student", role: "STUDENT" }) },
+        "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null },
         "@/lib/image-url": { signedImageUrl: () => "" },
         "@/lib/photo-gallery": { uniquePhotos: (values) => values },
         "@/lib/image-validation": {

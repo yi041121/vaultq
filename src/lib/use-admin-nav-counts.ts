@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey } from "./browser-session-store";
 
 import { useEffect, useState } from "react";
 
@@ -21,11 +22,11 @@ export function useAdminNavCounts(role: string) {
     let cancelled = false;
 
     async function load() {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const token = getBrowserSessionKey();
       if (!token) return;
       try {
         const res = await fetch("/api/admin/nav-counts", {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
           cache: "no-store",
         });
         const json = await res.json().catch(() => null);

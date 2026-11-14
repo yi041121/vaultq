@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtDay, formatDisplayDate as fmtReportDate, formatDisplayTimestamp as fmtTimestamp, formatDisplayTimestamp } from "@/lib/date-format";
 
 import { Suspense, useState, useEffect, useRef } from "react";
@@ -30,10 +31,10 @@ import {
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
 import { clearStudentCache, getCachedReports, setCachedReports } from "@/lib/student-cache";
-import { startsWithNumber } from "@/lib/text-validation";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { reportNextStep } from "@/lib/student-workflow";
 import { scrollPageToTop } from "@/lib/scroll-to-top";
+import { fetchReportPages } from "@/lib/report-pages";
 
 interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
@@ -212,18 +213,14 @@ function StudentReportContent() {
 
   const formValid = !!(
     type && itemName.trim().length >= 2 && category && description.trim().length >= 5 &&
-    location.trim().length >= 2 && date &&
-    !startsWithNumber(itemName) && !startsWithNumber(description) && !startsWithNumber(location)
+    location.trim().length >= 2 && date
   );
 
   async function loadReports(token: string) {
     if (!getCachedReports()) setReportsLoading(true);
     setReportsError(null);
     try {
-      const res = await fetch("/api/reports?light=1", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
+      const res = await fetchReportPages("/api/reports?light=1", token);
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load reports");
       const mapped = ((data.data ?? []) as Record<string, unknown>[]).map(mapReport);
@@ -244,7 +241,7 @@ function StudentReportContent() {
     setSuggestions([]);
     try {
       const res = await fetch(`/api/reports/${encodeURIComponent(reportId)}/suggestions`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
@@ -271,7 +268,7 @@ function StudentReportContent() {
   }
 
   function checkReportMatches(report: UserReport) {
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       return;
@@ -295,7 +292,7 @@ function StudentReportContent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
       setReportsLoading(false);
@@ -340,7 +337,7 @@ function StudentReportContent() {
 
   function handleLogout() {
     clearStudentCache();
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }
@@ -438,23 +435,11 @@ function StudentReportContent() {
 
   async function handleSubmit() {
     if (!type) return;
-    if (startsWithNumber(itemName)) {
-      showCenteredMessage("error", "Item name cannot start with a number");
-      return;
-    }
-    if (startsWithNumber(description)) {
-      showCenteredMessage("error", "Description cannot start with a number");
-      return;
-    }
-    if (startsWithNumber(location)) {
-      showCenteredMessage("error", "Location cannot start with a number");
-      return;
-    }
     if (!formValid) {
       showCenteredMessage("error", "Please complete all required fields");
       return;
     }
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       return;
@@ -473,7 +458,7 @@ function StudentReportContent() {
 
       const res = await fetch("/api/reports", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: form,
       });
       const data = await res.json().catch(() => null);
@@ -509,7 +494,7 @@ function StudentReportContent() {
   async function handleWithdraw() {
     if (!withdrawTarget || withdrawing) return;
     const target = withdrawTarget;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       setWithdrawTarget(null);
@@ -519,7 +504,7 @@ function StudentReportContent() {
     try {
       const res = await fetch(`/api/reports/${target.id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
@@ -554,7 +539,7 @@ function StudentReportContent() {
     setEditPhotos(report.images.map((src) => ({ preview: src, originalPreview: src })));
     setEditPhotosLoading(true);
 
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       setEditPhotosLoading(false);
       return;
@@ -564,7 +549,7 @@ function StudentReportContent() {
     // image data, so fetch the full report only when the edit dialog opens.
     try {
       const res = await fetch(`/api/reports/${encodeURIComponent(report.id)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
@@ -613,7 +598,7 @@ function StudentReportContent() {
       showCenteredMessage("error", "Photos are still loading — please try again");
       return;
     }
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       return;
@@ -622,24 +607,12 @@ function StudentReportContent() {
       showCenteredMessage("error", "Item name must be at least 2 characters");
       return;
     }
-    if (startsWithNumber(editForm.itemName)) {
-      showCenteredMessage("error", "Item name cannot start with a number");
-      return;
-    }
     if (editForm.description.trim().length < 5) {
       showCenteredMessage("error", "Description must be at least 5 characters");
       return;
     }
-    if (startsWithNumber(editForm.description)) {
-      showCenteredMessage("error", "Description cannot start with a number");
-      return;
-    }
     if (editForm.location.trim().length < 2) {
       showCenteredMessage("error", "Location must be at least 2 characters");
-      return;
-    }
-    if (startsWithNumber(editForm.location)) {
-      showCenteredMessage("error", "Location cannot start with a number");
       return;
     }
     if (!editForm.date) {
@@ -651,7 +624,7 @@ function StudentReportContent() {
     try {
       const res = await fetch(`/api/reports/${editTarget.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: JSON.stringify({
           action: "update",
           itemName: editForm.itemName.trim(),
@@ -708,11 +681,11 @@ function StudentReportContent() {
       color,
     });
 
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
     try {
       const res = await fetch(`/api/items/${encodeURIComponent(item.id)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       const data = await res.json().catch(() => ({}));
@@ -842,7 +815,7 @@ function StudentReportContent() {
                   <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
                   <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
                   <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{reportsError}</p>
-                  <VButton variant="secondary" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadReports(t); }}>
+                  <VButton variant="secondary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadReports(t); }}>
                     <RefreshCw size={14} /> Try again
                   </VButton>
                 </VCard>
@@ -1130,7 +1103,7 @@ function StudentReportContent() {
                           <p className="text-xs mt-1 mb-3" style={{ color: c.textLight }}>{suggestionsError}</p>
                           <VButton variant="secondary" size="sm"
                             onClick={() => {
-                              const token = localStorage.getItem("token");
+                              const token = getBrowserSessionKey();
                               if (token && activeSuggestionReportId) void loadSuggestions(activeSuggestionReportId, token);
                             }}>
                             <RefreshCw size={13} /> Try again
@@ -1285,9 +1258,6 @@ function StudentReportContent() {
                         </label>
                         <VInput value={itemName} maxLength={100} onChange={(e) => setItemName(e.target.value)}
                           placeholder={type === "LOST" ? "e.g. Black Adidas backpack" : "e.g. Silver Samsung phone"} />
-                        {itemName.trim() && startsWithNumber(itemName) && (
-                          <p className="text-[11px] mt-1" style={{ color: c.danger }}>Item name cannot start with a number.</p>
-                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
@@ -1356,9 +1326,6 @@ function StudentReportContent() {
                           {type === "LOST" ? "Last seen location" : "Found location"} <span style={{ color: c.danger }}>*</span>
                         </label>
                         <VInput value={location} maxLength={200} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Library 3rd Floor" />
-                        {location.trim() && startsWithNumber(location) && (
-                          <p className="text-[11px] mt-1" style={{ color: c.danger }}>Location cannot start with a number.</p>
-                        )}
                       </div>
                       <div>
                         <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
@@ -1366,9 +1333,6 @@ function StudentReportContent() {
                         </label>
                         <VTextarea value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} rows={3}
                           placeholder="Provide details like color, brand and distinguishing features..." />
-                        {description.trim() && startsWithNumber(description) && (
-                          <p className="text-[11px] mt-1" style={{ color: c.danger }}>Description cannot start with a number.</p>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1585,9 +1549,6 @@ function StudentReportContent() {
                 <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Item name</label>
                 <VInput value={editForm.itemName} maxLength={100}
                   onChange={(e) => setEditForm({ ...editForm, itemName: e.target.value })} />
-                {editForm.itemName.trim() && startsWithNumber(editForm.itemName) && (
-                  <p className="text-[11px] mt-1" style={{ color: c.danger }}>Item name cannot start with a number.</p>
-                )}
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
@@ -1649,18 +1610,12 @@ function StudentReportContent() {
                 <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Location</label>
                 <VInput value={editForm.location} maxLength={200}
                   onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
-                {editForm.location.trim() && startsWithNumber(editForm.location) && (
-                  <p className="text-[11px] mt-1" style={{ color: c.danger }}>Location cannot start with a number.</p>
-                )}
               </div>
 
               <div>
                 <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Description</label>
                 <VTextarea rows={4} value={editForm.description} maxLength={2000}
                   onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
-                {editForm.description.trim() && startsWithNumber(editForm.description) && (
-                  <p className="text-[11px] mt-1" style={{ color: c.danger }}>Description cannot start with a number.</p>
-                )}
               </div>
 
               <div>

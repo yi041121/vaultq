@@ -9,6 +9,7 @@ const crypto = require("node:crypto");
 const { validation, png } = require("./helpers/image-validation.cjs");
 
 function load(file, dependencies) {
+  dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -102,7 +103,7 @@ function harness(options = {}) {
     },
   };
   const review = load("src/lib/claim-review-service.ts", { "./prisma": { prisma }, "./image-validation": validation, "./report-include": { REPORT_INCLUDE: {} }, "node:crypto": crypto });
-  const transition = load("src/lib/claim-transition-service.ts", { "./prisma": { prisma }, "./claim-report-link": load("src/lib/claim-report-link.ts", {}) });
+  const transition = load("src/lib/claim-transition-service.ts", { "./prisma": { prisma }, "./claim-report-link": load("src/lib/claim-report-link.ts", {}), "./claim-validation": load("src/lib/claim-validation.ts", {}) });
   function routes(user = { id: "admin", role: "ADMIN" }) {
     const deps = {
       "next/server": { NextResponse: Response }, "@/lib/prisma": { prisma }, "@/lib/auth": { authenticateRequest: async () => user },

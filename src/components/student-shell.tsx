@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey } from "@/lib/browser-session-store";
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -75,11 +76,11 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     if (userRole !== "STUDENT") return;
     let cancelled = false;
     async function load() {
-      const token = localStorage.getItem("token");
+      const token = getBrowserSessionKey();
       if (!token) return;
       try {
         const res = await fetch("/api/notifications?count=1", {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
           cache: "no-store",
         });
         const json = await res.json().catch(() => null);
@@ -150,7 +151,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   async function confirmSignOut() {
     if (loggingOut) return;
     setLoggingOut(true);
-    const completed = await endServerSession(localStorage.getItem("token"));
+    const completed = await endServerSession(getBrowserSessionKey());
     setLoggingOut(false);
     if (!completed) { showCenteredMessage("error", "Could not complete sign-out. Please try again."); return; }
     setConfirmLogout(false);
@@ -216,20 +217,20 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   useEffect(() => {
     if (userRole !== "STUDENT") return;
     if (window.location.pathname !== "/dashboard/student") return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
     void prefetchStudentData(token);
   }, [userRole]);
 
   useEffect(() => {
     if (userRole !== "ADMIN" || window.location.pathname !== "/dashboard/admin") return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (token) void prefetchAdminData(token);
   }, [userRole]);
 
   function warmPage(path?: string) {
     if (!path || userRole !== "ADMIN") return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (token) void prefetchAdminPage(path, token);
   }
 

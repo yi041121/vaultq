@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtDay } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
@@ -134,8 +135,8 @@ export default function AdminReports() {
   const [busyAction, setBusyAction] = useState(false);
 
   function authHeaders(): Record<string, string> {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const token = getBrowserSessionKey();
+    return token ? { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" } : {};
   }
 
   function redirectUnauthorized() {
@@ -144,7 +145,7 @@ export default function AdminReports() {
   }
 
   async function fetchReports() {
-    if (typeof window === "undefined" || !localStorage.getItem("token")) {
+    if (!getBrowserSessionKey()) {
       setLoading(false);
       redirectUnauthorized();
       return;
@@ -152,7 +153,7 @@ export default function AdminReports() {
     if (!reportsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetchAdminData("/api/reports?light=1", localStorage.getItem("token") || "");
+      const res = await fetchAdminData("/api/reports?light=1", getBrowserSessionKey() || "");
       if (res.status === 401) {
         redirectUnauthorized();
         return;
@@ -216,7 +217,7 @@ export default function AdminReports() {
   }, [verifyReport]);
 
   function handleLogout() {
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }
@@ -241,7 +242,7 @@ export default function AdminReports() {
     setVerifyPhotosReady(false);
     setLoadingVerifyPhotos(true);
     if (foundItems.length === 0 || lockers.length === 0) void fetchSupporting();
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = getBrowserSessionKey();
     if (!token) {
       setLoadingVerifyPhotos(false);
       redirectUnauthorized();
@@ -249,7 +250,7 @@ export default function AdminReports() {
     }
     try {
       const res = await fetch(`/api/reports/${report.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       if (res.status === 401) {
@@ -325,7 +326,7 @@ export default function AdminReports() {
       showCenteredMessage("error", "Could not load the full report photos — close and reopen the report");
       return false;
     }
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       return false;
@@ -334,7 +335,7 @@ export default function AdminReports() {
     try {
       const res = await fetch(`/api/reports/${verifyReport.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: JSON.stringify({ action: "update", imageUrls: next }),
       });
       const data = await res.json().catch(() => null);

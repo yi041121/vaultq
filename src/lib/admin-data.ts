@@ -1,4 +1,5 @@
 "use client";
+import { fetchReportPages } from "./report-pages";
 
 const TTL = 30_000;
 const entries = new Map<string, { data: unknown[]; at: number }>();
@@ -42,7 +43,9 @@ export async function fetchAdminData(url: string, token: string, force = false):
   }
   const version = generation;
   const request = (async () => {
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    const response = url.startsWith("/api/reports?")
+      ? await fetchReportPages(url, token)
+      : await fetch(url, { headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" }, cache: "no-store" });
     if (version !== generation || owner !== token) throw new Error("Admin list request was superseded");
     if (response.ok) {
       const payload = await response.clone().json().catch(() => null);

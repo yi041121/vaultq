@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -65,7 +66,7 @@ export default function StudentNotifications() {
   const load = useCallback(async (silent = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       setLoading(false);
       setError("Session expired — please sign in again");
@@ -76,7 +77,7 @@ export default function StudentNotifications() {
     if (!silent) setError(null);
     try {
       const res = await fetch("/api/notifications", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
@@ -109,7 +110,7 @@ export default function StudentNotifications() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
       setLoading(false);
@@ -148,7 +149,7 @@ export default function StudentNotifications() {
 
   function handleLogout() {
     clearStudentCache();
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }
@@ -156,7 +157,7 @@ export default function StudentNotifications() {
   async function markAsRead(id: string) {
     const target = notifs.find((n) => n.id === id);
     if (!target || target.isRead) return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
 
     setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
@@ -166,7 +167,7 @@ export default function StudentNotifications() {
     try {
       const res = await fetch(`/api/notifications/${id}`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
       });
       if (!res.ok) {
         setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: false } : n)));
@@ -182,13 +183,13 @@ export default function StudentNotifications() {
 
   async function markAllRead() {
     if (markingAll || unreadCount === 0) return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
     setMarkingAll(true);
     try {
       const res = await fetch("/api/notifications/read-all", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
       });
       if (res.ok) {
         setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));

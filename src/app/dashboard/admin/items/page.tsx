@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtDay } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
@@ -129,8 +130,8 @@ export default function AdminItems() {
   const dashboardItemOpened = useRef(false);
 
   function authHeaders(): Record<string, string> {
-    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    const t = getBrowserSessionKey();
+    return t ? { "X-VaultQ-Session": t, "X-VaultQ-Request": "1" } : {};
   }
 
   function mapApiItem(raw: any): Item {
@@ -151,7 +152,7 @@ export default function AdminItems() {
     if (!itemsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetchAdminData("/api/items?light=1", localStorage.getItem("token") || "", force);
+      const res = await fetchAdminData("/api/items?light=1", getBrowserSessionKey() || "", force);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load items");
       const list = (data.data || []).map(mapApiItem);
@@ -180,7 +181,7 @@ export default function AdminItems() {
 
   async function fetchLockers() {
     try {
-      const res = await fetchAdminData("/api/lockers?light=1", localStorage.getItem("token") || "");
+      const res = await fetchAdminData("/api/lockers?light=1", getBrowserSessionKey() || "");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return;
       const map: Record<string, string> = {};
@@ -211,7 +212,7 @@ export default function AdminItems() {
 
   usePageQuickAction("add", openAdd);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
+  function handleLogout() { clearStoredBrowserSession(); router.push("/login?skip=1&loggedOut=1"); }
 
   // Closes the Add/Edit form and every dropdown/calendar inside it so the
   // next item opens with a clean form.

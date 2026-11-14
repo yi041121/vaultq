@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -40,7 +41,7 @@ export default function StudentProfile() {
   useEffect(() => {
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       const fallback = { id: "1", name: "Student User", email: "student@example.com", role: "STUDENT", studentId: null, cardBarcode: null };
       setUser(fallback);
@@ -61,12 +62,12 @@ export default function StudentProfile() {
   // localStorage can be stale (e.g. the barcode was changed directly in the DB),
   // so refresh the profile from the server once on mount.
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/user/profile", { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch("/api/user/profile", { headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" } });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.data || cancelled) return;
         const fresh: UserData = data.data;
@@ -85,7 +86,7 @@ export default function StudentProfile() {
   }, []);
 
   function handleLogout() {
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }
@@ -144,11 +145,11 @@ export default function StudentProfile() {
     setStudentIdError(null);
     setSaving(true);
     try {
-      const token = localStorage.getItem("token");
+      const token = getBrowserSessionKey();
       if (!token) throw new Error("Session expired — please sign in again");
       const res = await fetch("/api/user/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: JSON.stringify({
           name: name.trim().replace(/\s+/g, " "),
           studentId: sid || null,

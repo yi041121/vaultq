@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtDateValue } from "@/lib/date-format";
 import { activeLinkedReportIds } from "@/lib/claim-report-link";
 
@@ -231,8 +232,8 @@ export default function AdminClaims() {
   const pageSize = 8;
 
   function authHeaders(): Record<string, string> {
-    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    const t = getBrowserSessionKey();
+    return t ? { "X-VaultQ-Session": t, "X-VaultQ-Request": "1" } : {};
   }
 
   function redirectUnauthorized() {
@@ -275,12 +276,12 @@ export default function AdminClaims() {
   }
 
   async function fetchLostReports() {
-    if (typeof window === "undefined" || !localStorage.getItem("token")) {
+    if (!getBrowserSessionKey()) {
       redirectUnauthorized();
       return;
     }
     try {
-      const res = await fetchAdminData("/api/reports?light=1", localStorage.getItem("token") || "");
+      const res = await fetchAdminData("/api/reports?light=1", getBrowserSessionKey() || "");
       if (res.status === 401) {
         redirectUnauthorized();
         return;
@@ -321,7 +322,7 @@ export default function AdminClaims() {
   }
 
   async function fetchClaims(openId?: string | null) {
-    if (typeof window === "undefined" || !localStorage.getItem("token")) {
+    if (!getBrowserSessionKey()) {
       setLoading(false);
       redirectUnauthorized();
       return;
@@ -329,7 +330,7 @@ export default function AdminClaims() {
     if (!claimsCache) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetchAdminData("/api/claims?light=1", localStorage.getItem("token") || "");
+      const res = await fetchAdminData("/api/claims?light=1", getBrowserSessionKey() || "");
       if (res.status === 401) {
         redirectUnauthorized();
         return;
@@ -368,7 +369,7 @@ export default function AdminClaims() {
     void fetchLostReports();
   }, []);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
+  function handleLogout() { clearStoredBrowserSession(); router.push("/login?skip=1&loggedOut=1"); }
   useEscapeKey(!!compareClaim, () => setCompareClaim(null));
   useEscapeKey(!!claimItemDetail, () => setClaimItemDetail(null));
   useEscapeKey(!!matchTarget && !photoViewer && !matchPreview, () => { if (!matching) setMatchTarget(null); }, !matching);

@@ -5,6 +5,7 @@ import { signedImageUrl } from "@/lib/image-url";
 import { uniquePhotos } from "@/lib/photo-gallery";
 import { ImageValidationError, normalizeImageFile, normalizeImageSources } from "@/lib/image-validation";
 import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 /** Thrown when the item stops being available while a claim is submitted. */
 class ClaimConflict extends Error {}
@@ -192,6 +193,8 @@ export async function POST(request: NextRequest) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   if (user.role !== "STUDENT") return NextResponse.json({ success: false, error: "Only students can claim" }, { status: 403 });
+  const limited = await enforceAuthRateLimit(request, "claim", user.id);
+  if (limited) return limited;
 
   try {
     let itemId: string | null = null;

@@ -9,13 +9,14 @@ const VALID_STATUS = ["AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const;
 export async function GET(request: NextRequest) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (user.role !== "ADMIN") return NextResponse.json({ success: false, error: "Admin only" }, { status: 403 });
 
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") || "";
 
-    const where: any = {};
-    if (status && (VALID_STATUS as readonly string[]).includes(status)) where.status = status as any;
+    const where: { status?: typeof VALID_STATUS[number] } = {};
+    if (status && (VALID_STATUS as readonly string[]).includes(status)) where.status = status as typeof VALID_STATUS[number];
 
     const lockers = await prisma.locker.findMany({
       where,

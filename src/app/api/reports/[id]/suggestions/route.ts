@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { signedImageUrl } from "@/lib/image-url";
 import { suggestMatches, suggestionLabel } from "@/lib/report-match";
 import { toDateOnly } from "@/lib/item-mapper";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -23,6 +24,8 @@ export async function GET(request: NextRequest, { params }: Ctx) {
   }
 
   const { id } = await params;
+  const limited = await enforceAuthRateLimit(request, "suggestion", user.id);
+  if (limited) return limited;
 
   try {
     const report = await prisma.report.findUnique({

@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
-import { createItemRecord } from "@/lib/item-service";
-import { startsWithNumber } from "@/lib/text-validation";
+import { createItemRecord, ItemAllocationConflict } from "@/lib/item-service";
 import { signedImageUrl } from "@/lib/image-url";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
@@ -23,11 +22,10 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
     if (q) where.itemName = { contains: q, mode: "insensitive" };
-    if (status && (VALID_STATUS as readonly string[]).includes(status)) {
-      where.status = status as any;
-    } else if (user.role !== "ADMIN") {
-      // Students only browse items that are still claimable.
+    if (user.role !== "ADMIN") {
       where.status = "FOUND";
+    } else if (status && (VALID_STATUS as readonly string[]).includes(status)) {
+      where.status = status as any;
     }
     if (category) where.category = category;
 
@@ -79,7 +77,6 @@ export async function POST(request: NextRequest) {
     const { itemName, category, description, foundLocation, foundDate, lockerId, imageUrl, status } = body;
 
     if (!itemName?.trim()) return NextResponse.json({ success: false, error: "itemName required" }, { status: 400 });
-    if (startsWithNumber(itemName)) return NextResponse.json({ success: false, error: "Item name cannot start with a number" }, { status: 400 });
     if (!foundLocation?.trim()) return NextResponse.json({ success: false, error: "foundLocation required" }, { status: 400 });
     if (category && !isItemCategory(category)) {
       return NextResponse.json({ success: false, error: "Invalid category" }, { status: 400 });
@@ -112,6 +109,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: item }, { status: 201 });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    if (e instanceof ItemAllocationConflict) return NextResponse.json({ success: false, error: e.message }, { status: 409 });
     console.error("Item creation failed", e);
     return NextResponse.json({ success: false, error: "Failed to create item" }, { status: 500 });
   }

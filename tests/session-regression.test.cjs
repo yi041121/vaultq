@@ -9,15 +9,18 @@ const { validation: imageValidation } = require("./helpers/image-validation.cjs"
 
 // Load the existing TypeScript modules with isolated browser/React doubles.
 function load(file, dependencies, globals = {}) {
+  dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
   const code = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const exports = {};
   vm.runInNewContext(code, {
-    exports, Date, JSON, Number, Promise, Set, AbortController, AbortSignal, Event,
+    exports, Date, JSON, Number, Promise, Set, AbortController, AbortSignal, Event, Response,
     atob, URLSearchParams, console, ...globals,
     require: (name) => {
+      if (name === "./report-pages") return load("src/lib/report-pages.ts", {}, globals);
+      if (name === "./browser-session-store") return load("src/lib/browser-session-store.ts", {}, globals);
       assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
       return dependencies[name];
     },
@@ -42,8 +45,10 @@ function sessionHarness() {
   let nextTimer = 0;
   let cleanup;
   let cacheClears = 0;
+  let reloads = 0;
   const redirects = [];
   const window = {
+    location: { reload: () => { reloads++; } },
     sessionStorage,
     addEventListener: (name, callback) => { listeners[name] = callback; },
     removeEventListener: (name) => { delete listeners[name]; },
@@ -64,30 +69,34 @@ function sessionHarness() {
     react: { useEffect: (effect) => { cleanup = effect(); } },
     "@/lib/idle-session": idle,
   }, globals);
-  const token = (exp) => `header.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.signature`;
+  const setSession = (exp, key = "public-session-key") => {
+    localStorage.setItem("vq_session_key", key);
+    localStorage.setItem("vq_session_expires", String(exp * 1000));
+  };
   return {
-    localStorage, listeners, timers, idle, token, document,
+    localStorage, listeners, timers, idle, setSession, document,
+    get reloads() { return reloads; },
     redirects, get cacheClears() { return cacheClears; },
     start: () => hook.useIdleSession({ replace: (url) => redirects.push(url) }),
     stop: () => cleanup?.(),
   };
 }
 
-test("expired JWT clears session, role cookie and account caches", () => {
+test("expired public session metadata clears local state, role hint and account caches", () => {
   const h = sessionHarness();
-  h.localStorage.setItem("token", h.token(Date.now() / 1000 - 60));
+  h.setSession(Date.now() / 1000 - 60);
   h.start();
-  assert.equal(h.localStorage.getItem("token"), null);
+  assert.equal(h.localStorage.getItem("vq_session_key"), null);
   assert.equal(h.cacheClears, 1);
   assert.match(h.document.cookie, /max-age=0/);
   assert.deepEqual(h.redirects, ["/login?skip=1&expired=1"]);
 });
 
-test("an active dashboard rechecks JWT expiry instead of waiting for idle logout", () => {
+test("an active dashboard rechecks server-issued expiry instead of waiting for idle logout", () => {
   const h = sessionHarness();
-  h.localStorage.setItem("token", h.token(Date.now() / 1000 + 3600));
+  h.setSession(Date.now() / 1000 + 3600);
   h.start();
-  h.localStorage.setItem("token", h.token(Date.now() / 1000 - 1));
+  h.setSession(Date.now() / 1000 - 1);
   [...h.timers.values()][0]();
   assert.equal(h.redirects.length, 1);
   h.listeners.pointerdown();
@@ -98,28 +107,40 @@ test("an active dashboard rechecks JWT expiry instead of waiting for idle logout
 
 test("returning after idle timeout cannot revive the expired session", () => {
   const h = sessionHarness();
-  h.localStorage.setItem("token", h.token(Date.now() / 1000 + 3600));
+  h.setSession(Date.now() / 1000 + 3600);
   h.start();
   h.localStorage.setItem("vq_last_activity", Date.now() - h.idle.IDLE_TIMEOUT_MS - 1);
   h.listeners.pointerdown();
-  assert.equal(h.localStorage.getItem("token"), null);
+  assert.equal(h.localStorage.getItem("vq_session_key"), null);
   assert.equal(h.redirects.length, 1);
   h.stop();
 });
 
-test("a stale cross-tab token removal event does not log out a newly signed-in account", () => {
+test("a stale cross-tab removal event does not clear a still-present session", () => {
   const h = sessionHarness();
-  h.localStorage.setItem("token", h.token(Date.now() / 1000 + 3600));
+  h.setSession(Date.now() / 1000 + 3600);
   h.start();
-  h.listeners.storage({ key: "token", newValue: null });
+  h.listeners.storage({ key: "vq_session_key", newValue: null });
   assert.equal(h.redirects.length, 0);
+  h.stop();
+});
+
+test("another tab signing in reloads stale identity without revoking the new session", () => {
+  const h = sessionHarness();
+  h.setSession(Date.now() / 1000 + 3600, "old-public-key");
+  h.start();
+  h.setSession(Date.now() / 1000 + 3600, "new-public-key");
+  h.listeners.storage({ key: "vq_session_key", newValue: "new-public-key" });
+  assert.equal(h.reloads, 1);
+  assert.equal(h.cacheClears, 0);
+  assert.equal(h.localStorage.getItem("vq_session_key"), "new-public-key");
   h.stop();
 });
 
 test("clearing account caches aborts prefetch and prevents late responses repopulating them", async () => {
   const pending = [];
   const localStorage = storage();
-  localStorage.setItem("token", "old-session");
+  localStorage.setItem("vq_session_key", "old-session");
   const sessionStorage = storage();
   const cache = load("src/lib/student-cache.ts", {
     "@/lib/admin-data": { clearAdminData: () => {} },

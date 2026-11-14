@@ -2,6 +2,7 @@
 
 import { clearStudentCache } from "@/lib/student-cache";
 import { endServerSession } from "@/lib/browser-session";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "./browser-session-store";
 
 export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 export const LAST_ACTIVITY_KEY = "vq_last_activity";
@@ -27,26 +28,13 @@ export function isSessionIdle(now = Date.now()) {
   }
 }
 
-/** Client-side expiry check for UX only; the server still verifies the JWT. */
-export function isTokenExpired(token: string) {
-  try {
-    const encoded = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") || "";
-    const padded = encoded.padEnd(encoded.length + ((4 - (encoded.length % 4)) % 4), "=");
-    const payload = JSON.parse(atob(padded)) as { exp?: number };
-    return typeof payload.exp === "number" && payload.exp * 1000 <= Date.now();
-  } catch {
-    return true;
-  }
-}
-
 export function clearClientSession(clearServer = true) {
   if (typeof window === "undefined") return;
   clearStudentCache();
   try {
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (clearServer && token) void endServerSession(token);
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    clearStoredBrowserSession();
     localStorage.removeItem(LAST_ACTIVITY_KEY);
   } catch {
     // Ignore storage errors; still clear the role cookie below.

@@ -15,11 +15,20 @@ export interface CreateItemInput {
 
 type ItemDb = Pick<typeof prisma, "item" | "locker">;
 
+export class ItemAllocationConflict extends Error {}
+
 /**
  * Creates a found item and, when provided, occupies its locker. Callers are
  * responsible for validating that the locker is available.
  */
 export async function createItemRecord(db: ItemDb, adminId: string, input: CreateItemInput) {
+  if (input.lockerId) {
+    const reserved = await db.locker.updateMany({
+      where: { id: input.lockerId, status: "AVAILABLE", item: { is: null } },
+      data: { status: "OCCUPIED" },
+    });
+    if (reserved.count !== 1) throw new ItemAllocationConflict("Locker is no longer available. Refresh and choose another locker.");
+  }
   const created = await db.item.create({
     data: {
       itemName: input.itemName.trim(),
@@ -33,10 +42,6 @@ export async function createItemRecord(db: ItemDb, adminId: string, input: Creat
       ...(input.lockerId ? { lockerId: input.lockerId } : {}),
     },
   });
-
-  if (input.lockerId) {
-    await db.locker.update({ where: { id: input.lockerId }, data: { status: "OCCUPIED" } });
-  }
 
   return created;
 }

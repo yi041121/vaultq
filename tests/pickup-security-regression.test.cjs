@@ -274,8 +274,8 @@ function routes(h, { user = { id: "admin", role: "ADMIN" }, session = { userId: 
     "next/server": { NextResponse: Response },
     "@/lib/auth": { authenticateRequest: async () => user }, "@/lib/pickup-service": h,
     "@/lib/hardware-auth": {
-      LOCKER_NUMBER: "B03", UNLOCK_MS: 5000, isHardwareConfigured: () => configured,
-      isDeviceKeyValid: () => deviceValid, readLockerSession: () => session,
+      UNLOCK_MS: 5000, isHardwareConfigured: () => configured,
+      authenticateHardwareDevice: id => deviceValid && id === "locker-01" ? { deviceId: id, lockerNumber: "B03" } : null, readLockerSession: () => session,
     },
   };
   return {

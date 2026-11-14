@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey } from "@/lib/browser-session-store";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -89,11 +90,11 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
   }, [open, shortcut]);
 
   async function loadCount() {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = getBrowserSessionKey();
     if (!token) return;
     try {
       const res = await fetch("/api/notifications?count=1", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
@@ -104,7 +105,7 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
   }
 
   async function loadItems(silent = false) {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const token = getBrowserSessionKey();
     if (!token) return;
 
     if (!silent) {
@@ -113,7 +114,7 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
     }
     try {
       const res = await fetch("/api/notifications?limit=5", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
@@ -169,12 +170,12 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
     setItems((prev) => prev.map((item) => (item.id === n.id ? { ...item, isRead: true } : item)));
     setUnread((prev) => Math.max(0, prev - 1));
 
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
     try {
       const res = await fetch(`/api/notifications/${n.id}`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
       });
       if (!res.ok) throw new Error("Failed to mark notification read");
       window.dispatchEvent(new Event("vaultq:notifications"));
@@ -193,14 +194,14 @@ export function NotificationBell({ role, shortcut = false }: { role: string; sho
 
   async function markAllRead() {
     if (markingAll || unread === 0) return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
 
     setMarkingAll(true);
     try {
       const res = await fetch("/api/notifications/read-all", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
       });
       if (!res.ok) throw new Error("Failed to mark notifications read");
       setItems((prev) => prev.map((item) => ({ ...item, isRead: true })));

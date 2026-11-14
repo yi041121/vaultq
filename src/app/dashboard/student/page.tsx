@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 
 import { useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -43,7 +44,7 @@ export default function StudentDashboard() {
   }
 
   const loadDashboard = useCallback(async () => {
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       setDataLoading(false);
       return;
@@ -51,7 +52,7 @@ export default function StudentDashboard() {
     setDataLoading(true);
     setDataError(null);
     try {
-      const headers = { Authorization: `Bearer ${token}` };
+      const headers = { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" };
       const [itemsRes, claimsRes, notificationsRes] = await Promise.all([
         fetch("/api/items?light=1", { headers, cache: "no-store" }),
         fetch("/api/claims", { headers, cache: "no-store" }),
@@ -89,7 +90,7 @@ export default function StudentDashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
       return;
@@ -113,7 +114,7 @@ export default function StudentDashboard() {
   }, [mounted, loadDashboard]);
 
   function handleLogout() {
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }

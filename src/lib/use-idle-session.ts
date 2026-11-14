@@ -6,9 +6,9 @@ import {
   LAST_ACTIVITY_KEY,
   clearClientSession,
   isSessionIdle,
-  isTokenExpired,
   markSessionActivity,
 } from "@/lib/idle-session";
+import { getBrowserSessionKey, isBrowserSessionExpired, SESSION_KEY } from "./browser-session-store";
 
 type SessionRouter = { replace: (href: string) => void };
 
@@ -22,16 +22,16 @@ export function useIdleSession(router: SessionRouter) {
     if (typeof window === "undefined") return;
     let token: string | null = null;
     try {
-      token = localStorage.getItem("token");
+      token = getBrowserSessionKey();
     } catch {
       token = null;
     }
     if (!token) {
-      clearClientSession();
-      router.replace("/login?skip=1&expired=1");
+      clearClientSession(false);
+      router.replace("/login?skip=1");
       return;
     }
-    if (isTokenExpired(token)) {
+    if (isBrowserSessionExpired()) {
       clearClientSession();
       router.replace("/login?skip=1&expired=1");
       return;
@@ -58,8 +58,13 @@ export function useIdleSession(router: SessionRouter) {
     const schedule = () => {
       if (expired) return;
       if (timer) window.clearTimeout(timer);
-      const currentToken = localStorage.getItem("token");
-      if (!currentToken || isTokenExpired(currentToken)) {
+      const currentToken = getBrowserSessionKey();
+      if (currentToken && currentToken !== token) {
+        // Another account/session replaced this tab. Do not revoke or clear it.
+        window.location.reload();
+        return;
+      }
+      if (!currentToken || isBrowserSessionExpired()) {
         expire();
         return;
       }
@@ -99,7 +104,7 @@ export function useIdleSession(router: SessionRouter) {
         schedule();
         return;
       }
-      if (event.key === "token") {
+      if (event.key === SESSION_KEY) {
         schedule();
       }
     };

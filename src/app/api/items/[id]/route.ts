@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
-import { startsWithNumber } from "@/lib/text-validation";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
 
@@ -36,6 +35,10 @@ export async function GET(request: NextRequest, { params }: Ctx) {
       },
     });
     if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
+
+    if (user.role === "STUDENT" && item.status !== "FOUND" && !item.claims.some(claim => claim.userId === user.id)) {
+      return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
+    }
 
     if (user.role === "STUDENT") {
       // Do not leak the storage locker or other students' claims. An approved
@@ -81,9 +84,6 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     const data: any = {};
     if (itemName !== undefined) {
       if (!String(itemName).trim()) return NextResponse.json({ success: false, error: "itemName cannot be empty" }, { status: 400 });
-      if (startsWithNumber(String(itemName))) {
-        return NextResponse.json({ success: false, error: "Item name cannot start with a number" }, { status: 400 });
-      }
       data.itemName = String(itemName).trim();
     }
     if (category !== undefined) data.category = category || null;
@@ -103,15 +103,29 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         }
       }
       const updated = await prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "items" WHERE id = ${id} FOR UPDATE`;
+        if (!rows.length) throw new ItemWriteConflict("Item no longer exists");
+        const fresh = await tx.item.findUnique({ where: { id } });
+        if (!fresh || (READ_ONLY_STATUSES as readonly string[]).includes(fresh.status)) throw new ItemWriteConflict("The item was claimed and is now view-only");
+        if (fresh.lockerId !== existing.lockerId) throw new ItemWriteConflict("Locker assignment changed. Refresh before moving this item.");
+        for (const targetId of [...new Set([fresh.lockerId, lockerId].filter((value): value is string => typeof value === "string" && !!value))].sort()) {
+          await tx.$queryRaw`SELECT id FROM "lockers" WHERE id = ${targetId} FOR UPDATE`;
+        }
+        if (lockerId) {
+          const target = await tx.locker.findUnique({ where: { id: lockerId }, include: { item: { select: { id: true } } } });
+          if (lockerId === fresh.lockerId) {
+            if (!target || target.status !== "OCCUPIED" || target.item?.id !== id) throw new ItemWriteConflict("Assigned locker is not ready. Refresh before editing.");
+          } else if (!target || target.status !== "AVAILABLE" || target.item) throw new ItemWriteConflict("Locker is no longer available");
+        }
         // Guard the write itself: a claim may be approved after the initial read.
         const changed = await tx.item.updateMany({
-          where: { id, status: { notIn: [...READ_ONLY_STATUSES] } },
+          where: { id, status: { notIn: [...READ_ONLY_STATUSES] }, lockerId: existing.lockerId },
           data: { ...data, lockerId: lockerId || null },
         });
         if (!changed.count) throw new ItemWriteConflict("The item was claimed and is now view-only");
         // Free old locker
         if (existing.lockerId && existing.lockerId !== lockerId) {
-          await tx.locker.update({ where: { id: existing.lockerId }, data: { status: "AVAILABLE" } });
+          await tx.locker.updateMany({ where: { id: existing.lockerId, status: "OCCUPIED", item: { is: null } }, data: { status: "AVAILABLE" } });
         }
         if (lockerId) {
           await tx.locker.update({ where: { id: lockerId }, data: { status: "OCCUPIED" } });
@@ -155,10 +169,10 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
     }
 
     await prisma.$transaction(async (tx) => {
-      const deleted = await tx.item.deleteMany({ where: { id, status: { notIn: [...READ_ONLY_STATUSES] }, claims: { none: {} } } });
+      const deleted = await tx.item.deleteMany({ where: { id, lockerId: existing.lockerId, status: { notIn: [...READ_ONLY_STATUSES] }, claims: { none: {} } } });
       if (!deleted.count) throw new ItemWriteConflict("The item has claims or is now view-only");
       if (existing.lockerId) {
-        await tx.locker.update({ where: { id: existing.lockerId }, data: { status: "AVAILABLE" } });
+        await tx.locker.updateMany({ where: { id: existing.lockerId, status: "OCCUPIED", item: { is: null } }, data: { status: "AVAILABLE" } });
       }
     });
 

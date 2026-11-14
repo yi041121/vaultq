@@ -1,6 +1,5 @@
 // Shared validation for report details, used by both create and edit endpoints.
 import { isItemCategory } from "./categories";
-import { startsWithNumber } from "./text-validation";
 
 export const VALID_REPORT_TYPES = ["LOST", "FOUND"] as const;
 export type ReportTypeValue = (typeof VALID_REPORT_TYPES)[number];
@@ -36,24 +35,15 @@ export function validateReportDetails(input: ReportDetailsInput): ReportDetailsR
   if (itemName.length < 2 || itemName.length > 100) {
     return { ok: false, error: "Item name must be 2-100 characters" };
   }
-  if (startsWithNumber(itemName)) {
-    return { ok: false, error: "Item name cannot start with a number" };
-  }
 
   const description = typeof input.description === "string" ? input.description.trim() : "";
   if (description.length < 5 || description.length > 2000) {
     return { ok: false, error: "Description must be 5-2000 characters" };
   }
-  if (startsWithNumber(description)) {
-    return { ok: false, error: "Description cannot start with a number" };
-  }
 
   const location = typeof input.location === "string" ? input.location.trim() : "";
   if (location.length < 2 || location.length > 200) {
     return { ok: false, error: "Location must be 2-200 characters" };
-  }
-  if (startsWithNumber(location)) {
-    return { ok: false, error: "Location cannot start with a number" };
   }
 
   const rawCategory = typeof input.category === "string" ? input.category.trim() : "";
@@ -62,7 +52,8 @@ export function validateReportDetails(input: ReportDetailsInput): ReportDetailsR
   }
 
   const date = typeof input.date === "string" ? input.date.trim() : "";
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00.000Z`).getTime())) {
+  const parsedDate = new Date(`${date}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
     return { ok: false, error: "A valid date is required" };
   }
   if (date > todayIso()) {

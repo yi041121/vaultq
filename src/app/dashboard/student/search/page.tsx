@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtDay, formatDisplayDate as fmtItemDate } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
@@ -31,6 +32,7 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { uniquePhotos } from "@/lib/photo-gallery";
 import { lostReportClaimReason } from "@/lib/lost-report-claim";
+import { fetchReportPages } from "@/lib/report-pages";
 import { NO_PHOTO_REASON_HELP, NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 
 interface User { id: string; name: string; email: string; role: string; }
@@ -123,10 +125,7 @@ export default function StudentSearch() {
 
   async function loadLostReports(token: string): Promise<LostReportOption[]> {
     try {
-      const res = await fetch("/api/reports?type=LOST", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
+      const res = await fetchReportPages("/api/reports?type=LOST&status=PENDING", token);
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success || !Array.isArray(data.data)) return [];
       const list: LostReportOption[] = (data.data as Record<string, unknown>[])
@@ -158,8 +157,8 @@ export default function StudentSearch() {
     setLoadError(null);
     try {
       const [itemsRes, claimsRes] = await Promise.all([
-        fetch("/api/items?light=1", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
-        fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
+        fetch("/api/items?light=1", { headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" }, cache: "no-store" }),
+        fetch("/api/claims", { headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" }, cache: "no-store" }),
       ]);
       const itemsJson = await itemsRes.json().catch(() => null);
       if (!itemsRes.ok || !itemsJson?.success) {
@@ -239,7 +238,7 @@ export default function StudentSearch() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
       setLoading(false);
@@ -253,7 +252,7 @@ export default function StudentSearch() {
 
   function handleLogout() {
     clearStudentCache();
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }
@@ -350,7 +349,7 @@ export default function StudentSearch() {
 
     // Always ask which lost report to link when the student has any pending.
     let reports = lostReports;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!lostReportsLoaded && token) reports = await loadLostReports(token);
 
     if (reports.length > 0) {
@@ -468,7 +467,7 @@ export default function StudentSearch() {
       return;
     }
 
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       return;
@@ -489,7 +488,7 @@ export default function StudentSearch() {
 
       const res = await fetch("/api/claims", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: form,
       });
       const data = await res.json().catch(() => null);
@@ -776,7 +775,7 @@ export default function StudentSearch() {
               <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
               <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
               <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadData(t); }}>
+              <VButton variant="secondary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadData(t); }}>
                 <RefreshCw size={14} /> Try again
               </VButton>
             </VCard>

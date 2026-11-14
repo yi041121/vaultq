@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { comparePassword, createAuthSession } from "@/lib/auth";
+import { comparePassword, createAuthSession, verifyToken } from "@/lib/auth";
 import { withDbRetry } from "@/lib/db-retry";
 import { isSameOriginAuthRequest, setSessionCookies } from "@/lib/session-cookie";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
@@ -43,12 +43,14 @@ export async function POST(request: NextRequest) {
     // Route-level access is enforced separately (src/proxy.ts) and admin APIs
     // reject non-ADMIN tokens server-side.
     const token = await createAuthSession(user);
+    const claims = verifyToken(token);
 
     const res = NextResponse.json({
       success: true,
       data: {
         user: { id: user.id, name: user.name, email: user.email, role: user.role, cardBarcode: user.cardBarcode },
-        token,
+        sessionKey: claims.jti,
+        expiresAt: claims.exp * 1000,
       },
     });
     setSessionCookies(res, token, user.role);

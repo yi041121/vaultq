@@ -1,4 +1,5 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtItemDate } from "@/lib/date-format";
 
 import { useState, useEffect } from "react";
@@ -40,26 +41,6 @@ type Locker = {
   item?: { id: string; name: string; category: string; student?: string; date?: string; imageUrl?: string | null };
 };
 
-const initialLockers: Locker[] = [
-  { id: "1", number: "A01", status: "AVAILABLE" },
-  { id: "2", number: "A02", status: "OCCUPIED", item: { id: "ITM-002", name: "MacBook Pro 14\"", category: "Electronics", student: "Alex Tan", date: "24 Jul 2026" } },
-  { id: "3", number: "A03", status: "AVAILABLE" },
-  { id: "4", number: "A04", status: "MAINTENANCE" },
-  { id: "5", number: "A05", status: "AVAILABLE" },
-  { id: "6", number: "A06", status: "OCCUPIED", item: { id: "ITM-006", name: "AirPods Pro", category: "Electronics", student: "John Doe", date: "22 Jul 2026" } },
-  { id: "7", number: "B01", status: "AVAILABLE" },
-  { id: "8", number: "B02", status: "OCCUPIED", item: { id: "ITM-008", name: "Brown Leather Wallet", category: "Bags", student: "Sarah Lim", date: "23 Jul 2026" } },
-  { id: "9", number: "B03", status: "AVAILABLE" },
-  { id: "10", number: "B04", status: "AVAILABLE" },
-  { id: "11", number: "B05", status: "MAINTENANCE" },
-  { id: "12", number: "B06", status: "AVAILABLE" },
-];
-
-const mockFoundItems = [
-  { id: "ITM-004", name: "Student ID Card", category: "Student Cards", imageUrl: null },
-  { id: "ITM-008", name: "Physics Notes Folder", category: "Documents", imageUrl: null },
-];
-
 function statusColor(s: string) {
   switch (s) {
     case "AVAILABLE": return "#7FB8B5";
@@ -77,7 +58,7 @@ export default function AdminLockers() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [lockers, setLockers] = useState<Locker[]>(lockersCache ?? initialLockers);
+  const [lockers, setLockers] = useState<Locker[]>(lockersCache ?? []);
   const [filter, setFilter] = useState<"All" | Locker["status"]>("All");
   const [query, setQuery] = useState("");
   const [viewer, setViewer] = useState<{ photos: string[]; index: number; title: string } | null>(null);
@@ -94,6 +75,7 @@ export default function AdminLockers() {
   const [addingLocker, setAddingLocker] = useState(false);
   const [loading, setLoading] = useState(lockersCache === null);
   const [apiLive, setApiLive] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [unassignedItems, setUnassignedItems] = useState<{ id: string; name: string; category: string; imageUrl?: string | null }[]>([]);
 
   useEscapeKey(!!releaseTarget, () => setReleaseTarget(null));
@@ -103,8 +85,8 @@ export default function AdminLockers() {
   useEscapeKey(!!itemDetail && !viewer, () => setItemDetail(null));
 
   function authHeaders(): Record<string, string> {
-    const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    const t = getBrowserSessionKey();
+    return t ? { "X-VaultQ-Session": t, "X-VaultQ-Request": "1" } : {};
   }
 
   function mapApiLocker(raw: any): Locker {
@@ -117,8 +99,9 @@ export default function AdminLockers() {
   }
 
   async function fetchLockers() {
+    setLoadError(null);
     try {
-      const res = await fetchAdminData("/api/lockers?light=1", localStorage.getItem("token") || "");
+      const res = await fetchAdminData("/api/lockers?light=1", getBrowserSessionKey() || "");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to load lockers");
       const list = (data.data || []).map(mapApiLocker);
@@ -126,8 +109,7 @@ export default function AdminLockers() {
       lockersCache = list;
       setApiLive(true);
     } catch (e: any) {
-      console.warn("Lockers API unreachable, using mock data:", e?.message);
-      setLockers(initialLockers);
+      setLoadError(e instanceof Error ? e.message : "Could not load lockers");
       setApiLive(false);
     } finally {
       setLoading(false);
@@ -145,7 +127,7 @@ export default function AdminLockers() {
           .map((it: any) => ({ id: it.id, name: it.itemName, category: it.category || "Others", imageUrl: it.imageUrl || null }))
       );
     } catch {
-      // Assign modal falls back to bundled mock list
+      setUnassignedItems([]);
     }
   }
 
@@ -157,7 +139,7 @@ export default function AdminLockers() {
     fetchUnassigned();
   }, []);
 
-  function handleLogout() { localStorage.removeItem("token"); localStorage.removeItem("user"); router.push("/login?skip=1&loggedOut=1"); }
+  function handleLogout() { clearStoredBrowserSession(); router.push("/login?skip=1&loggedOut=1"); }
   if (!user || !mounted) return null;
 
   const stats = {
@@ -182,8 +164,7 @@ export default function AdminLockers() {
   async function updateStatus(id: string, status: Locker["status"]) {
     const current = lockers.find((l) => l.id === id);
     if (!apiLive) {
-      setLockers(lockers.map((l) => l.id === id ? { ...l, status, item: status === "AVAILABLE" ? undefined : l.item } : l));
-      showCenteredMessage("success", `Locker ${current?.number} → ${status.toLowerCase()}`);
+      showCenteredMessage("error", "Lockers are not connected. Reload before making changes.");
       return;
     }
     try {
@@ -210,14 +191,11 @@ export default function AdminLockers() {
       showCenteredMessage("error", "Select an item");
       return;
     }
-    const pool = unassignedItems.length ? unassignedItems : mockFoundItems;
+    const pool = unassignedItems;
     const item = pool.find((it) => it.id === assignItemId);
     if (!item) return;
     if (!apiLive) {
-      setLockers(lockers.map((l) => l.id === assignLocker.id ? { ...l, status: "OCCUPIED" as const, item: { id: item.id, name: item.name, category: item.category, student: "—", date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) } } : l));
-      showCenteredMessage("success", `Assigned ${item.name} to ${assignLocker.number}`);
-      setAssignLocker(null);
-      setAssignItemId("");
+      showCenteredMessage("error", "Lockers are not connected. Reload before making changes.");
       return;
     }
     try {
@@ -250,14 +228,7 @@ export default function AdminLockers() {
     setChangingLocker(true);
     try {
       if (!apiLive) {
-        setLockers((prev) => prev.map((l) => {
-          if (l.id === locker.id) return { ...l, status: "AVAILABLE" as const, item: undefined };
-          if (l.id === target.id) return { ...l, status: "OCCUPIED" as const, item: locker.item };
-          return l;
-        }));
-        showCenteredMessage("success", `${locker.item.name} moved to ${target.number}`);
-        setChangeLocker(null);
-        setChangeTargetId("");
+        showCenteredMessage("error", "Lockers are not connected. Reload before making changes.");
         return;
       }
       const res = await fetch(`/api/items/${locker.item.id}`, {
@@ -328,10 +299,7 @@ export default function AdminLockers() {
     setAddingLocker(true);
     try {
       if (!apiLive) {
-        setLockers((prev) => [...prev, { id: `local-${Date.now()}`, number, status: "AVAILABLE" }]);
-        lockersCache = null;
-        showCenteredMessage("success", `Locker ${number} added`);
-        setNewLockerNumber("");
+        showCenteredMessage("error", "Lockers are not connected. Reload before making changes.");
         return;
       }
       const res = await fetch("/api/lockers", {
@@ -360,9 +328,7 @@ export default function AdminLockers() {
     }
     try {
       if (!apiLive) {
-        setLockers((prev) => prev.filter((l) => l.id !== locker.id));
-        lockersCache = null;
-        showCenteredMessage("success", `Locker ${locker.number} deleted`);
+        showCenteredMessage("error", "Lockers are not connected. Reload before making changes.");
         return;
       }
       const res = await fetch(`/api/lockers/${locker.id}`, { method: "DELETE", headers: authHeaders() });
@@ -405,6 +371,7 @@ export default function AdminLockers() {
           />
 
           <VContentPanel>
+          {loadError && <VCard className="mb-4 p-5" role="alert"><p className="mb-3 text-sm" style={{ color: c.danger }}>{loadError}. Changes are disabled until the connection is restored.</p><VButton variant="secondary" onClick={() => void refresh()}>Try again</VButton></VCard>}
           {/* Grid */}
           {loading ? <AdminListSkeleton /> : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 content-start min-w-0">
@@ -575,7 +542,7 @@ export default function AdminLockers() {
             </div>
             <p className="text-xs mb-3" style={{ color: c.textMuted }}>Select a found item without locker to assign:</p>
             <div className="space-y-2 mb-4 max-h-60 overflow-auto">
-              {(unassignedItems.length ? unassignedItems : mockFoundItems).map((it) => (
+              {unassignedItems.map((it) => (
                 <div key={it.id} role="button" tabIndex={0}
                   onClick={() => setAssignItemId(it.id)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setAssignItemId(it.id); } }}

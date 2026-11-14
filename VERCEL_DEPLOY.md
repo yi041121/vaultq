@@ -41,9 +41,8 @@ DATABASE_URL
 JWT_SECRET
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
-HARDWARE_API_KEY
+HARDWARE_DEVICES
 HARDWARE_SESSION_SECRET
-LOCKER_NUMBER
 ```
 
 Use the values from `.env`, with `DATABASE_URL` changed to the cloud URL.
@@ -77,7 +76,10 @@ https://YOUR-PROJECT.vercel.app/api/hardware/identify
 https://YOUR-PROJECT.vercel.app/api/hardware/verify
 ```
 
-Use `WiFiClientSecure` for HTTPS. Keep the same `HARDWARE_API_KEY`.
+Use `WiFiClientSecure` for HTTPS. Enrol each device's ID, unique API key and
+locker in the server-only `HARDWARE_DEVICES` JSON secret. Both endpoints require
+the enrolled `deviceId` in the body and its `apiKey` in `x-device-key`.
+See `docs/pickup-security.md` for configuration and migration instructions.
 
 ## 6. Photo uploads
 

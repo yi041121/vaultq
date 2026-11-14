@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "./prisma";
 import { getJwtSecret } from "./auth-secrets";
 
-type Action = "login" | "register" | "lookup" | "google" | "barcode";
+type Action = "login" | "register" | "lookup" | "google" | "barcode" | "report" | "claim" | "suggestion";
 type Bucket = { scope: string; identity: string; limit: number; seconds: number };
 
 export function authClientIdentity(request: NextRequest): string {
@@ -23,11 +23,17 @@ function buckets(action: Action, ip: string, identity?: string): Bucket[] {
   const limits: Record<Action, { limit: number; seconds: number }> = {
     login: { limit: 100, seconds: 900 }, register: { limit: 20, seconds: 3600 },
     lookup: { limit: 60, seconds: 60 }, google: { limit: 30, seconds: 300 }, barcode: { limit: 10, seconds: 300 },
+    report: { limit: 2000, seconds: 3600 }, claim: { limit: 2000, seconds: 3600 }, suggestion: { limit: 6000, seconds: 60 },
   };
   const result: Bucket[] = [{ scope: `${action}:ip`, identity: ip, ...limits[action] }];
   if (action === "login" && identity) {
     result.push({ scope: "login:account-ip", identity: `${identity}:${ip}`, limit: 10, seconds: 900 });
     result.push({ scope: "login:account", identity, limit: 30, seconds: 900 });
+  }
+  if ((action === "report" || action === "claim" || action === "suggestion") && identity) {
+    // Account limits survive IP changes; generous IP caps avoid penalising a
+    // whole campus sharing NAT. Check these before parsing/decoding uploads.
+    result.unshift({ scope: `${action}:account`, identity, limit: action === "suggestion" ? 60 : 30, seconds: action === "suggestion" ? 60 : 3600 });
   }
   return result;
 }

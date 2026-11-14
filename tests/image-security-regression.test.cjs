@@ -15,6 +15,7 @@ const svg = `data:image/svg+xml;base64,${svgBytes.toString("base64")}`;
 const disguisedSvg = `data:image/png;base64,${svgBytes.toString("base64")}`;
 
 function load(file, dependencies = {}) {
+  dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

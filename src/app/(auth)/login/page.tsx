@@ -6,7 +6,8 @@ import Link from "next/link";
 import { Eye, EyeOff, CheckCircle2, XCircle } from "lucide-react";
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import LockerIllustration from "@/components/locker-illustration";
-import { clearClientSession, isSessionIdle, isTokenExpired, markSessionActivity } from "@/lib/idle-session";
+import { clearClientSession, isSessionIdle, markSessionActivity } from "@/lib/idle-session";
+import { getBrowserSessionKey, storeBrowserSession } from "@/lib/browser-session-store";
 import { clearStudentCache } from "@/lib/student-cache";
 import { endServerSession, getServerSession, waitForServerSignOut } from "@/lib/browser-session";
 
@@ -30,19 +31,18 @@ export default function LoginPage() {
     let cancelled = false;
     // Roles and sessions are restored only after server verification, never
     // by decoding an unsigned browser payload or trusting a profile hint.
-    const token = localStorage.getItem("token");
+    const sessionKey = getBrowserSessionKey();
     const params = new URLSearchParams(window.location.search);
     void (async () => {
       try {
         if (params.get("loggedOut") === "1" || params.get("expired") === "1" || isSessionIdle()) {
-          await endServerSession(token);
+          await endServerSession(sessionKey);
         } else {
-          const session = await getServerSession(token && !isTokenExpired(token) ? token : null);
+          const session = await getServerSession();
           if (cancelled) return;
           if (session) {
             clearStudentCache();
-            localStorage.setItem("token", session.token);
-            localStorage.setItem("user", JSON.stringify(session.user));
+            storeBrowserSession(session);
             markSessionActivity();
             router.replace(session.user.role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
             return;
@@ -144,8 +144,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) { showError(data.error || "Login failed"); setLoading(false); return; }
       clearStudentCache();
-      localStorage.setItem("token", data.data.token);
-      localStorage.setItem("user", JSON.stringify(data.data.user));
+      storeBrowserSession(data.data);
       markSessionActivity();
       const role = data.data.user.role;
       // The login response already set the HttpOnly session cookie and the

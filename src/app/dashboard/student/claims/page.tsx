@@ -1,5 +1,7 @@
 "use client";
+import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { claimNextStep } from "@/lib/student-workflow";
+import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 import { formatDisplayDate as fmtDay, formatDisplayDate as fmtDate, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
@@ -83,6 +85,7 @@ export default function StudentClaims() {
   const [cancelTarget, setCancelTarget] = useState<UserClaim | null>(null);
   const [resubmitClaim, setResubmitClaim] = useState<UserClaim | null>(null);
   const [resubmitReason, setResubmitReason] = useState("");
+  const [resubmitNoPhoto, setResubmitNoPhoto] = useState(false);
   const [resubmitPhotos, setResubmitPhotos] = useState<{ file?: File; preview: string; existing?: boolean }[]>([]);
   const [resubmitting, setResubmitting] = useState(false);
   const resubmitInputRef = useRef<HTMLInputElement>(null);
@@ -96,7 +99,7 @@ export default function StudentClaims() {
     if (!getCachedClaims()) setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/claims", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const res = await fetch("/api/claims", { headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" }, cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) throw new Error(data?.error || "Failed to load claims");
       const mapped = ((data.data ?? []) as Record<string, unknown>[]).map(mapUserClaim);
@@ -115,7 +118,7 @@ export default function StudentClaims() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     const stored = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!stored || !token) {
       setUser({ id: "1", name: "Student User", email: "student@example.com", role: "STUDENT" });
       setLoading(false);
@@ -128,14 +131,14 @@ export default function StudentClaims() {
 
   function handleLogout() {
     clearStudentCache();
-    localStorage.removeItem("token");
+    clearStoredBrowserSession();
     localStorage.removeItem("user");
     router.push("/login?skip=1&loggedOut=1");
   }
 
   async function openQR(cl: UserClaim) {
     if (qrLoadingId) return;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       return;
@@ -144,7 +147,7 @@ export default function StudentClaims() {
     try {
       const res = await fetch("/api/qrcode/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: JSON.stringify({ claimId: cl.id }),
       });
       const data = await res.json().catch(() => null);
@@ -178,7 +181,7 @@ export default function StudentClaims() {
   async function handleCancel() {
     if (!cancelTarget || cancelling) return;
     const target = cancelTarget;
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) {
       showCenteredMessage("error", "Session expired — please sign in again");
       setCancelTarget(null);
@@ -188,7 +191,7 @@ export default function StudentClaims() {
     try {
       const res = await fetch(`/api/claims/${target.id}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
@@ -208,6 +211,7 @@ export default function StudentClaims() {
   }
 
   function openResubmit(cl: UserClaim) {
+    setResubmitNoPhoto(false);
     setResubmitClaim(cl);
     setResubmitReason(cl.reason || "");
     setResubmitPhotos((cl.evidenceImageUrls || []).map((preview) => ({ preview, existing: true })));
@@ -244,6 +248,7 @@ export default function StudentClaims() {
         }),
       );
       setResubmitPhotos((prev) => [...prev, ...drafts].slice(0, 3));
+      setResubmitNoPhoto(false);
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
     }
@@ -255,22 +260,27 @@ export default function StudentClaims() {
       showCenteredMessage("error", "Please describe why this item is yours");
       return;
     }
-    const token = localStorage.getItem("token");
+    const token = getBrowserSessionKey();
     if (!token) return;
     setResubmitting(true);
     try {
       const keepImages = resubmitPhotos.filter((photo) => photo.existing).map((photo) => photo.preview);
-      if (!resubmitPhotos.length) {
+      if (!resubmitPhotos.length && !resubmitNoPhoto) {
         showCenteredMessage("error", "Please keep or add at least one photo");
+        return;
+      }
+      if (!resubmitPhotos.length && resubmitNoPhoto && resubmitReason.trim().length < NO_PHOTO_REASON_MIN_LENGTH) {
+        showCenteredMessage("error", `Provide at least ${NO_PHOTO_REASON_MIN_LENGTH} characters for in-person verification`);
         return;
       }
       const form = new FormData();
       form.append("claimReason", resubmitReason.trim());
       form.append("keepImages", JSON.stringify(keepImages));
+      if (resubmitNoPhoto) form.append("noPhoto", "true");
       resubmitPhotos.forEach((photo) => { if (photo.file) form.append("evidence", photo.file); });
       const res = await fetch(`/api/claims/${resubmitClaim.id}/resubmit`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
         body: form,
       });
       const data = await res.json().catch(() => ({}));
@@ -377,7 +387,7 @@ export default function StudentClaims() {
               </div>
               <p className="text-lg font-semibold" style={{ color: c.text }}>Could not load claims</p>
               <p className="text-sm mt-2 max-w-md leading-relaxed" style={{ color: c.textMuted }}>{loadError}</p>
-              <VButton variant="primary" className="mt-6" onClick={() => { const t = localStorage.getItem("token"); if (t) void loadClaims(t); }}>
+              <VButton variant="primary" className="mt-6" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadClaims(t); }}>
                 <RefreshCw size={14} /> Try again
               </VButton>
             </VCard>
@@ -661,7 +671,14 @@ export default function StudentClaims() {
               <input ref={resubmitCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleResubmitFiles} />
               {resubmitPhotos.length === 0 ? (
                 <div>
-                  <PhotoPicker onUpload={() => resubmitInputRef.current?.click()} onTakePhoto={openResubmitCamera} />
+                  {resubmitNoPhoto ? (
+                    <p className="rounded-xl border p-3 text-xs leading-relaxed" style={{ borderColor: c.border, color: c.textMuted }}>No photo attached. Describe distinctive ownership details in at least {NO_PHOTO_REASON_MIN_LENGTH} characters. Admin must verify ownership in person.</p>
+                  ) : <PhotoPicker onUpload={() => resubmitInputRef.current?.click()} onTakePhoto={openResubmitCamera} />}
+                  <label className="mt-3 flex items-start gap-2 text-xs cursor-pointer" style={{ color: c.textMuted }}>
+                    <input type="checkbox" checked={resubmitNoPhoto} onChange={(event) => setResubmitNoPhoto(event.target.checked)} className="mt-0.5" />
+                    I don&apos;t have a photo — request in-person verification
+                  </label>
+                  {resubmitNoPhoto && <p className="mt-2 text-xs" style={{ color: c.textMuted }}>{resubmitReason.trim().length}/{NO_PHOTO_REASON_MIN_LENGTH} characters</p>}
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
@@ -682,7 +699,7 @@ export default function StudentClaims() {
 
             <div className="flex items-center justify-end gap-2 mt-5">
               <VButton variant="secondary" onClick={() => { if (!resubmitting) setResubmitClaim(null); }}>Cancel</VButton>
-              <VButton onClick={handleResubmit} disabled={resubmitting || !resubmitReason.trim()}>
+              <VButton onClick={handleResubmit} disabled={resubmitting || !resubmitReason.trim() || (!resubmitPhotos.length && (!resubmitNoPhoto || resubmitReason.trim().length < NO_PHOTO_REASON_MIN_LENGTH))}>
                 {resubmitting ? "Resubmitting..." : "Resubmit claim"}
               </VButton>
             </div>

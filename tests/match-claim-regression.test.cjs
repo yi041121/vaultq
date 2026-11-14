@@ -8,6 +8,7 @@ const ts = require("typescript");
 const { validation: imageValidation, png } = require("./helpers/image-validation.cjs");
 
 function load(file, dependencies = {}, globals = {}) {
+  dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;

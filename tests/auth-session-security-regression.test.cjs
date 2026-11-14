@@ -47,8 +47,9 @@ function load(file, dependencies = {}, globals = {}) {
   return exports;
 }
 
-function requestDouble({ url = "https://vaultq.example/api/auth/login", headers = {}, cookies = {} } = {}) {
+function requestDouble({ url = "https://vaultq.example/api/auth/login", headers = {}, cookies = {}, method = "POST" } = {}) {
   return {
+    method,
     url,
     headers: { get: (name) => headers[name.toLowerCase()] ?? null },
     cookies: { get: (name) => (name in cookies ? { value: cookies[name] } : undefined) },
@@ -144,6 +145,7 @@ function authHarness() {
     "./prisma": { prisma },
     "./db-retry": { withDbRetry: (operation) => operation() },
     "./session-token": tokens,
+    "./session-cookie": cookieHarness().cookies,
     "node:crypto": require("node:crypto"),
   }, { process });
   return { auth, tokens, state };
@@ -250,12 +252,16 @@ test("logout revokes exactly the persisted session and ignores unverifiable toke
   assert.equal(h.state.deleted.length, 0);
 });
 
-test("bearer authentication requires a header and delegates to the persistent session check", async () => {
+test("API authentication requires an HttpOnly cookie, rejects bearer-only credentials and guards mutations", async () => {
   const h = authHarness();
   const token = h.tokens.generateToken({ userId: "user-1", role: "STUDENT", sessionId: "session-1" });
   h.state.session = sessionRecord();
-  assert.equal(await h.auth.authenticateRequest({ headers: { get: () => null } }), null);
-  assert.equal((await h.auth.authenticateRequest({ headers: { get: () => `Bearer ${token}` } })).id, "user-1");
+  assert.equal(await h.auth.authenticateRequest(requestDouble({ method: "GET" })), null);
+  assert.equal(await h.auth.authenticateRequest(requestDouble({ method: "GET", headers: { authorization: `Bearer ${token}`, "x-vaultq-session": "session-1" } })), null);
+  assert.equal((await h.auth.authenticateRequest(requestDouble({ method: "GET", cookies: { vq_session: token } }))).id, "user-1");
+  assert.equal(await h.auth.authenticateRequest(requestDouble({ cookies: { vq_session: token }, headers: { origin: "https://evil.example" } })), null);
+  assert.equal(await h.auth.authenticateRequest(requestDouble({ cookies: { vq_session: token }, headers: { origin: "https://vaultq.example", "x-vaultq-session": "old-session" } })), null);
+  assert.equal((await h.auth.authenticateRequest(requestDouble({ cookies: { vq_session: token }, headers: { origin: "https://vaultq.example", "x-vaultq-session": "session-1" } }))).id, "user-1");
 });
 
 // ---------------------------------------------------------------------------
@@ -490,7 +496,7 @@ test("unknown accounts still run a dummy bcrypt comparison and never create a se
   assert.equal(h.state.sessions, 0);
 });
 
-test("successful login returns the bearer token for compatibility and sets both cookies", async () => {
+test("successful login exposes public metadata only and stores credentials in HttpOnly cookies", async () => {
   const { tokens } = tokenHarness();
   const token = tokens.generateToken({ userId: "student", role: "STUDENT", sessionId: "s1" });
   const { cookies } = cookieHarness();
@@ -520,7 +526,7 @@ test("successful login returns the bearer token for compatibility and sets both 
         },
       },
     },
-    "@/lib/auth": { comparePassword: async () => true, createAuthSession: async () => token },
+    "@/lib/auth": { comparePassword: async () => true, createAuthSession: async () => token, verifyToken: tokens.verifyToken },
     "@/lib/db-retry": { withDbRetry: (operation) => operation() },
     "@/lib/session-cookie": cookies,
     "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null },
@@ -530,7 +536,10 @@ test("successful login returns the bearer token for compatibility and sets both 
     json: async () => ({ email: "student@example.test", password: "password" }),
   });
   assert.equal(response.status, 200);
-  assert.equal(response.body.data.token, token);
+  assert.equal(response.body.data.token, undefined);
+  assert.equal(response.body.data.sessionKey, "s1");
+  assert.ok(response.body.data.expiresAt > Date.now());
+  assert.ok(!JSON.stringify(response.body).includes(token));
   assert.equal(response.cookies.values.vq_session.value, token);
   assert.equal(response.cookies.values.vq_role.value, "STUDENT");
 });
@@ -557,6 +566,7 @@ function sessionRouteHarness() {
       },
     },
     "@/lib/auth": {
+      verifyToken: tokens.verifyToken,
       authenticateToken: async (value) => value === token
         ? { id: "student", name: "Student", email: "student@example.test", role: "STUDENT", cardBarcode: null, isActive: true }
         : null,
@@ -566,7 +576,7 @@ function sessionRouteHarness() {
   return { route, token, cookies, state };
 }
 
-test("session bootstrap clears stale cookies and exposes the verified token only on success", async () => {
+test("session bootstrap exposes public metadata, never JWTs or bearer restoration", async () => {
   const h = sessionRouteHarness();
 
   const missing = await h.route.GET(requestDouble({ cookies: {} }));
@@ -576,24 +586,16 @@ test("session bootstrap clears stale cookies and exposes the verified token only
 
   const valid = await h.route.GET(requestDouble({ cookies: { vq_session: h.token } }));
   assert.equal(valid.status, 200);
-  assert.equal(valid.body.data.token, h.token);
+  assert.equal(valid.body.data.token, undefined);
+  assert.equal(valid.body.data.sessionKey, "s1");
+  assert.ok(valid.body.data.expiresAt > Date.now());
+  assert.ok(!JSON.stringify(valid.body).includes(h.token));
   assert.equal(valid.body.data.user.role, "STUDENT");
   assert.equal(valid.headers.get("Cache-Control"), "private, no-store");
   assert.equal(valid.headers.get("Vary"), "Cookie");
 
-  const csrf = await h.route.POST({ ...requestDouble({ headers: { origin: "https://evil.example" } }), headers: { get: () => null } });
-  assert.equal(csrf.status, 403);
-
-  const invalid = await h.route.POST(requestDouble({
-    headers: { origin: "https://vaultq.example", authorization: "Bearer invalid" },
-  }));
-  assert.equal(invalid.status, 401);
-
-  const restored = await h.route.POST(requestDouble({
-    headers: { origin: "https://vaultq.example", authorization: `Bearer ${h.token}` },
-  }));
-  assert.equal(restored.status, 200);
-  assert.equal(restored.cookies.values.vq_session.value, h.token);
+  assert.equal(h.route.POST, undefined, "no credential-import endpoint remains");
+  assert.equal((await h.route.GET(requestDouble({ headers: { authorization: `Bearer ${h.token}` } }))).status, 401);
 });
 
 function logoutHarness({ revokeFails = false } = {}) {
@@ -612,6 +614,7 @@ function logoutHarness({ revokeFails = false } = {}) {
       },
     },
     "@/lib/auth": {
+      verifyToken: token => ({ jti: token }),
       revokeAuthSession: async (token) => {
         state.revoked.push(token);
         if (revokeFails) throw new Error("database unavailable");
@@ -637,11 +640,11 @@ test("logout revokes the cookie session and clears both routing cookies", async 
 test("a stale tab logging out cannot clear a newer session cookie", async () => {
   const h = logoutHarness();
   const response = await h.route.POST(requestDouble({
-    headers: { origin: "https://vaultq.example", authorization: "Bearer old-session" },
+    headers: { origin: "https://vaultq.example", "x-vaultq-session": "old-session" },
     cookies: { vq_session: "new-session" },
   }));
-  assert.equal(response.status, 200);
-  assert.deepEqual(h.state.revoked, ["old-session"]);
+  assert.equal(response.status, 409);
+  assert.deepEqual(h.state.revoked, []);
   assert.equal(response.cookies.values.vq_session, undefined);
   assert.equal(response.cookies.values.vq_role, undefined);
 });
@@ -760,6 +763,22 @@ test("public lookup and barcode actions use only the per-IP bucket", async () =>
   }
 });
 
+test("report, claim and suggestion limits follow the account across IP changes", async () => {
+  for (const action of ["report", "claim", "suggestion"]) {
+    const first = rateLimitHarness({ env: { VERCEL: "1" } });
+    const second = rateLimitHarness({ env: { VERCEL: "1" } });
+    await first.mod.checkAuthRateLimit(requestDouble({ headers: { "x-vercel-forwarded-for": "203.0.113.9" } }), action, "student-1");
+    await second.mod.checkAuthRateLimit(requestDouble({ headers: { "x-vercel-forwarded-for": "203.0.113.10" } }), action, "student-1");
+    assert.equal(first.calls.query.length, 2);
+    assert.equal(first.calls.query[0].values[0], second.calls.query[0].values[0], "account bucket precedes IP bucket and is not bypassed by IP changes");
+    assert.notEqual(first.calls.query[1].values[0], second.calls.query[1].values[0]);
+    const blocked = rateLimitHarness({ rows: [{ attempts: action === "suggestion" ? 61 : 31, retryAfter: 30 }] });
+    const result = await blocked.mod.enforceAuthRateLimit(requestDouble(), action, "student-1");
+    assert.equal(result.status, 429);
+    assert.equal(blocked.calls.query.length, 1);
+  }
+});
+
 test("rate limiting fails closed with 503 and returns 429 with Retry-After", async () => {
   const failing = rateLimitHarness({ env: { VERCEL: "1" }, fail: true });
   const unavailable = await failing.mod.enforceAuthRateLimit(requestDouble({
@@ -785,7 +804,7 @@ test("rate limiting fails closed with 503 and returns 429 with Retry-After", asy
 
 test("client cleanup asks the server to revoke the token before removing local state", async () => {
   const revoked = [];
-  const values = new Map([["token", "session-token"], ["user", "{}"]]);
+  const values = new Map([["token", "legacy-jwt"], ["vq_session_key", "session-key"], ["user", "{}"]]);
   const localStorage = {
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, String(value)),
@@ -794,13 +813,14 @@ test("client cleanup asks the server to revoke the token before removing local s
   const idle = load("src/lib/idle-session.ts", {
     "@/lib/student-cache": { clearStudentCache: () => {} },
     "@/lib/browser-session": { endServerSession: async (token) => { revoked.push(token); return true; } },
+    "./browser-session-store": load("src/lib/browser-session-store.ts", {}, { localStorage }),
   }, {
     window: {},
     localStorage,
     document: { cookie: "" },
   });
   idle.clearClientSession();
-  assert.deepEqual(revoked, ["session-token"]);
+  assert.deepEqual(revoked, ["session-key"]);
   assert.equal(localStorage.getItem("token"), null);
   assert.equal(localStorage.getItem("user"), null);
 });
@@ -826,7 +846,8 @@ function sessionPayload(overrides = {}) {
   return {
     success: true,
     data: {
-      token: "session-token",
+      sessionKey: "public-session-key",
+      expiresAt: Date.now() + 60_000,
       user: { id: "student", name: "Student", email: "student@example.test", role: "STUDENT", cardBarcode: null },
       ...overrides,
     },
@@ -836,7 +857,8 @@ function sessionPayload(overrides = {}) {
 test("browser session restoration accepts only a verified, well-formed server payload", async () => {
   const h = browserSessionHarness(async () => ({ status: 200, ok: true, json: async () => sessionPayload() }));
   const session = await h.mod.getServerSession();
-  assert.equal(session.token, "session-token");
+  assert.equal(session.sessionKey, "public-session-key");
+  assert.equal(session.token, undefined);
   assert.equal(session.user.role, "STUDENT");
   assert.equal(h.calls[0].options.credentials, "same-origin");
   assert.equal(h.calls[0].options.cache, "no-store");
@@ -848,17 +870,15 @@ test("browser session restoration accepts only a verified, well-formed server pa
   await assert.rejects(() => serverError.mod.getServerSession(), /unavailable/);
 });
 
-test("an expired routing cookie is restored from a still-valid bearer session", async () => {
+test("an absent cookie cannot be restored from a legacy browser token", async () => {
   const h = browserSessionHarness(async (url, options) => {
     if (options.method === "POST") return { status: 200, ok: true, json: async () => sessionPayload() };
     return { status: 401, ok: false, json: async () => ({ success: false }) };
   });
-  const session = await h.mod.getServerSession("legacy-token");
-  assert.equal(session.token, "session-token");
-  assert.equal(h.calls.length, 2);
-  assert.equal(h.calls[1].options.method, "POST");
-  assert.equal(h.calls[1].options.headers.Authorization, "Bearer legacy-token");
-  assert.equal(h.calls[1].options.headers["X-VaultQ-Request"], "1");
+  const session = await h.mod.getServerSession();
+  assert.equal(session, null);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].options.headers, undefined);
 });
 
 test("no verified server session yields null rather than trusting browser storage", async () => {
@@ -876,7 +896,8 @@ test("sign-out posts a marked same-origin revocation and reports network failure
   assert.equal(ok.calls[0].options.method, "POST");
   assert.equal(ok.calls[0].options.credentials, "same-origin");
   assert.equal(ok.calls[0].options.cache, "no-store");
-  assert.equal(ok.calls[0].options.headers.Authorization, "Bearer session-token");
+  assert.equal(ok.calls[0].options.headers.Authorization, undefined);
+  assert.equal(ok.calls[0].options.headers["X-VaultQ-Session"], "session-token");
   assert.equal(ok.calls[0].options.headers["X-VaultQ-Request"], "1");
 
   const failed = browserSessionHarness(async () => { throw new Error("offline"); });
@@ -898,7 +919,7 @@ test("session restoration waits for an in-flight logout and logout calls stay se
   release();
   assert.equal(await logout, true);
   const session = await restore;
-  assert.equal(session.token, "session-token");
+  assert.equal(session.sessionKey, "public-session-key");
   assert.deepEqual(h.calls.map((call) => call.url), ["/api/auth/logout", "/api/auth/session"]);
 
   let releases = [];

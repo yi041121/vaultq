@@ -4,6 +4,7 @@ import { prisma } from "./prisma";
 import { withDbRetry } from "./db-retry";
 import { generateToken, SESSION_SECONDS, verifyToken, type SessionClaims } from "./session-token";
 import { randomUUID } from "node:crypto";
+import { SESSION_COOKIE, isSameOriginAuthRequest } from "./session-cookie";
 
 export { generateToken, verifyToken, SESSION_SECONDS, type SessionClaims };
 
@@ -78,8 +79,12 @@ export async function revokeAuthSession(token: string) {
 }
 
 export async function authenticateRequest(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
-
-  return authenticateToken(authHeader.slice(7));
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && !isSameOriginAuthRequest(request)) return null;
+  try {
+    const expected = request.headers.get("x-vaultq-session");
+    if (expected && verifyToken(token).jti !== expected) return null;
+    return authenticateToken(token);
+  } catch { return null; }
 }
