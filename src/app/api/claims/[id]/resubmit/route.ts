@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { ImageValidationError, normalizeImageFile, normalizeImageSources } from "@/lib/image-validation";
+import { ClaimTransitionError, resubmitRejectedClaim } from "@/lib/claim-transition-service";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -30,33 +32,23 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ success: false, error: "Claim reason is required" }, { status: 400 });
     }
 
-    let keepImages: string[] = [];
+    let incomingKeep: unknown;
     try {
-      const rawKeep = JSON.parse(String(form.get("keepImages") || "[]"));
-      if (Array.isArray(rawKeep)) {
-        keepImages = rawKeep.filter(
-          (value): value is string => typeof value === "string" && value.startsWith("data:image/"),
-        );
-      }
+      incomingKeep = JSON.parse(String(form.get("keepImages") || "[]"));
     } catch {
-      keepImages = [];
+      return NextResponse.json({ success: false, error: "Invalid retained photos" }, { status: 400 });
     }
+    if (!Array.isArray(incomingKeep)) throw new ImageValidationError("Invalid retained photos");
 
     const files = form.getAll("evidence").filter((entry): entry is File => entry instanceof File);
-    if (keepImages.length + files.length > 3) {
+    if (incomingKeep.length + files.length > 3) {
       return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
     }
+    const keepImages = await normalizeImageSources(incomingKeep);
 
     const photos: string[] = [];
     for (const file of files) {
-      if (!file.type.startsWith("image/")) {
-        return NextResponse.json({ success: false, error: "Evidence must be an image" }, { status: 400 });
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
-      }
-      const buf = Buffer.from(await file.arrayBuffer());
-      photos.push(`data:${file.type};base64,${buf.toString("base64")}`);
+      photos.push(await normalizeImageFile(file));
     }
 
     const evidenceImageUrls = [...keepImages, ...photos].slice(0, 3);
@@ -64,31 +56,12 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ success: false, error: "At least one evidence photo is required" }, { status: 400 });
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const next = await tx.claim.update({
-        where: { id },
-        data: {
-          claimReason,
-          evidenceImageUrl: evidenceImageUrls[0] || null,
-          evidenceImageUrls,
-          status: "PENDING",
-          approvedAt: null,
-          adminNote: null,
-        },
-      });
-      // Re-attach the linked lost report: rejecting the claim released it back
-      // to Pending, so a resubmission matches it again for admin review.
-      if (claim.matchedReportId) {
-        await tx.report.updateMany({
-          where: { id: claim.matchedReportId, type: "LOST", status: "PENDING" },
-          data: { status: "MATCHED", itemId: claim.itemId, reviewedAt: null, reviewedById: null },
-        });
-      }
-      return next;
-    });
+    const updated = await resubmitRejectedClaim(id, user.id, { claimReason, evidenceImageUrls });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    if (e instanceof ClaimTransitionError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Claim resubmit failed", e);
     return NextResponse.json({ success: false, error: "Failed to resubmit claim" }, { status: 500 });
   }

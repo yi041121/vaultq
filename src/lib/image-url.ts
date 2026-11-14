@@ -1,10 +1,14 @@
 import crypto from "crypto";
+import { getImageSigningSecret } from "./auth-secrets";
 
-const SECRET = process.env.JWT_SECRET || "vaultq-secret-key-change-in-production";
 const IMAGE_URL_TTL_SECONDS = 6 * 60 * 60;
 
 function versionOf(source: string) {
   return crypto.createHash("sha1").update(source).digest("hex").slice(0, 12);
+}
+
+export function imageVersionMatches(source: string, version: string): boolean {
+  return versionOf(source) === version;
 }
 
 export type ImageKind = "item" | "report" | "claim";
@@ -19,7 +23,7 @@ export function signedImageUrl(kind: ImageKind, id: string, index: number, sourc
   const version = versionOf(source);
   const exp = Math.floor(Date.now() / 1000) + IMAGE_URL_TTL_SECONDS;
   const payload = `${kind}:${id}:${index}:${version}:${exp}`;
-  const sig = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
+  const sig = crypto.createHmac("sha256", getImageSigningSecret()).update(payload).digest("hex");
   return `/api/images/${kind}/${encodeURIComponent(id)}/${index}?v=${version}&exp=${exp}&sig=${sig}`;
 }
 
@@ -33,7 +37,7 @@ export function verifyImageSignature(
 ) {
   if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return false;
   const payload = `${kind}:${id}:${index}:${version}:${exp}`;
-  const expected = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
+  const expected = crypto.createHmac("sha256", getImageSigningSecret()).update(payload).digest("hex");
   const a = Buffer.from(expected, "hex");
   const b = Buffer.from(sig, "hex");
   return a.length === b.length && crypto.timingSafeEqual(a, b);

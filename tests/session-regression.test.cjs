@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const ts = require("typescript");
+const { validation: imageValidation } = require("./helpers/image-validation.cjs");
 
 // Load the existing TypeScript modules with isolated browser/React doubles.
 function load(file, dependencies, globals = {}) {
@@ -57,6 +58,7 @@ function sessionHarness() {
   const globals = { window, document, localStorage };
   const idle = load("src/lib/idle-session.ts", {
     "@/lib/student-cache": { clearStudentCache: () => { cacheClears++; } },
+    "@/lib/browser-session": { endServerSession: async () => true },
   }, globals);
   const hook = load("src/lib/use-idle-session.ts", {
     react: { useEffect: (effect) => { cleanup = effect(); } },
@@ -155,9 +157,16 @@ function googleHarness({ databaseFails = false, missingUser = false, email = "st
       if (missingUser) return null;
       return { id: "student", name: "Student", email, role: "STUDENT", isActive: true };
     } } } },
-    "@/lib/auth": { generateToken: () => "app-token" },
+    "@/lib/auth": { createAuthSession: async () => "app-token" },
     "@/lib/db-retry": { withDbRetry: (operation) => operation() },
     "@/lib/request-origin": { getRequestOrigin: () => "https://vaultq.example" },
+    "@/lib/session-cookie": {
+      setSessionCookies: (response, token, role) => {
+        response.cookies.set("vq_session", token);
+        response.cookies.set("vq_role", role);
+      },
+    },
+    "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null },
   }, {
     process: { env: { GOOGLE_CLIENT_ID: "test-client", GOOGLE_CLIENT_SECRET: "test-secret" } },
     console: { error: (...args) => logs.push(args) },
@@ -176,10 +185,12 @@ function googleHarness({ databaseFails = false, missingUser = false, email = "st
   return { route, request, logs };
 }
 
-test("Google callback consumes all OAuth cookies and creates a fresh session", async () => {
+test("Google callback consumes all OAuth cookies and creates a fresh cookie session", async () => {
   const h = googleHarness();
   const response = await h.route.GET(h.request("code=test-code&state=valid-state"));
-  assert.match(response.url, /\/auth\/callback\?token=app-token/);
+  // Credentials and profile data must never appear in the redirect URL.
+  assert.equal(response.url, "https://vaultq.example/auth/callback");
+  assert.equal(response.cookies.values.vq_session, "app-token");
   assert.equal(response.cookies.values.vq_role, "STUDENT");
   for (const key of ["g_state", "g_intent", "g_barcode"]) assert.equal(response.cookies.values[key], "");
   assert.equal(response.headers.get("Cache-Control"), "no-store");
@@ -313,6 +324,7 @@ async function listClaimPhotos(reportSources, light = true, main = "photo-a") {
     "next/server": { NextResponse: { json: (body) => body } },
     "@/lib/auth": { authenticateRequest: async () => ({ id: "admin", role: "ADMIN" }) },
     "@/lib/photo-gallery": photos,
+    "@/lib/image-validation": imageValidation,
     "@/lib/image-url": { signedImageUrl: (kind, id, index) => `/images/${kind}/${id}/${index}` },
     "@/lib/prisma": { prisma: { claim: { findMany: async () => [{
       id: "claim", itemId: "item", userId: "student", status: "PENDING",
@@ -354,10 +366,12 @@ async function listReportPhotos(sources) {
     "@/lib/auth": { authenticateRequest: async () => ({ id: "admin", role: "ADMIN" }) },
     "@/lib/categories": { isItemCategory: () => true },
     "@/lib/notification-service": { notifyUser: async () => {} },
+    "@/lib/match-notification-service": { notifyInventoryMatches: async () => {} },
     "@/lib/report-include": { REPORT_INCLUDE: {} },
     "@/lib/report-validation": { VALID_REPORT_TYPES: ["LOST", "FOUND"], validateReportDetails: () => ({ ok: true, value: {} }) },
     "@/lib/image-url": { signedImageUrl: (kind, id, index) => `/images/${kind}/${id}/${index}` },
     "@/lib/photo-gallery": photos,
+    "@/lib/image-validation": imageValidation,
   }, { URL });
   return route.GET({ url: "https://vaultq.example/api/reports?light=1" });
 }
@@ -513,7 +527,9 @@ function inventoryRoute(status, changedCount = 1) {
     "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status || 200 }) } },
     "@/lib/auth": { authenticateRequest: async () => ({ role: "ADMIN" }) },
     "@/lib/text-validation": { startsWithNumber: () => false },
+    "@/lib/match-notification-service": { notifyInventoryMatches: async () => {} },
     "@/lib/prisma": { prisma: { item: { findUnique: async () => existing }, $transaction: (operation) => operation(tx) } },
+    "@/lib/image-validation": imageValidation,
   });
   return { route, writes, context: { params: Promise.resolve({ id: "item" }) }, request: { json: async () => ({ description: "changed" }) } };
 }

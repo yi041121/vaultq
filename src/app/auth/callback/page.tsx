@@ -6,41 +6,34 @@ import { CheckCircle2 } from "lucide-react";
 import { colors } from "@/lib/design";
 import { markSessionActivity } from "@/lib/idle-session";
 import { clearStudentCache } from "@/lib/student-cache";
+import { getServerSession } from "@/lib/browser-session";
 
-// Landing point after Google OAuth succeeds. The API callback hands us the
-// app JWT via query params; we store it exactly like the email/password
-// login does, show the same centered "Login successful" popup, then
-// continue into the dashboard.
+// Google establishes a server session first. No credentials/profile data are
+// accepted from URL parameters or exposed in browser redirect history.
 export default function AuthCallback() {
   const router = useRouter();
   const [succeeded, setSucceeded] = useState(false);
 
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const token = sp.get("token");
-    const id = sp.get("id");
-    const name = sp.get("name");
-    const email = sp.get("email");
-    const role = sp.get("role");
-    const barcode = sp.get("barcode");
-
-    if (token && id && role) {
-      // Remove the JWT and profile data from the address bar and history
-      // entry before storing the session.
-      window.history.replaceState(null, "", "/auth/callback");
-      clearStudentCache();
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify({ id, name, email, role, cardBarcode: barcode || null }));
-      markSessionActivity();
-      document.cookie = `vq_role=${role === "ADMIN" ? "ADMIN" : "STUDENT"}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
-      // Same centered "Login successful" popup as the sign-in form, then redirect
-      setSucceeded(true);
-      setTimeout(() => {
-        router.replace(role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
-      }, 800);
-    } else {
-      router.replace("/login?skip=1");
-    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    window.history.replaceState(null, "", "/auth/callback");
+    void (async () => {
+      try {
+        const session = await getServerSession();
+        if (cancelled) return;
+        if (!session) { router.replace("/login?skip=1"); return; }
+        clearStudentCache();
+        localStorage.setItem("token", session.token);
+        localStorage.setItem("user", JSON.stringify(session.user));
+        markSessionActivity();
+        setSucceeded(true);
+        timer = setTimeout(() => router.replace(session.user.role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student"), 800);
+      } catch {
+        if (!cancelled) router.replace("/login?skip=1&googleError=Could%20not%20complete%20sign-in.%20Please%20try%20again.");
+      }
+    })();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [router]);
 
   return (

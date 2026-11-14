@@ -6,6 +6,25 @@ const path = require("node:path");
 const vm = require("node:vm");
 const ts = require("typescript");
 
+test("shared dates use day short-month year and preserve date-only values", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/lib/date-format.ts"), "utf8");
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const exports = {};
+  vm.runInNewContext(code, { exports, Date });
+  const { formatDisplayDate, formatDisplayTimestamp } = exports;
+  assert.equal(formatDisplayDate("2026-11-13"), "13 Nov 2026");
+  assert.equal(formatDisplayDate("2026-01-03"), "3 Jan 2026");
+  assert.equal(formatDisplayDate("2024-02-29"), "29 Feb 2024");
+  assert.equal(formatDisplayDate(new Date(2026, 10, 13, 12)), "13 Nov 2026");
+  for (const value of [undefined, null, "", "invalid", new Date(NaN)]) {
+    assert.equal(formatDisplayDate(value), "—");
+  }
+  assert.equal(formatDisplayTimestamp("2026-11-13T13:05:00"), "13 Nov 2026 · 1:05 pm");
+  assert.equal(formatDisplayTimestamp("invalid"), "—");
+});
+
 function illustrationHarness() {
   const source = fs.readFileSync(path.join(__dirname, "../src/components/locker-illustration.tsx"), "utf8");
   const code = ts.transpileModule(source, {
@@ -134,4 +153,70 @@ test("quick action can reopen a form on the current page and ignores other pages
   h.trigger("https://other.test/dashboard/admin/lockers?edit=1");
   assert.equal(h.opened, 2);
   h.stop();
+});
+
+test("item and evidence photo previews never crop the photo edges away", () => {
+  const files = [
+    "src/components/item-details-modal.tsx",
+    "src/components/evidence-slider.tsx",
+    "src/components/photo-viewer-modal.tsx",
+    "src/app/dashboard/student/page.tsx",
+    "src/app/dashboard/student/claims/page.tsx",
+    "src/app/dashboard/student/report/page.tsx",
+    "src/app/dashboard/student/search/page.tsx",
+    "src/app/dashboard/admin/page.tsx",
+    "src/app/dashboard/admin/claims/page.tsx",
+    "src/app/dashboard/admin/items/page.tsx",
+    "src/app/dashboard/admin/lockers/page.tsx",
+    // Intake keeps full-bleed cropped previews by design.
+  ];
+  let checked = 0;
+  for (const file of files) {
+    const source = ts.createSourceFile(file, fs.readFileSync(path.join(__dirname, "..", file), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    function visit(node) {
+      if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(source) === "img") {
+        checked++;
+        const attributes = node.attributes.getText(source);
+        const dashboardPreview = file === "src/app/dashboard/student/page.tsx"
+          || file === "src/app/dashboard/admin/page.tsx";
+        if (dashboardPreview) {
+          assert.match(attributes, /object-cover/, `${file}: dashboard previews fill their frames`);
+          return;
+        }
+        // Verification card previews intentionally fill matching frames;
+        // details, evidence viewers and other previews retain the full image.
+        const comparisonPreview = file === "src/app/dashboard/admin/claims/page.tsx"
+          && /alt=(?:\{`(?:Found item photo|Student evidence photo)|"Report photo")/.test(attributes);
+        if (comparisonPreview) {
+          assert.match(attributes, /absolute inset-0 w-full h-full object-cover/);
+          return;
+        }
+        assert.doesNotMatch(attributes, /object-cover/, `${file}: photos must not crop the edges away`);
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+  }
+  assert.ok(checked >= 24, "check card photos, evidence, details and viewer thumbnails");
+});
+
+test("claim verification uses eight cards per page and equal comparison columns", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "src/app/dashboard/admin/claims/page.tsx"), "utf8");
+  assert.match(source, /const pageSize = 8;/);
+  assert.match(source, /grid grid-cols-2 gap-2 aspect-\[4\/3\]/);
+  assert.match(source, /sortedRows\.slice\(\(currentPage - 1\) \* pageSize, currentPage \* pageSize\)/);
+  assert.equal((source.match(/className="absolute inset-0 w-full h-full block group cursor-pointer"/g) || []).length, 2);
+});
+
+test("student latest items exclude their own verified hand-ins before taking four", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "src/app/dashboard/student/page.tsx"), "utf8");
+  const expression = source.match(/const latestItems = (.*);/)[1];
+  const selectLatest = new Function("items", `return ${expression};`);
+  const items = [
+    { id: "own", reportedByMe: true },
+    ...Array.from({ length: 5 }, (_, i) => ({ id: `other-${i}`, reportedByMe: false })),
+  ];
+  assert.deepEqual(selectLatest(items).map((item) => item.id), ["other-0", "other-1", "other-2", "other-3"]);
+  assert.deepEqual(selectLatest([{ id: "own", reportedByMe: true }]), []);
+  assert.deepEqual(selectLatest([]), []);
 });

@@ -76,7 +76,7 @@ export function PhotoViewerModal({ photos, index, title, onIndexChange, onClose 
               className="w-14 h-14 rounded-lg overflow-hidden border-2 cursor-pointer transition-opacity duration-150"
               style={{ borderColor: photoIndex === index ? "#7FB8B5" : "transparent", opacity: photoIndex === index ? 1 : 0.6 }}
               onClick={() => onIndexChange(photoIndex)}>
-              <img src={photo} alt={`Thumbnail ${photoIndex + 1}`} className="w-full h-full object-cover" />
+              <img src={photo} alt={`Thumbnail ${photoIndex + 1}`} className="w-full h-full object-contain" />
             </button>
           ))}
         </div>

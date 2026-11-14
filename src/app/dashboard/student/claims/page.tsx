@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as fmtDay, formatDisplayDate as fmtDate, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -46,17 +47,6 @@ const statusPriority: Record<ClaimDisplayStatus, number> = {
   Rejected: 3,
 };
 
-function fmtDay(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "—";
-  return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function fmtDate(value: string) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 function fmtClock(value: string) {
   if (!value) return "";
@@ -65,12 +55,6 @@ function fmtClock(value: string) {
   return date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-function fmtTimestamp(value: string) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
-}
 
 type QrModal = {
   claimId: string;
@@ -207,6 +191,7 @@ export default function StudentClaims() {
         showCenteredMessage("error", data?.error || "Failed to cancel claim");
         return;
       }
+      clearStudentCache();
       setClaims((prev) => prev.filter((cl) => cl.id !== target.id));
       setDetailsClaim((prev) => (prev && prev.id === target.id ? null : prev));
       showCenteredMessage("success", "Claim cancelled");
@@ -286,6 +271,7 @@ export default function StudentClaims() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) throw new Error(data.error || "Failed to resubmit claim");
+      clearStudentCache();
       showCenteredMessage("success", "Claim resubmitted — awaiting verification");
       setResubmitClaim(null);
       setResubmitPhotos([]);
@@ -431,7 +417,7 @@ export default function StudentClaims() {
                         <div className="w-24 h-24 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                           {cl.itemImageUrl ? (
-                            <img src={cl.itemImageUrl} alt={cl.itemName} className="w-full h-full object-cover" />
+                            <img src={cl.itemImageUrl} alt={cl.itemName} className="w-full h-full object-contain" />
                           ) : (
                             <Icon size={34} style={{ color: c.primary, opacity: 0.75 }} />
                           )}
@@ -452,7 +438,7 @@ export default function StudentClaims() {
                             </p>
                             <p className="text-xs flex items-center gap-1.5 min-w-0" style={{ color: c.textMuted }}>
                               <Clock size={13} className="shrink-0" />
-                              <span className="truncate">Found {fmtDay(cl.foundDate)}</span>
+                              <span className="vq-date truncate">Found {fmtDay(cl.foundDate)}</span>
                               {cl.locker && (
                                 <>
                                   <span className="shrink-0" style={{ color: c.textLight }}>·</span>
@@ -553,7 +539,7 @@ export default function StudentClaims() {
                       {(() => { const Icon = filterIcons[detailsClaim.category] || Package; return <Icon size={40} />; })()}
                     </div>
                     <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                      {fmtDay(detailsClaim.foundDate)}
+                      <time className="vq-date">{fmtDay(detailsClaim.foundDate)}</time>
                       {detailsClaim.itemCreatedAt && ` · ${fmtClock(detailsClaim.itemCreatedAt)}`}
                     </p>
                   </div>
@@ -605,7 +591,7 @@ export default function StudentClaims() {
             <div className="flex flex-wrap items-center justify-end gap-2">
               {detailsClaim.approvedAt && detailsClaim.displayStatus !== "Rejected" && (
                 <p className="text-xs mr-auto" style={{ color: c.textMuted }}>
-                  Approved by admin on {fmtTimestamp(detailsClaim.approvedAt)}
+                  Approved by admin on <time className="vq-date">{fmtTimestamp(detailsClaim.approvedAt)}</time>
                 </p>
               )}
               <VButton variant="secondary" onClick={() => setDetailsClaim(null)}>Close</VButton>
@@ -672,7 +658,7 @@ export default function StudentClaims() {
                 <div className="grid grid-cols-3 gap-2">
                   {resubmitPhotos.map((photo, index) => (
                     <div key={`${index}-${photo.preview.slice(-12)}`} className="relative rounded-lg overflow-hidden border" style={{ borderColor: c.border }}>
-                      <img src={photo.preview} alt={`Evidence ${index + 1}`} className={`w-full object-cover ${resubmitPhotos.length === 1 ? "h-40" : "h-24"}`} />
+                      <img src={photo.preview} alt={`Evidence ${index + 1}`} className={`w-full object-contain ${resubmitPhotos.length === 1 ? "h-40" : "h-24"}`} />
                       <button type="button" aria-label={`Remove evidence photo ${index + 1}`}
                         onClick={() => setResubmitPhotos((prev) => prev.filter((_, i) => i !== index))}
                         className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center cursor-pointer">
@@ -732,7 +718,7 @@ export default function StudentClaims() {
               <Lock size={14} style={{ color: c.primary }} />
               {qrModal.locker ? `Locker ${qrModal.locker}` : "Locker pending assignment"}
             </p>
-            <p className="text-xs mt-1" style={{ color: c.textMuted }}>Expires {fmtTimestamp(qrModal.expiresAt)}</p>
+            <p className="vq-date mt-1" style={{ color: c.textMuted }}>Expires {fmtTimestamp(qrModal.expiresAt)}</p>
             <p className="text-xs mt-3 p-3 rounded-lg leading-relaxed" style={{ backgroundColor: c.primarySoft, color: c.primary }}>
               At the locker kiosk, scan your student card barcode (or show the barcode from your Profile) first, then scan this QR code to unlock the locker and collect your item.
             </p>

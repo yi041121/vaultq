@@ -4,7 +4,8 @@ import { authenticateRequest } from "@/lib/auth";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { validateReportDetails } from "@/lib/report-validation";
-import { uniquePhotos } from "@/lib/photo-gallery";
+import { ImageValidationError, normalizeImageSources } from "@/lib/image-validation";
+import { ClaimReviewError, isReviewWriteConflict, reviewUnclaimedReport } from "@/lib/claim-review-service";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -66,19 +67,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
       let imageUpdate: { imageUrl: string | null; imageUrls: string[] } | null = null;
       if (body.imageUrls !== undefined) {
-        if (!Array.isArray(body.imageUrls) || body.imageUrls.length > 3) {
-          return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
-        }
-        for (const value of body.imageUrls) {
-          if (typeof value !== "string" || !value.startsWith("data:image/")) {
-            return NextResponse.json({ success: false, error: "Photos must be images" }, { status: 400 });
-          }
-          const base64 = value.slice(value.indexOf(",") + 1);
-          if (Math.ceil(base64.length * 0.75) > 5 * 1024 * 1024) {
-            return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
-          }
-        }
-        const nextImages = uniquePhotos(body.imageUrls);
+        const nextImages = await normalizeImageSources(body.imageUrls);
         imageUpdate = { imageUrls: nextImages, imageUrl: nextImages[0] || null };
       }
 
@@ -99,10 +88,12 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         );
       }
 
-      const updated = await prisma.report.update({
-        where: { id },
-        data: { ...parsed.value, ...(imageUpdate ?? {}) },
-        include: REPORT_INCLUDE,
+      const updated = await prisma.$transaction(async tx => {
+        const changed = await tx.report.updateMany({
+          where: { id, userId: user.id, status: "PENDING", itemId: report.itemId }, data: { ...parsed.value, ...(imageUpdate ?? {}) },
+        });
+        if (changed.count !== 1) throw new ClaimReviewError("Report was linked or reviewed. Please refresh before editing.", 409);
+        return tx.report.findUniqueOrThrow({ where: { id }, include: REPORT_INCLUDE });
       });
 
       return NextResponse.json({ success: true, data: updated });
@@ -127,24 +118,8 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
           { status: 409 },
         );
       }
-      if (!Array.isArray(body.imageUrls) || body.imageUrls.length > 3) {
-        return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
-      }
-      for (const value of body.imageUrls) {
-        if (typeof value !== "string" || !value.startsWith("data:image/")) {
-          return NextResponse.json({ success: false, error: "Photos must be images" }, { status: 400 });
-        }
-        const base64 = value.slice(value.indexOf(",") + 1);
-        if (Math.ceil(base64.length * 0.75) > 5 * 1024 * 1024) {
-          return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
-        }
-      }
-      const nextImages = uniquePhotos(body.imageUrls);
-      const updated = await prisma.report.update({
-        where: { id },
-        data: { imageUrls: nextImages, imageUrl: nextImages[0] || null },
-        include: REPORT_INCLUDE,
-      });
+      const nextImages = await normalizeImageSources(body.imageUrls);
+      const updated = await reviewUnclaimedReport(id, report, { imageUrls: nextImages, imageUrl: nextImages[0] || null });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -169,17 +144,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
       // A lightweight notice link only: the student is told an item matches,
       // but the claim still goes through the normal review/approval flow.
-      const updated = await prisma.report.update({
-        where: { id },
-        data: {
+      const updated = await reviewUnclaimedReport(id, report, {
           status: "MATCHED",
           itemId: item.id,
           reviewedById: user.id,
           reviewedAt: new Date(),
           adminNote: null,
-        },
-        include: REPORT_INCLUDE,
-      });
+      }, item.id);
 
       await notifyUser(
         report.userId,
@@ -196,16 +167,12 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         return NextResponse.json({ success: false, error: "Verified reports cannot be rejected" }, { status: 409 });
       }
       const adminNote = typeof body.adminNote === "string" ? body.adminNote.trim().slice(0, 500) : null;
-      const updated = await prisma.report.update({
-        where: { id },
-        data: {
+      const updated = await reviewUnclaimedReport(id, report, {
           status: "REJECTED",
           itemId: null,
           reviewedById: user.id,
           reviewedAt: new Date(),
           adminNote: adminNote || null,
-        },
-        include: REPORT_INCLUDE,
       });
 
       await notifyUser(
@@ -225,11 +192,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       if (!["PENDING", "MATCHED"].includes(report.status)) {
         return NextResponse.json({ success: false, error: `Report is already ${report.status.toLowerCase()}` }, { status: 409 });
       }
-      const updated = await prisma.report.update({
-        where: { id },
-        data: { status: "CLOSED", reviewedById: user.id, reviewedAt: new Date() },
-        include: REPORT_INCLUDE,
-      });
+      const updated = await reviewUnclaimedReport(id, report, { status: "CLOSED", reviewedById: user.id, reviewedAt: new Date() });
 
       await notifyUser(
         report.userId,
@@ -245,19 +208,18 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (!["REJECTED", "CLOSED"].includes(report.status)) {
       return NextResponse.json({ success: false, error: "Only rejected or closed reports can be reopened" }, { status: 409 });
     }
-    const updated = await prisma.report.update({
-      where: { id },
-      data: {
+    const updated = await reviewUnclaimedReport(id, report, {
         status: "PENDING",
         itemId: null,
         reviewedById: null,
         reviewedAt: null,
         adminNote: null,
-      },
-      include: REPORT_INCLUDE,
     });
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    if (e instanceof ClaimReviewError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    if (isReviewWriteConflict(e)) return NextResponse.json({ success: false, error: "Report changed during another review. Please refresh." }, { status: 409 });
     console.error("Report review failed", e);
     return NextResponse.json({ success: false, error: "Failed to review report" }, { status: 500 });
   }
@@ -285,7 +247,8 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ success: false, error: `Report is already ${report.status.toLowerCase()}` }, { status: 409 });
     }
 
-    await prisma.report.delete({ where: { id } });
+    const removed = await prisma.report.deleteMany({ where: { id, userId: user.id, status: "PENDING" } });
+    if (removed.count !== 1) return NextResponse.json({ success: false, error: "Report was linked or reviewed. Please refresh." }, { status: 409 });
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
     console.error("Report withdrawal failed", e);

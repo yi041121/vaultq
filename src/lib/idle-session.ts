@@ -1,6 +1,7 @@
 "use client";
 
 import { clearStudentCache } from "@/lib/student-cache";
+import { endServerSession } from "@/lib/browser-session";
 
 export const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 export const LAST_ACTIVITY_KEY = "vq_last_activity";
@@ -38,10 +39,12 @@ export function isTokenExpired(token: string) {
   }
 }
 
-export function clearClientSession() {
+export function clearClientSession(clearServer = true) {
   if (typeof window === "undefined") return;
   clearStudentCache();
   try {
+    const token = localStorage.getItem("token");
+    if (clearServer && token) void endServerSession(token);
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     localStorage.removeItem(LAST_ACTIVITY_KEY);

@@ -77,7 +77,7 @@ export function ItemDetailsModal({
     <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4`}>
       <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={onClose} />
       <VCard role="dialog" aria-modal="true" aria-label={title} className={`relative w-full ${maxWidth} max-h-[90vh] overflow-auto`}>
-        <div className={`w-full ${hasPhotos ? "h-56 lg:h-64" : "h-32 lg:h-36"} rounded-t-2xl flex items-center justify-center relative overflow-hidden`}
+        <div className={`w-full ${hasPhotos ? "h-64 lg:h-80" : "h-32 lg:h-36"} rounded-t-2xl flex items-center justify-center relative overflow-hidden`}
           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
           {hasPhotos ? (
             <>
@@ -85,7 +85,7 @@ export function ItemDetailsModal({
                 aria-label={`View ${title} photo`}
                 className="absolute inset-0 group cursor-pointer"
                 onClick={openPhoto}>
-                <img src={photos[safeIndex]} alt={title} className="w-full h-full object-cover bg-[#f8fafc]" />
+                <img src={photos[safeIndex]} alt={title} className="w-full h-full object-contain" />
                 <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-center justify-center">
                   <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                     <Eye size={13} /> View photo
@@ -138,7 +138,7 @@ export function ItemDetailsModal({
               <CatIcon size={14} style={{ color: c.primary }} /> {category}
             </span>
             <span className="flex items-center gap-1"><MapPin size={14} /> {location || "—"}</span>
-            <span className="flex items-center gap-1"><Clock size={14} /> {date || "—"}</span>
+            <span className="vq-date flex items-center gap-1"><Clock size={14} /> {date || "—"}</span>
             {extra}
           </div>
 

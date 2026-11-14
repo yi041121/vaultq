@@ -318,7 +318,7 @@ export default function StudentNotifications() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-sm lg:text-base font-semibold line-clamp-1" style={{ color: c.text }}>{n.title}</p>
-                          <span className="text-[11px] whitespace-nowrap shrink-0" style={{ color: c.textLight }}>{relativeTime(n.createdAt)}</span>
+                          <span className="vq-date whitespace-nowrap shrink-0" style={{ color: c.textLight }}>{relativeTime(n.createdAt)}</span>
                         </div>
                         <p className="text-xs lg:text-sm mt-1 leading-relaxed" style={{ color: c.textMuted }}>{n.message}</p>
                         <div className="flex flex-wrap items-center gap-2 mt-3">

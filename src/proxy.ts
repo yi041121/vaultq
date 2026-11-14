@@ -1,17 +1,32 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { verifyToken } from "@/lib/session-token";
+import { clearSessionCookies, SESSION_COOKIE } from "@/lib/session-cookie";
 
-// Route-level role guard: students can only load /dashboard/student/*,
-// admins can only load /dashboard/admin/*. Enforced server-side before render.
+// Optimistic route guard only. Proxy verifies the signed token so it can
+// redirect early, but it never queries the database. Server layouts, the DAL
+// and every API handler still perform the authoritative persisted-session,
+// account-activity and role checks. This keeps prefetches cheap and follows
+// Next.js guidance that Proxy must not be the only authorization layer.
 export function proxy(request: NextRequest) {
-  const role = request.cookies.get("vq_role")?.value;
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  let role: "ADMIN" | "STUDENT" | null = null;
+  if (token) {
+    try {
+      role = verifyToken(token).role;
+    } catch {
+      role = null;
+    }
+  }
   const { pathname } = request.nextUrl;
 
   if (!role) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "?skip=1";
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    clearSessionCookies(response);
+    return response;
   }
 
   if (pathname.startsWith("/dashboard/admin") && role !== "ADMIN") {

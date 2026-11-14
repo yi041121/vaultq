@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as formatDate } from "@/lib/date-format";
 
 import { useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -35,12 +36,6 @@ const adminNav = [
   { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
 ];
 
-function formatDate(value: string) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -206,7 +201,7 @@ export default function AdminDashboard() {
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
                         <p className="text-xs" style={{ color: c.textMuted }}>{item.location || "—"}</p>
-                        <p className="text-xs mt-0.5" style={{ color: c.textMuted }}>{formatDate(item.date)} · {item.category}</p>
+                        <p className="text-xs mt-0.5" style={{ color: c.textMuted }}><time className="vq-date">{formatDate(item.date)}</time> · {item.category}</p>
                         <p className="text-sm mt-3 leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>{item.description || "No description provided."}</p>
                       </VCard>
                     ))}
@@ -235,7 +230,7 @@ export default function AdminDashboard() {
                       className="w-full flex items-center gap-3 p-3 rounded-xl text-left cursor-pointer hover:bg-[#dbe4ee]" style={{ backgroundColor: c.fill }}>
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold truncate" style={{ color: c.text }}>{claim.item}</span>
-                        <span className="block text-xs mt-1" style={{ color: c.textMuted }}>{claim.student} · {claim.time} · {claim.reference}</span>
+                        <span className="block text-xs mt-1" style={{ color: c.textMuted }}>{claim.student} · <span className="vq-date">{claim.time}</span> · {claim.reference}</span>
                       </span>
                       <ChevronRight size={14} className="shrink-0" style={{ color: c.textMuted }} />
                     </button>
@@ -259,7 +254,7 @@ export default function AdminDashboard() {
                       <PackageSearch size={18} className="shrink-0" style={{ color: c.primary }} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold" style={{ color: c.text }}>{report.itemName}</span>
-                        <span className="block text-xs mt-1" style={{ color: c.textMuted }}>{report.user?.name || "Student"} · {relativeTime(report.createdAt)}</span>
+                        <span className="block text-xs mt-1" style={{ color: c.textMuted }}>{report.user?.name || "Student"} · <span className="vq-date">{relativeTime(report.createdAt)}</span></span>
                       </span>
                       <ChevronRight size={14} className="shrink-0" style={{ color: c.textMuted }} />
                     </button>

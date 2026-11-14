@@ -1,4 +1,6 @@
 "use client";
+import { formatDisplayDate as fmtDateValue } from "@/lib/date-format";
+import { activeLinkedReportIds } from "@/lib/claim-report-link";
 
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
@@ -85,12 +87,6 @@ type LostReport = {
   reviewedAt?: string | null;
 };
 
-function fmtDateValue(value?: string) {
-  if (!value) return "—";
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 function fmtClockValue(value?: string) {
   if (!value) return "";
@@ -108,10 +104,10 @@ function VerificationCardFooter({ submittedAt, reviewLabel, reviewedAt, children
   const timestamp = reviewLabel ? reviewedAt : submittedAt;
   const dateTime = timestamp ? [fmtDateValue(timestamp), fmtClockValue(timestamp)].filter(Boolean).join(" · ") : "";
   return (
-    <div className="mt-auto pt-3" data-verification-footer>
-      <div className="h-[84px] px-4 py-3 border-t flex flex-wrap content-center items-center gap-2" style={{ borderColor: c.borderLight }}>
+    <div className="mt-auto" data-verification-footer>
+      <div className="min-h-[84px] px-4 py-3 border-t flex flex-wrap content-center items-center gap-2" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
         <div className="flex-1 min-w-[130px] text-[10px] leading-relaxed" style={{ color: c.textMuted }}>
-          <p className="[overflow-wrap:anywhere]">{[reviewLabel, dateTime].filter(Boolean).join(" · ") || "Date unavailable"}</p>
+          <p className="vq-date [overflow-wrap:anywhere]">{[reviewLabel, dateTime].filter(Boolean).join(" · ") || "Date unavailable"}</p>
         </div>
         {children && <div className="ml-auto flex shrink-0 items-center gap-1.5">{children}</div>}
       </div>
@@ -229,7 +225,7 @@ export default function AdminClaims() {
   const [approving, setApproving] = useState(false);
   const [loading, setLoading] = useState(claimsCache === null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const pageSize = 6;
+  const pageSize = 8;
 
   function authHeaders(): Record<string, string> {
     const t = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -379,6 +375,7 @@ export default function AdminClaims() {
   if (!user || !mounted) return null;
 
   // Claims and lost reports share one verification queue.
+  const claimedReportIds = activeLinkedReportIds(claims);
   const rows: VerificationRow[] = [
     ...claims.map((cl) => ({
       kind: "CLAIM" as const,
@@ -399,7 +396,7 @@ export default function AdminClaims() {
       claim: cl,
     })),
     ...lostReports
-      .filter((report) => report.status !== "CLOSED")
+      .filter((report) => report.status !== "CLOSED" && (report.status !== "MATCHED" || !claimedReportIds.has(report.id)))
       .map((report) => ({
         kind: "LOST" as const,
         id: report.id,
@@ -771,7 +768,7 @@ export default function AdminClaims() {
                   <Loader2 size={12} className="animate-spin" /> Loading lost reports…
                 </p>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 content-start min-w-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 content-start min-w-0">
                 {paginatedRows.map((row) => {
                   if (row.kind === "CLAIM" && row.claim) {
                     const cl = row.claim;
@@ -791,7 +788,7 @@ export default function AdminClaims() {
                     const itemPhotoIndex = Math.min(photoIndices[itemKey] ?? 0, Math.max(0, itemPhotos.length - 1));
                     const evidenceIndex = Math.min(photoIndices[evidenceKey] ?? 0, Math.max(0, evidencePhotos.length - 1));
                     return (
-                      <VCard key={`claim-${cl.id}`} className="p-0 min-w-0 flex flex-col h-full overflow-hidden">
+                      <VCard key={`claim-${cl.id}`} className="p-0 w-full min-w-0 flex flex-col h-full overflow-hidden transition-shadow duration-200 hover:shadow-lg">
                         <div className={`${verificationHeaderHeight} shrink-0 px-4 py-3 flex items-start gap-2.5`} data-verification-header>
                           <div className="w-9 h-9 rounded-xl border flex items-center justify-center shrink-0"
                             style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
@@ -799,8 +796,8 @@ export default function AdminClaims() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <h3 className="flex-1 text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{cl.itemName}</h3>
-                              {(cl.source === "MATCH" || cl.matchedReportDescription) ? (
+                              <h3 className="flex-1 text-base font-semibold leading-snug truncate min-w-0" title={cl.itemName} style={{ color: c.text }}>{cl.itemName}</h3>
+                              {cl.source === "MATCH" ? (
                                 <VBadge className="shrink-0" color="#b45309">Lost</VBadge>
                               ) : (
                                 <VBadge className="shrink-0" color="#15803d">Claim</VBadge>
@@ -810,7 +807,6 @@ export default function AdminClaims() {
                               <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
                                 {cl.studentEmail || (cl.studentId !== "—" ? cl.studentId : cl.student)}
                               </p>
-                              <VBadge color={statusColor(cl.status)} style={{ flexShrink: 0 }}>{reportStatusLabel(cl.status)}</VBadge>
                             </div>
                             {cl.status === "PENDING" && (pendingClaimCount.get(cl.itemId) || 0) > 1 && (
                               <button type="button"
@@ -829,22 +825,23 @@ export default function AdminClaims() {
                           </div>
                         </div>
 
-                        <div className="px-4">
+                        <div className="px-4 pb-4">
                           <DescriptionBox title="Claim explanation" className="h-[82px] overflow-hidden">{cl.reason || "No explanation provided."}</DescriptionBox>
                         </div>
 
-                        <div className="h-[184px] shrink-0 px-4 mt-3" data-verification-photos>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Found item</p>
-                              <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                        <div className="order-first relative shrink-0 mx-2 mt-2 rounded-xl overflow-hidden border" style={{ borderColor: c.borderLight, backgroundColor: c.fill }} data-verification-photos>
+                          <VBadge color={statusColor(cl.status)} className="absolute left-2 top-10 z-10 pointer-events-none shadow-sm" style={{ backgroundColor: c.card }}>{reportStatusLabel(cl.status)}</VBadge>
+                          <div className="grid grid-cols-2 gap-2 aspect-[4/3]">
+                            <div className="min-w-0 min-h-0 flex flex-col">
+                              <p className="text-[10px] font-semibold px-2 py-2" style={{ color: c.textMuted }}>Found item</p>
+                              <div className="relative flex-1 min-h-0 overflow-hidden">
                                 {itemPhotos.length > 0 ? (
-                                  <div className="relative">
+                                  <div className="absolute inset-0">
                                     <button type="button" aria-label="View found item details"
-                                      className="vq-admin-photo relative block group cursor-pointer"
+                                      className="absolute inset-0 w-full h-full block group cursor-pointer"
                                       style={{ backgroundColor: c.fill }}
                                       onClick={() => { setDetailPhotoIndex(itemPhotoIndex); setClaimItemDetail(cl); }}>
-                                      <img key={itemPhotos[itemPhotoIndex]} src={itemPhotos[itemPhotoIndex]} alt={`Found item photo ${itemPhotoIndex + 1}`} loading="lazy" decoding="async" className="block w-full h-full object-cover" />
+                                      <img key={itemPhotos[itemPhotoIndex]} src={itemPhotos[itemPhotoIndex]} alt={`Found item photo ${itemPhotoIndex + 1}`} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
                                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
                                         <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                           <Eye size={12} /> Item details
@@ -872,7 +869,7 @@ export default function AdminClaims() {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="vq-admin-photo flex flex-col items-center justify-center gap-1"
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                                     style={{ backgroundColor: c.fill, color: c.textLight }}>
                                     <Package size={22} />
                                     <span className="text-[10px]">No item photo</span>
@@ -880,16 +877,16 @@ export default function AdminClaims() {
                                 )}
                               </div>
                             </div>
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Student evidence</p>
-                              <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                            <div className="min-w-0 min-h-0 flex flex-col">
+                              <p className="text-[10px] font-semibold px-2 py-2" style={{ color: c.textMuted }}>Student evidence</p>
+                              <div className="relative flex-1 min-h-0 overflow-hidden">
                                 {evidencePhotos.length > 0 ? (
-                                  <div className="relative">
+                                  <div className="absolute inset-0">
                                     <button type="button" aria-label="View student evidence photo"
-                                      className="vq-admin-photo relative block group cursor-pointer"
+                                      className="absolute inset-0 w-full h-full block group cursor-pointer"
                                       style={{ backgroundColor: c.fill }}
                                       onClick={() => setPhotoViewer({ photos: evidencePhotos, index: evidenceIndex, title: `${cl.itemName} evidence` })}>
-                                      <img key={evidencePhotos[evidenceIndex]} src={evidencePhotos[evidenceIndex]} alt={`Student evidence photo ${evidenceIndex + 1}`} loading="lazy" decoding="async" className="block w-full h-full object-cover" />
+                                      <img key={evidencePhotos[evidenceIndex]} src={evidencePhotos[evidenceIndex]} alt={`Student evidence photo ${evidenceIndex + 1}`} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
                                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150" />
                                     </button>
                                     {evidencePhotos.length > 1 && (
@@ -913,7 +910,7 @@ export default function AdminClaims() {
                                     )}
                                   </div>
                                 ) : (
-                                  <div className="vq-admin-photo flex flex-col items-center justify-center gap-1"
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                                     style={{ backgroundColor: c.fill, color: c.textLight }}>
                                     <Camera size={22} />
                                     <span className="text-[10px]">No evidence photo</span>
@@ -945,7 +942,7 @@ export default function AdminClaims() {
                   const report = row.report!;
                   const Icon = categoryIcon(report.category);
                   return (
-                    <VCard key={`lost-${report.id}`} className="p-0 min-w-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
+                    <VCard key={`lost-${report.id}`} className="p-0 w-full min-w-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
                       <div className={`${verificationHeaderHeight} shrink-0 px-4 py-3 flex items-start gap-2.5`} data-verification-header>
                         <div className="w-9 h-9 rounded-xl border flex items-center justify-center shrink-0"
                           style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
@@ -953,31 +950,30 @@ export default function AdminClaims() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <h3 className="flex-1 text-sm font-semibold leading-snug truncate min-w-0" style={{ color: c.text }}>{report.itemName}</h3>
+                            <h3 className="flex-1 text-base font-semibold leading-snug truncate min-w-0" title={report.itemName} style={{ color: c.text }}>{report.itemName}</h3>
                             <VBadge className="shrink-0" color="#b45309">Lost</VBadge>
                           </div>
                           <div className="flex items-center gap-2 mt-1 min-w-0">
                             <p className="text-[11px] truncate flex-1" style={{ color: c.textMuted }}>
                               {report.studentEmail || (report.studentId !== "—" ? report.studentId : report.student)}
                             </p>
-                            <VBadge color={statusColor(report.status)} style={{ flexShrink: 0 }}>{reportStatusLabel(report.status)}</VBadge>
                           </div>
                         </div>
                       </div>
 
-                      <div className="px-4">
+                      <div className="px-4 pb-4">
                         <DescriptionBox title="Report description" className="h-[82px] overflow-hidden">{report.description || "No description provided."}</DescriptionBox>
                       </div>
 
-                        <div className="h-[184px] shrink-0 px-4 mt-3" data-verification-photos onClick={(e) => e.stopPropagation()}>
-                          <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Report photos</p>
-                          <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                        <div className="order-first relative shrink-0 mx-2 mt-2" data-verification-photos onClick={(e) => e.stopPropagation()}>
+                          <VBadge color={statusColor(report.status)} className="absolute left-3 top-3 z-10 pointer-events-none shadow-sm" style={{ backgroundColor: c.card }}>{reportStatusLabel(report.status)}</VBadge>
+                          <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.borderLight }}>
                           <button type="button" aria-label={`View ${report.itemName} report details`}
-                            className="vq-admin-photo relative block group cursor-pointer"
+                            className="w-full aspect-[4/3] relative block group cursor-pointer"
                             style={{ backgroundColor: c.fill }}
                             onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
                             {report.images.length > 0 ? (
-                              <img src={report.images[0]} alt="Report photo" loading="lazy" decoding="async" className="block w-full h-full object-cover" />
+                              <img src={report.images[0]} alt="Report photo" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
                             ) : (
                               <span className="flex h-full flex-col items-center justify-center gap-1" style={{ color: c.textLight }}><Camera size={22} /><span className="text-[10px]">No report photo</span></span>
                             )}
@@ -1048,7 +1044,7 @@ export default function AdminClaims() {
           statusColor={statusColor(lostDetail.status)}
           category={lostDetail.category}
           location={lostDetail.location}
-          date={lostDetail.date ? new Date(`${lostDetail.date}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+          date={fmtDateValue(lostDetail.date)}
           description={lostDetail.description}
           photos={lostDetailPhotos}
           photoIndex={detailPhotoIndex}
@@ -1205,7 +1201,7 @@ export default function AdminClaims() {
                         style={{ borderColor: c.borderLight, backgroundColor: c.card }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
+                          <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-contain" />
                         ) : (
                           <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
                             <Package size={16} style={{ color: c.primary }} />
@@ -1252,7 +1248,7 @@ export default function AdminClaims() {
                     <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
                       onClick={() => void openMatchPreview(item)}>
                       {item.imageUrl ? (
-                        <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
+                        <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-contain" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
                           <Package size={16} style={{ color: c.primary }} />
@@ -1354,7 +1350,7 @@ export default function AdminClaims() {
                       <span className="text-xs">No item photo uploaded</span>
                     </div>
                     <p className="text-[10px] text-center truncate px-1 py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                      {fmtDateValue(compareClaim.itemFoundDate)}
+                      <time className="vq-date">{fmtDateValue(compareClaim.itemFoundDate)}</time>
                       {compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}
                     </p>
                   </div>
@@ -1376,7 +1372,7 @@ export default function AdminClaims() {
                       <span className="text-xs">No photo evidence provided</span>
                     </div>
                     <p className="text-[10px] text-center truncate px-1 py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                      {fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}
+                      <time className="vq-date">{fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}</time>
                       {(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}
                     </p>
                   </div>

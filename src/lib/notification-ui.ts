@@ -1,4 +1,5 @@
 import { BellRing, CheckCircle2, FileText, Package } from "lucide-react";
+import { formatDisplayDate } from "./date-format";
 
 export type NotificationType = "CLAIM" | "REPORT" | "LOCKER" | "SYSTEM";
 export type NotificationCategory = "Claims" | "Reports" | "Locker" | "System";
@@ -24,5 +25,5 @@ export function relativeTime(value: string) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return formatDisplayDate(value);
 }

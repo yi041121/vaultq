@@ -5,6 +5,8 @@ import { isItemCategory } from "@/lib/categories";
 import { createItemRecord } from "@/lib/item-service";
 import { startsWithNumber } from "@/lib/text-validation";
 import { signedImageUrl } from "@/lib/image-url";
+import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 
@@ -92,6 +94,7 @@ export async function POST(request: NextRequest) {
       if (locker.status !== "AVAILABLE") return NextResponse.json({ success: false, error: "Locker not available" }, { status: 400 });
     }
 
+    const safeImageUrl = imageUrl == null || imageUrl === "" ? null : await normalizeImageSource(imageUrl);
     const item = await prisma.$transaction((tx) =>
       createItemRecord(tx, user.id, {
         itemName,
@@ -99,14 +102,16 @@ export async function POST(request: NextRequest) {
         description,
         foundLocation,
         foundDate,
-        imageUrl,
+        imageUrl: safeImageUrl,
         lockerId,
         status: (status as any) || "FOUND",
       }),
     );
 
+    await notifyInventoryMatches({ itemId: item.id });
     return NextResponse.json({ success: true, data: item }, { status: 201 });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Item creation failed", e);
     return NextResponse.json({ success: false, error: "Failed to create item" }, { status: 500 });
   }

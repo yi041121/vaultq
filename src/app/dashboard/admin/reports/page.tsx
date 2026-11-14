@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as fmtDay } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -70,15 +71,6 @@ const statusLabel: Record<string, string> = {
   CLOSED: "Closed",
 };
 
-function fmtDay(value: string | null) {
-  if (!value) return "—";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  }
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 let reportsCache: UserReport[] | null = null;
 registerAdminCacheReset(() => { reportsCache = null; });
@@ -645,13 +637,13 @@ export default function AdminReports() {
                 const activeIndex = Math.min(reportPhotoIndices[report.id] ?? 0, Math.max(0, report.images.length - 1));
                 const activePhoto = report.images[activeIndex] || report.imageUrl;
                 return (
-                <VCard key={report.id} className="p-5 min-w-0 flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-                  <div className="vq-admin-photo rounded-xl mb-4 relative flex items-center justify-center overflow-hidden"
+                <VCard key={report.id} className="w-full min-w-0 overflow-hidden flex flex-col transition-all duration-200 hover:shadow-lg" style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                  <div className="relative m-2 mb-0 aspect-[4/3] shrink-0 rounded-xl flex items-center justify-center overflow-hidden"
                     style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                     <button type="button"
                       aria-label={report.images.length ? `View ${report.itemName} photos` : `${report.itemName} has no photos`}
                       disabled={report.images.length === 0}
-                      className={`absolute inset-0 group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
+                      className={`absolute inset-0 flex items-center justify-center group ${report.images.length ? "cursor-pointer" : "cursor-default"}`}
                       onClick={() => {
                         if (report.images.length) {
                           setViewer({ photos: report.images, index: activeIndex, title: report.itemName });
@@ -675,6 +667,10 @@ export default function AdminReports() {
                         </span>
                       )}
                     </button>
+                    <VBadge color={report.color} className="absolute left-3 top-3 z-10 pointer-events-none shadow-sm"
+                      style={{ backgroundColor: c.card, border: `1px solid color-mix(in srgb, ${report.color} 25%, transparent)` }}>
+                      {statusLabel[report.status]}
+                    </VBadge>
                     {report.images.length > 1 && (
                       <>
                         <button type="button" aria-label="Previous photo"
@@ -699,25 +695,18 @@ export default function AdminReports() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 mb-1 min-w-0">
-                    <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
-                    <VBadge color={report.color} className="ml-auto"
-                      style={{ border: `1px solid color-mix(in srgb, ${report.color} 25%, transparent)` }}>
-                      {statusLabel[report.status]}
-                    </VBadge>
+                  <div className="p-4 flex flex-1 flex-col min-w-0">
+                  <div className="mb-1.5 min-w-0">
+                    <h3 className="text-base font-semibold truncate" title={report.itemName} style={{ color: c.text }}>{report.itemName}</h3>
                   </div>
-                  <p className="text-[11px] mb-2 flex items-center gap-1" style={{ color: c.textMuted }}>
-                    <Users size={12} /> {report.studentName}
-                  </p>
 
-                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs mb-2" style={{ color: c.textMuted }}>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs mb-3" style={{ color: c.textMuted }}>
                     <span className="flex items-center gap-1">
                       <CategoryIcon size={12} style={{ color: c.primary }} />
                       {report.category}
                     </span>
-                    <span className="flex items-center gap-1"><MapPin size={12} /> {report.location || "—"}</span>
+                    <span className="flex items-center gap-1 min-w-0"><MapPin size={12} className="shrink-0" /> <span className="truncate" title={report.location || undefined}>{report.location || "—"}</span></span>
                     <span className="flex items-center gap-3">
-                      <span className="flex items-center gap-1 whitespace-nowrap"><Clock size={12} /> {fmtDay(report.date)}</span>
                       {(report.status === "VERIFIED" || report.status === "MATCHED") && (
                         report.item?.locker ? (
                           <span className="flex items-center gap-1 whitespace-nowrap">
@@ -740,12 +729,20 @@ export default function AdminReports() {
                     </span>
                   </div>
 
-                  <DescriptionBox title="Description" className="mb-3" contentClassName="line-clamp-3">
+                  <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: c.border, backgroundColor: c.fill }}>
+                  <p className="text-xs leading-relaxed line-clamp-2" style={{ color: c.textMuted }}>
                     {report.description || "No description provided."}
-                  </DescriptionBox>
+                  </p>
+                  </div>
+                  </div>
 
+                  <div className="mt-auto border-t px-4 py-3" style={{ backgroundColor: c.fill, borderColor: c.borderLight }}>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]" style={{ color: c.textMuted }}>
+                      <span className="flex items-center gap-1.5 min-w-0" title={report.studentName}><Users size={12} className="shrink-0" /><span className="truncate">{report.studentName}</span></span>
+                      <span className="vq-date flex items-center justify-end gap-1.5 whitespace-nowrap"><Clock size={12} className="shrink-0" />{fmtDay(report.date)}</span>
+                    </div>
                   {report.status === "PENDING" && (
-                    <div className="mt-auto flex items-center gap-2 pt-4">
+                    <div className="flex items-center gap-2 pt-2">
                       {report.type === "LOST" && (
                         <VButton variant="danger" onClick={() => { setRejectReport(report); setRejectNote(""); }}>
                           <XCircle size={14} /> Reject
@@ -762,6 +759,7 @@ export default function AdminReports() {
                       )}
                     </div>
                   )}
+                  </div>
                 </VCard>
                 );
               })}
@@ -825,7 +823,7 @@ export default function AdminReports() {
                             </span>
                           </div>
                           <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
-                            {item.category || "Others"} · {fmtDay(item.foundDate)}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                            {item.category || "Others"} · <time className="vq-date">{fmtDay(item.foundDate)}</time>{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                           </p>
                         </div>
                         <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
@@ -867,7 +865,7 @@ export default function AdminReports() {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                         <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
-                          {item.category || "Others"} · {item.foundLocation || "—"} · {fmtDay(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                          {item.category || "Others"} · {item.foundLocation || "—"} · <time className="vq-date">{fmtDay(item.foundDate)}</time>{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                         </p>
                       </div>
                       <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
@@ -993,7 +991,7 @@ export default function AdminReports() {
                       onClick={(e) => { setVerifyDateAnchor(e.currentTarget); setVerifyDateOpen((open) => !open); }}>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <Clock size={14} style={{ color: c.primary }} />
-                        <span className="truncate">{verifyForm.date ? fmtDay(verifyForm.date) : "Select date"}</span>
+                        <span className="vq-date truncate">{verifyForm.date ? fmtDay(verifyForm.date) : "Select date"}</span>
                       </span>
                       <ChevronDown size={13} style={{ color: c.textMuted }} />
                     </VFilterButton>

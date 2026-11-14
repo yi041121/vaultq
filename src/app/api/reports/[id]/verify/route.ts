@@ -6,6 +6,8 @@ import { createItemRecord } from "@/lib/item-service";
 import { notifyUser } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { startsWithNumber } from "@/lib/text-validation";
+import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -52,6 +54,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" },
       );
 
+      await notifyInventoryMatches({ itemId: item.id });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -61,7 +64,8 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     const foundLocation = String(input.location || report.location || "").trim();
     const category = input.category ?? report.category;
     const description = input.description ?? report.description;
-    const imageUrl = input.imageUrl ?? report.imageUrl;
+    const source = input.imageUrl ?? report.imageUrl;
+    const imageUrl = source == null || source === "" ? null : await normalizeImageSource(source);
     const rawDate = input.date ?? report.date;
     const lockerId = input.lockerId || null;
 
@@ -107,8 +111,10 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" },
     );
 
+    await notifyInventoryMatches({ itemId: result.item.id });
     return NextResponse.json({ success: true, data: result.report });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Found report verification failed", e);
     return NextResponse.json({ success: false, error: "Failed to verify report" }, { status: 500 });
   }

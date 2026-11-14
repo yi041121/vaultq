@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as fmtDay, formatDisplayDate as fmtReportDate, formatDisplayTimestamp as fmtTimestamp, formatDisplayTimestamp } from "@/lib/date-format";
 
 import { Suspense, useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -134,33 +135,10 @@ const itemStatusLabel: Record<string, string> = {
   EXPIRED: "Expired",
 };
 
-function fmtDay(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "—";
-  return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function fmtTimestamp(value: string) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-/** Formats the report's own date (no time). */
-function fmtReportDate(date: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "—";
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric",
-  });
-}
-
 function fmtReportTime(value: string | null) {
   if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
-  });
+  const formatted = formatDisplayTimestamp(value);
+  return formatted === "—" ? "" : formatted;
 }
 
 function StudentReportContent() {
@@ -752,10 +730,8 @@ function StudentReportContent() {
 
   useEscapeKey(!!itemDetail && !viewer, () => setItemDetail(null));
   useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
-  useEscapeKey(
-    !!type && !reportHelpOpen && !submitted && !photoSourceTarget && !cameraTarget && editingPhoto === null && !categoryOpen && !dateOpen,
-    () => { if (!submitting) closeReportForm(); },
-  );
+  // Escape deliberately does not close the report form: it must be dismissed
+  // with Cancel, the backdrop, or by leaving the page.
   useEscapeKey(!!editTarget && !viewer && !photoSourceTarget && !cameraTarget && editingEditPhoto === null, () => {
     if (savingEdit) return;
     if (editDateOpen) { setEditDateOpen(false); return; }
@@ -860,7 +836,7 @@ function StudentReportContent() {
                       </VButton>
                     </VCard>
                   ) : (
-                  <div className={`grid items-start gap-4 lg:grid-cols-2 ${visibleReports.length >= 3 ? "xl:grid-cols-3" : ""}`}>
+                  <div className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-5">
                   {visibleReports.map((report) => {
                     const Icon = categoryIcons[report.category] || FileText;
                     const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
@@ -880,7 +856,7 @@ function StudentReportContent() {
                             <button
                               type="button"
                               aria-label={linkedWithItem || rejected ? `View your ${report.itemName} photos` : `View ${itemName} details`}
-                              className="group flex flex-1 min-w-[200px] items-center gap-3 text-left cursor-pointer"
+                              className="group flex flex-1 min-w-[160px] items-center gap-3 text-left cursor-pointer"
                               onClick={() => {
                                 if ((linkedWithItem || rejected) && report.images.length) {
                                   setViewer({ photos: report.images, index: 0, title: report.itemName });
@@ -892,7 +868,7 @@ function StudentReportContent() {
                               }}>
                               {itemThumb ? (
                                 <span className="relative rounded-lg overflow-hidden border shrink-0 block" style={{ borderColor: c.border }}>
-                                  <img src={itemThumb} alt={itemName} className="w-12 h-12 object-cover" />
+                                  <img src={itemThumb} alt={itemName} className="w-12 h-12 object-contain" />
                                   <span className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 flex items-center justify-center">
                                     <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white">
                                       <ZoomIn size={14} />
@@ -940,19 +916,19 @@ function StudentReportContent() {
                           </div>
                     );
                     return (
-                      <VCard key={report.id} className="p-6 lg:p-7">
+                      <VCard key={report.id} className="p-5 lg:p-6 flex flex-col">
                         {showsItemFirst && itemBlock}
                         {!showsItemFirst && (
                           <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                           <div className="flex items-start gap-3 min-w-0">
-                            <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 -mt-1"
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 -mt-0.5"
                               style={{ backgroundColor: c.primary }}>
-                              <Icon size={20} style={{ color: "#fff" }} />
+                              <Icon size={18} style={{ color: "#fff" }} />
                             </div>
                             <div className="min-w-0">
                               <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
                               <p className="text-[11px] mt-0.5" style={{ color: c.textLight }}>
-                                {fmtReportDate(report.date)}{" · "}{report.location || "—"}{" · "}{report.category}
+                                <time className="vq-date">{fmtReportDate(report.date)}</time>{" · "}{report.location || "—"}{" · "}{report.category}
                               </p>
                             </div>
                           </div>
@@ -972,28 +948,35 @@ function StudentReportContent() {
                         {!showsItemFirst && (
                           <div className="rounded-xl border p-3 mb-3" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
                             <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: c.textLight }}>Description</p>
-                            <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>{report.description}</p>
+                            <p className="text-sm leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>{report.description}</p>
                           </div>
                         )}
 
-                        {/* Once verified, the logged item block below holds the only photo. */}
+                        {/* Same photo block as admin verification: one bordered
+                            preview with a count badge; the viewer shows the rest. */}
                         {report.images.length > 0 && !showsItemFirst && (
-                          <div className={`grid gap-2 mb-3 ${report.images.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
-                            {report.images.map((src, index) => (
-                              <button key={`${report.id}-photo-${index}`} type="button"
-                                aria-label={`View photo ${index + 1}`}
-                                className="group relative rounded-xl overflow-hidden border cursor-pointer bg-[#f8fafc]"
-                                style={{ borderColor: c.border }}
-                                onClick={() => setViewer({ photos: report.images, index, title: report.itemName })}>
-                                <img src={src} alt={`${report.itemName} photo ${index + 1}`}
-                                  className={`w-full object-cover ${report.images.length === 1 ? "h-40" : "h-28"}`} />
-                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
-                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
-                                    <ZoomIn size={13} /> View photo
+                          <div className="mb-3">
+                            <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Report photos</p>
+                            <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
+                              <button type="button"
+                                aria-label={`View ${report.itemName} report photo`}
+                                className="relative block w-full h-[240px] xl:h-[260px] group cursor-pointer"
+                                style={{ backgroundColor: c.fill }}
+                                onClick={() => setViewer({ photos: report.images, index: 0, title: report.itemName })}>
+                                <img src={report.images[0]} alt={`${report.itemName} report photo`}
+                                  loading="lazy" decoding="async" className="block w-full h-full object-contain" />
+                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
+                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
+                                    <ZoomIn size={12} /> View photo
                                   </span>
                                 </span>
+                                {report.images.length > 1 && (
+                                  <span className="absolute top-2 right-2 rounded-full bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5">
+                                    {report.images.length} photos
+                                  </span>
+                                )}
                               </button>
-                            ))}
+                            </div>
                           </div>
                         )}
 
@@ -1005,7 +988,7 @@ function StudentReportContent() {
 
                         {(showsItemFirst || linkedWithItem) && report.reviewedAt && (
                           <p className="text-[11px] text-right mt-3" style={{ color: c.textLight }}>
-                            {report.status === "MATCHED" ? "Matched" : report.status === "REJECTED" ? "Rejected" : "Verified"} by admin · {fmtReportTime(report.reviewedAt)}
+                            {report.status === "MATCHED" ? "Matched" : report.status === "REJECTED" ? "Rejected" : "Verified"} by admin · <time className="vq-date">{fmtReportTime(report.reviewedAt)}</time>
                           </p>
                         )}
 
@@ -1112,7 +1095,7 @@ function StudentReportContent() {
                               style={{ borderColor: c.borderLight, backgroundColor: c.card }}>
                               {suggestion.imageUrl ? (
                                 <img src={suggestion.imageUrl} alt={suggestion.itemName}
-                                  className="w-full sm:w-14 h-32 sm:h-14 rounded-lg object-cover shrink-0" />
+                                  className="w-full sm:w-14 h-32 sm:h-14 rounded-lg object-contain shrink-0" />
                               ) : (
                                 <div className="w-full sm:w-14 h-20 sm:h-14 rounded-lg flex items-center justify-center shrink-0"
                                   style={{ backgroundColor: c.fill }}>
@@ -1132,7 +1115,7 @@ function StudentReportContent() {
                                   </span>
                                 </div>
                                 <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>
-                                  {suggestion.category || "Others"} · {fmtDay(suggestion.foundDate || "")}
+                                  {suggestion.category || "Others"} · <time className="vq-date">{fmtDay(suggestion.foundDate || "")}</time>
                                   {suggestion.foundLocation ? ` · ${suggestion.foundLocation}` : ""}
                                 </p>
                                 {suggestion.reasons.length > 0 && (
@@ -1293,7 +1276,7 @@ function StudentReportContent() {
                             onClick={(e) => { setDateAnchor(e.currentTarget); toggleDateCalendar(); }}>
                             <span className="flex items-center gap-1.5 min-w-0">
                               <Clock size={14} style={{ color: c.primary }} />
-                              <span className="truncate">{date ? fmtDay(date) : "Select date"}</span>
+                              <span className="vq-date truncate">{date ? fmtDay(date) : "Select date"}</span>
                             </span>
                             <ChevronDown size={13} style={{ color: c.textMuted }} />
                           </VFilterButton>
@@ -1362,7 +1345,7 @@ function StudentReportContent() {
                             <button type="button" onClick={() => setEditingPhoto(index)}
                               className="block w-full cursor-pointer" aria-label={`View or crop photo ${index + 1}`}>
                               <img src={photo.preview} alt={`Report preview ${index + 1}`}
-                                className={`w-full object-cover ${photos.length === 1 ? "h-40" : "h-28"}`} />
+                                className={`w-full object-contain ${photos.length === 1 ? "h-40" : "h-28"}`} />
                               <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                                 <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                                   <Crop size={13} /> View &amp; crop
@@ -1588,7 +1571,7 @@ function StudentReportContent() {
                     onClick={(e) => { setEditDateAnchor(e.currentTarget); setEditDateOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} style={{ color: c.primary }} />
-                      <span className="truncate">{editForm.date ? fmtDay(editForm.date) : "Select date"}</span>
+                      <span className="vq-date truncate">{editForm.date ? fmtDay(editForm.date) : "Select date"}</span>
                     </span>
                     <ChevronDown size={13} style={{ color: c.textMuted }} />
                   </VFilterButton>
@@ -1650,7 +1633,7 @@ function StudentReportContent() {
                           className="block w-full cursor-pointer"
                           onClick={() => setEditingEditPhoto(index)}>
                           <img src={photo.preview} alt={`Report photo ${index + 1}`}
-                            className={`w-full object-cover ${editPhotos.length === 1 ? "h-32" : "h-20"}`} />
+                            className={`w-full object-contain ${editPhotos.length === 1 ? "h-32" : "h-20"}`} />
                           <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                             <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                               <Crop size={12} /> View &amp; crop

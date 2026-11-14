@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 const CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
 const CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
-const ALLOWED_DOMAIN = "student.tarc.edu.my";
 
 // GET /api/auth/google — starts the Google OAuth flow (student accounts only).
 // The `hd` param pre-filters to the campus domain, but the real enforcement
@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const limited = await enforceAuthRateLimit(request, "google");
+  if (limited) return limited;
   const state = crypto.randomUUID();
   // Remember which entrance the user used (signup vs login) so the callback
   // can behave differently for already-registered accounts
@@ -41,12 +43,14 @@ export async function GET(request: NextRequest) {
   // CSRF protection: state must match the callback request
   res.cookies.set("g_state", state, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     sameSite: "lax",
     maxAge: 600,
   });
   res.cookies.set("g_intent", intent, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     sameSite: "lax",
     maxAge: 600,
@@ -54,6 +58,7 @@ export async function GET(request: NextRequest) {
   if (barcode) {
     res.cookies.set("g_barcode", barcode, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
       path: "/",
       sameSite: "lax",
       maxAge: 600,

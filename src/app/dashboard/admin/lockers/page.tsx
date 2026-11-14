@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as fmtItemDate } from "@/lib/date-format";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -68,10 +69,6 @@ function statusColor(s: string) {
   }
 }
 
-function fmtItemDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "—";
-  return new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 let lockersCache: Locker[] | null = null;
 registerAdminCacheReset(() => { lockersCache = null; });
@@ -426,7 +423,7 @@ export default function AdminLockers() {
                       aria-label={`View ${l.item.name} photo`}
                       className="absolute inset-0 cursor-pointer group"
                       onClick={() => setViewer({ photos: [l.item!.imageUrl!], index: 0, title: l.item!.name })}>
-                      <img src={l.item.imageUrl} alt={l.item.name} className="w-full h-full object-cover" />
+                      <img src={l.item.imageUrl} alt={l.item.name} className="w-full h-full object-contain" />
                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                         <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                           <Eye size={13} /> View photo

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { startsWithNumber } from "@/lib/text-validation";
+import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 const READ_ONLY_STATUSES = ["CLAIMED", "RETRIEVED"] as const;
@@ -88,7 +90,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (description !== undefined) data.description = description || null;
     if (foundLocation !== undefined) data.foundLocation = String(foundLocation).trim() || null;
     if (foundDate !== undefined) data.foundDate = foundDate ? new Date(foundDate) : null;
-    if (imageUrl !== undefined) data.imageUrl = imageUrl || null;
+    if (imageUrl !== undefined) data.imageUrl = imageUrl === null || imageUrl === "" ? null : await normalizeImageSource(imageUrl);
     if (status !== undefined) data.status = status;
 
     // Locker reassignment
@@ -116,6 +118,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         }
         return tx.item.findUnique({ where: { id } });
       });
+      if (updated) await notifyInventoryMatches({ itemId: updated.id });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -124,8 +127,10 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       if (!changed.count) throw new ItemWriteConflict("The item was claimed and is now view-only");
       return tx.item.findUnique({ where: { id } });
     });
+    if (item) await notifyInventoryMatches({ itemId: item.id });
     return NextResponse.json({ success: true, data: item });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     if (e instanceof ItemWriteConflict) return NextResponse.json({ success: false, error: e.message }, { status: 409 });
     console.error("Item update failed", e);
     return NextResponse.json({ success: false, error: "Failed to update item" }, { status: 500 });

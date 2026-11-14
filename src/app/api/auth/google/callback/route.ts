@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateToken } from "@/lib/auth";
+import { createAuthSession } from "@/lib/auth";
 import { withDbRetry } from "@/lib/db-retry";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { setSessionCookies } from "@/lib/session-cookie";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 const CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
 const CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
@@ -12,8 +14,9 @@ const ALLOWED_DOMAIN = "student.tarc.edu.my";
 export const maxDuration = 30;
 
 // GET /api/auth/google/callback — exchanges the auth code, enforces the
-// student domain, creates the student account on first sign-in, then hands
-// the app JWT to the client via /auth/callback.
+// student domain, creates the student account on first sign-in, then stores a
+// persistent server session in HttpOnly cookies and redirects to
+// /auth/callback. No credentials or profile fields are placed in the URL.
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const origin = getRequestOrigin(request);
@@ -43,6 +46,8 @@ export async function GET(request: NextRequest) {
   if (!CLIENT_ID || !CLIENT_SECRET || !code || !state || state !== cookieState) {
     return fail("Session expired. Please try again.");
   }
+  const limited = await enforceAuthRateLimit(request, "google");
+  if (limited) return finish(limited);
 
   let stage = "token_exchange";
   const startedAt = Date.now();
@@ -125,17 +130,9 @@ export async function GET(request: NextRequest) {
     if (!user.isActive) return fail("Account disabled. Contact admin.");
 
     stage = "session_creation";
-    const token = generateToken({ userId: user.id, role: user.role });
-
-    const res = NextResponse.redirect(
-      `${origin}/auth/callback?token=${encodeURIComponent(token)}` +
-        `&name=${encodeURIComponent(user.name)}` +
-        `&email=${encodeURIComponent(user.email)}` +
-        `&role=${user.role}` +
-        `&id=${encodeURIComponent(user.id)}` +
-        `&barcode=${encodeURIComponent(user.cardBarcode || "")}`
-    );
-    res.cookies.set("vq_role", user.role, { path: "/", sameSite: "lax", maxAge: 60 * 60 * 24 * 7 });
+    const token = await createAuthSession(user);
+    const res = NextResponse.redirect(`${origin}/auth/callback`);
+    setSessionCookies(res, token, user.role);
     return finish(res);
   } catch (error) {
     // Do not log OAuth codes, tokens, profiles, or database connection strings.

@@ -1,17 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { comparePassword, generateToken } from "@/lib/auth";
+import { comparePassword, createAuthSession } from "@/lib/auth";
 import { withDbRetry } from "@/lib/db-retry";
+import { isSameOriginAuthRequest, setSessionCookies } from "@/lib/session-cookie";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
+
+const DUMMY_PASSWORD_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
 export async function POST(request: NextRequest) {
+  if (!isSameOriginAuthRequest(request)) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
   try {
-    const { email: rawEmail, password } = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ success: false, error: "Invalid sign-in details" }, { status: 400 });
+    const { email: rawEmail, password } = body;
     // Case-insensitive + whitespace tolerant: matching how users actually type emails
-    const email = String(rawEmail || "").trim().toLowerCase();
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
 
-    if (!email || typeof password !== "string" || !password) {
+    if (!email || email.length > 254 || typeof password !== "string" || !password || password.length > 1024) {
       return NextResponse.json({ success: false, error: "Email and password are required" }, { status: 400 });
     }
+    const limited = await enforceAuthRateLimit(request, "login", email);
+    if (limited) return limited;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ success: false, error: "Invalid email address" }, { status: 400 });
     }
@@ -21,12 +30,8 @@ export async function POST(request: NextRequest) {
         where: { email: { equals: email, mode: "insensitive" } },
       })
     );
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
-    }
-
-    const isValid = await comparePassword(password, user.password);
-    if (!isValid) {
+    const isValid = await comparePassword(password, user?.password || DUMMY_PASSWORD_HASH);
+    if (!user || !isValid) {
       return NextResponse.json({ success: false, error: "Invalid email or password" }, { status: 401 });
     }
 
@@ -37,7 +42,7 @@ export async function POST(request: NextRequest) {
     // Role is verified by the system itself, not chosen in the form.
     // Route-level access is enforced separately (src/proxy.ts) and admin APIs
     // reject non-ADMIN tokens server-side.
-    const token = generateToken({ userId: user.id, role: user.role });
+    const token = await createAuthSession(user);
 
     const res = NextResponse.json({
       success: true,
@@ -46,11 +51,7 @@ export async function POST(request: NextRequest) {
         token,
       },
     });
-    res.cookies.set("vq_role", user.role, {
-      path: "/",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-    });
+    setSessionCookies(res, token, user.role);
     return res;
   } catch {
     return NextResponse.json({ success: false, error: "Login failed" }, { status: 500 });

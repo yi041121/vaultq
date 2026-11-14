@@ -11,6 +11,7 @@ import {
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
+import { formatDisplayDate } from "@/lib/date-format";
 import { CLAIM_STATUS_COLOR, mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { NOTIFICATION_META, relativeTime } from "@/lib/notification-ui";
 import { resolveNotificationLink } from "@/lib/notification-link";
@@ -131,7 +132,7 @@ export default function StudentDashboard() {
     { label: "Returned This Week", value: dataLoading ? "—" : String(returnedThisWeek), icon: RefreshCw, color: "#29486A" },
   ];
 
-  const latestItems = items.slice(0, 4);
+  const latestItems = items.filter((item) => !item.reportedByMe).slice(0, 4);
   const latestClaims = claims.slice(0, 4);
   const announcements = notifications.slice(0, 3).map((notification) => {
     const meta = NOTIFICATION_META[notification.type] || NOTIFICATION_META.SYSTEM;
@@ -221,7 +222,7 @@ export default function StudentDashboard() {
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
                         <p className="text-xs lg:text-sm flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {item.location || "—"}</p>
-                        <p className="text-xs lg:text-sm mt-0.5 flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> {item.date || "—"} · {item.category}</p>
+                        <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> <time className="vq-date">{formatDisplayDate(item.date)}</time> · {item.category}</p>
                         <div className="mt-3">
                           <button type="button"
                             className="w-full h-9 lg:h-10 rounded-xl text-xs lg:text-sm font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
@@ -235,8 +236,8 @@ export default function StudentDashboard() {
                 {!dataLoading && latestItems.length === 0 && (
                   <VCard className="sm:col-span-2 p-8 text-center">
                     <Package size={32} className="mx-auto mb-3" style={{ color: c.textLight }} />
-                    <p className="text-sm font-medium" style={{ color: c.textMuted }}>No found items yet</p>
-                    <p className="text-xs mt-1" style={{ color: c.textLight }}>New items will appear here after staff add them.</p>
+                    <p className="text-sm font-medium" style={{ color: c.textMuted }}>No other found items yet</p>
+                    <p className="text-xs mt-1" style={{ color: c.textLight }}>Items you handed in stay in My Reports. Other found items will appear here after staff add them.</p>
                   </VCard>
                 )}
               </div>
@@ -296,7 +297,7 @@ export default function StudentDashboard() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium line-clamp-1" style={{ color: c.text }}>{announcement.title}</p>
                         <p className="text-xs mt-0.5 line-clamp-2" style={{ color: c.textMuted }}>{announcement.desc}</p>
-                        <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>{announcement.time}</p>
+                        <p className="vq-date mt-0.5" style={{ color: c.textMuted }}>{announcement.time}</p>
                       </div>
                     </button>
                   ))}

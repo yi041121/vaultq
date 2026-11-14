@@ -25,7 +25,7 @@ export function EvidenceSlider({ photos, alt, caption, label = "evidence", photo
   return (
     <div className="rounded-xl overflow-hidden border relative" style={{ borderColor: c.border }}>
       <div className="relative">
-        <img src={photos[safe]} alt={alt} loading="lazy" decoding="async" className={`block w-full object-cover bg-[#f8fafc] ${photoClassName}`} />
+        <img src={photos[safe]} alt={alt} loading="lazy" decoding="async" className={`block w-full object-contain bg-[#f8fafc] ${photoClassName}`} />
         {photos.length > 1 && (
           <>
             <button type="button" aria-label={`Previous ${label} photo`}
@@ -50,7 +50,7 @@ export function EvidenceSlider({ photos, alt, caption, label = "evidence", photo
         )}
       </div>
       {caption && (
-        <p className="text-[10px] text-center truncate px-1 py-2" title={caption} style={{ backgroundColor: c.fill, color: c.textMuted }}>{caption}</p>
+        <p className="vq-date text-center truncate px-1 py-2" title={caption} style={{ backgroundColor: c.fill, color: c.textMuted }}>{caption}</p>
       )}
     </div>
   );

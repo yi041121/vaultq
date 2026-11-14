@@ -8,6 +8,7 @@ import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 import LockerIllustration from "@/components/locker-illustration";
 import { clearClientSession, isSessionIdle, isTokenExpired, markSessionActivity } from "@/lib/idle-session";
 import { clearStudentCache } from "@/lib/student-cache";
+import { endServerSession, getServerSession, waitForServerSignOut } from "@/lib/browser-session";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,42 +27,42 @@ export default function LoginPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Already signed in? Send the user straight back to their dashboard
-    // before the login form is ever displayed.
+    let cancelled = false;
+    // Roles and sessions are restored only after server verification, never
+    // by decoding an unsigned browser payload or trusting a profile hint.
     const token = localStorage.getItem("token");
-    const rawUser = localStorage.getItem("user");
-    if (token && rawUser && !isSessionIdle()) {
+    const params = new URLSearchParams(window.location.search);
+    void (async () => {
       try {
-        const user = JSON.parse(rawUser) as { role?: string };
-        const encoded = token.split(".")[1]?.replace(/-/g, "+").replace(/_/g, "/") || "";
-        const padded = encoded.padEnd(encoded.length + ((4 - (encoded.length % 4)) % 4), "=");
-        const payload = JSON.parse(atob(padded));
-        const expired = isTokenExpired(token);
-        if (!expired) {
-          const role = payload?.role === "ADMIN" || (!payload?.role && user?.role === "ADMIN") ? "ADMIN" : "STUDENT";
-          document.cookie = `vq_role=${role}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
-          router.replace(role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
-          return;
+        if (params.get("loggedOut") === "1" || params.get("expired") === "1" || isSessionIdle()) {
+          await endServerSession(token);
+        } else {
+          const session = await getServerSession(token && !isTokenExpired(token) ? token : null);
+          if (cancelled) return;
+          if (session) {
+            clearStudentCache();
+            localStorage.setItem("token", session.token);
+            localStorage.setItem("user", JSON.stringify(session.user));
+            markSessionActivity();
+            router.replace(session.user.role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
+            return;
+          }
         }
       } catch {
-        // Malformed session — fall through and clear it below.
+        if (!cancelled) showError("Could not verify your session. Please sign in again.");
       }
-      clearClientSession();
-    } else if (token || rawUser) {
-      // Present but unused for too long — clear it instead of restoring.
-      clearClientSession();
-    }
-
-    // No active session — clear any stale role cookie before showing login.
-    clearClientSession();
-    window.setTimeout(() => setCheckingSession(false), 0);
+      if (cancelled) return;
+      clearClientSession(false);
+      setCheckingSession(false);
+    })();
 
     if (window.location.search.includes("skip=1")) {
       skipAnim.current = true;
+      // One-time URL-driven animation setup; this effect runs on mount only.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhase("complete");
     }
     // Centered "Logged out" popup (redirected back with ?loggedOut=1)
-    const params = new URLSearchParams(window.location.search);
     if (params.get("loggedOut") === "1") {
       setLoggedOut(true);
       setTimeout(() => setLoggedOut(false), 1500);
@@ -84,6 +85,7 @@ export default function LoginPage() {
       showError("Session expired — please sign in again", 3000);
       window.history.replaceState(null, "", "/login?skip=1");
     }
+    return () => { cancelled = true; };
   }, [router]);
 
   useEffect(() => {
@@ -133,9 +135,10 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
+      await waitForServerSignOut();
       const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-VaultQ-Request": "1" },
         body: JSON.stringify({ email, password: form.password }),
       });
       const data = await res.json();
@@ -145,7 +148,8 @@ export default function LoginPage() {
       localStorage.setItem("user", JSON.stringify(data.data.user));
       markSessionActivity();
       const role = data.data.user.role;
-      document.cookie = `vq_role=${role === "ADMIN" ? "ADMIN" : "STUDENT"}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+      // The login response already set the HttpOnly session cookie and the
+      // non-HttpOnly vq_role display hint. Do not overwrite them from script.
       const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
       // Show centered success popup on this page, then redirect quickly —
       // rendered here so it never appears again on the dashboard.

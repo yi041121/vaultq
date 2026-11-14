@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { collectPickup, PickupError } from "@/lib/pickup-service";
 import {
   LOCKER_NUMBER,
   UNLOCK_MS,
@@ -34,9 +34,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized device" }, { status: 401 });
   }
 
-  let body: any;
+  let body: { token?: unknown; sessionToken?: unknown; deviceId?: unknown; dryRun?: unknown } | null;
   try {
-    body = await request.json();
+    const input: unknown = await request.json();
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
+    }
+    body = input;
   } catch {
     return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
   }
@@ -46,10 +50,10 @@ export async function POST(request: NextRequest) {
   const deviceId = typeof body?.deviceId === "string" ? body.deviceId : "locker-01";
   const dryRun = body?.dryRun === true && process.env.NODE_ENV !== "production";
 
-  if (!token) {
+  if (!token || token.length > 256) {
     return NextResponse.json({ success: false, error: "QR token required" }, { status: 400 });
   }
-  if (!sessionToken) {
+  if (!sessionToken || sessionToken.length > 4096) {
     return NextResponse.json(
       { success: false, error: "Scan your student card barcode or student ID first" },
       { status: 401 },
@@ -71,82 +75,23 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const qr = await prisma.qrCode.findUnique({
-      where: { qrToken: token },
-      include: {
-        claim: {
-          include: {
-            item: { include: { locker: true } },
-          },
-        },
-      },
+    const data = await collectPickup({
+      token,
+      expectedUserId: session.userId,
+      expectedLockerNumber: LOCKER_NUMBER,
+      dryRun,
     });
-
-    if (!qr) {
-      return NextResponse.json({ success: false, error: "Invalid QR token" }, { status: 404 });
-    }
-    if (qr.isUsed) {
-      return NextResponse.json({ success: false, error: "QR already used" }, { status: 410 });
-    }
-    if (qr.expiresAt.getTime() < Date.now()) {
-      return NextResponse.json({ success: false, error: "QR expired" }, { status: 410 });
-    }
-    if (qr.claim.status !== "APPROVED") {
-      return NextResponse.json({ success: false, error: "Claim is not approved" }, { status: 409 });
-    }
-    if (qr.claim.item.status === "RETRIEVED") {
-      return NextResponse.json({ success: false, error: "Item already collected" }, { status: 409 });
-    }
-    if (qr.claim.userId !== session.userId) {
-      return NextResponse.json(
-        { success: false, error: "This QR belongs to another student" },
-        { status: 403 },
-      );
-    }
-
-    const lockerNumber = qr.claim.item.locker?.lockerNumber || null;
-    if (!lockerNumber || lockerNumber !== LOCKER_NUMBER) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `QR belongs to locker ${lockerNumber || "unassigned"}, not ${LOCKER_NUMBER}`,
-        },
-        { status: 409 },
-      );
-    }
-
-    if (!dryRun) {
-      await prisma.$transaction(async (tx) => {
-        await tx.qrCode.update({ where: { id: qr.id }, data: { isUsed: true } });
-        if (qr.claim.item.lockerId) {
-          await tx.locker.update({
-            where: { id: qr.claim.item.lockerId },
-            data: { status: "AVAILABLE" },
-          });
-        }
-        await tx.item.update({
-          where: { id: qr.claim.itemId },
-          data: { status: "RETRIEVED", lockerId: null },
-        });
-      });
-    }
-
-    console.log(
-      `Hardware verify: device=${deviceId} student=${session.userId} locker=${lockerNumber} claim=${qr.claimId}` +
-        (dryRun ? " [dry-run]" : ""),
-    );
 
     return NextResponse.json({
       success: true,
       data: {
-        claimId: qr.claimId,
-        locker: lockerNumber,
-        itemName: qr.claim.item.itemName,
+        ...data,
         unlockMs: UNLOCK_MS,
         dryRun,
       },
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof PickupError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     console.error("Hardware verify failed", error);
     return NextResponse.json({ success: false, error: "Verification failed" }, { status: 500 });
   }

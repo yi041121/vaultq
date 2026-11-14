@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
-import CenteredMessageHost from "@/components/centered-message";
+import CenteredMessageHost, { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NotificationBell } from "@/components/notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -13,6 +13,7 @@ import { useAdminNavCounts } from "@/lib/use-admin-nav-counts";
 import { getCachedUnread, prefetchStudentData } from "@/lib/student-cache";
 import { useIdleSession } from "@/lib/use-idle-session";
 import { clearClientSession } from "@/lib/idle-session";
+import { endServerSession } from "@/lib/browser-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
 import { QUICK_ACTION_EVENT, quickActionsForRole } from "@/lib/quick-actions";
 
@@ -62,6 +63,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [studentUnread, setStudentUnread] = useState(() => getCachedUnread());
   const adminCounts = useAdminNavCounts(userRole);
 
@@ -112,6 +114,17 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     setConfirmLogout(true);
   }
 
+  async function confirmSignOut() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    const completed = await endServerSession(localStorage.getItem("token"));
+    setLoggingOut(false);
+    if (!completed) { showCenteredMessage("error", "Could not complete sign-out. Please try again."); return; }
+    setConfirmLogout(false);
+    clearClientSession(false);
+    logout();
+  }
+
   function toggleSidebar() {
     sidebarPreference = !sidebarOpen;
     setSidebarOpen(sidebarPreference);
@@ -127,6 +140,8 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
 
   // Keep the notch aligned if the active tab changes while the shell stays mounted.
   useEffect(() => {
+    // Intentional state sync so the notch can animate to the new route.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIndicatorIndex(activeIndex);
   }, [activeIndex]);
 
@@ -402,9 +417,10 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
         icon="logout"
         tone="primary"
         cancelLabel="Stay logged in"
-        confirmLabel="Log out"
+        confirmLabel={loggingOut ? "Logging out…" : "Log out"}
+        busy={loggingOut}
         onCancel={() => setConfirmLogout(false)}
-        onConfirm={() => { setConfirmLogout(false); clearClientSession(); logout(); }}
+        onConfirm={() => void confirmSignOut()}
       />
     </div>
   );

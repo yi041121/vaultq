@@ -4,6 +4,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { ImageValidationError, normalizeImageBuffer } from "@/lib/image-validation";
+import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 
 export const runtime = "nodejs";
 
@@ -13,7 +15,6 @@ export const runtime = "nodejs";
 // when available to help low-contrast photos.
 
 const MAX_BYTES = 8 * 1024 * 1024;
-const ALLOWED_TYPES = /^image\/(png|jpe?g|webp|gif|bmp|tiff?)$/i;
 
 function execFileSafe(cmd: string, args: string[], timeoutMs = 15000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -31,6 +32,8 @@ function extractDigits(raw: string): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await enforceAuthRateLimit(request, "barcode");
+  if (limited) return limited;
   const tempFiles: string[] = [];
   try {
     const form = await request.formData().catch(() => null);
@@ -41,13 +44,11 @@ export async function POST(request: NextRequest) {
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ success: false, error: "Image must be under 8MB" }, { status: 413 });
     }
-    if (file.type && !ALLOWED_TYPES.test(file.type)) {
-      return NextResponse.json({ success: false, error: "Unsupported image type" }, { status: 415 });
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const { buffer } = await normalizeImageBuffer(Buffer.from(await file.arrayBuffer()), file.type, {
+      maxBytes: MAX_BYTES, maxDimension: 4096, output: "png",
+    });
     const base = path.join(os.tmpdir(), `vaultq-barcode-${crypto.randomUUID()}`);
-    const src = `${base}.img`;
+    const src = `${base}.png`;
     await fs.writeFile(src, buffer);
     tempFiles.push(src);
 
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ success: true, data: { barcode } });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Barcode decode failed", e);
     return NextResponse.json({ success: false, error: "Failed to decode barcode" }, { status: 500 });
   } finally {

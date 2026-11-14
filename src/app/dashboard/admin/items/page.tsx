@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as fmtDay } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -69,12 +70,6 @@ type Item = {
   imageUrl?: string | null;
 };
 
-function fmtDay(value: string) {
-  if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 function statusColor(s: string) {
   switch (s) {
@@ -551,7 +546,7 @@ export default function AdminItems() {
                           <button type="button" aria-label={`View ${it.name} photo`}
                             className="absolute inset-0 group cursor-pointer"
                             onClick={() => void openItemPhotos(it)}>
-                            <img src={it.imageUrl} alt={it.name} className="w-full h-full object-cover" />
+                            <img src={it.imageUrl} alt={it.name} className="w-full h-full object-contain" />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                                 <Eye size={13} /> View photo
@@ -571,7 +566,7 @@ export default function AdminItems() {
                       </div>
                       <p className="text-xs flex items-center gap-1 truncate" style={{ color: c.textMuted }}><MapPin size={12} className="shrink-0" /> <span className="truncate">{it.location}</span></p>
                       <p className="text-xs flex flex-wrap items-center gap-1 mt-1" style={{ color: c.textMuted }}>
-                        <Clock size={12} className="shrink-0" style={{ color: c.textLight }} /> {new Date(it.date + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        <Clock size={12} className="shrink-0" style={{ color: c.textLight }} /> <time className="vq-date">{fmtDay(it.date)}</time>
                         <span className="mx-0.5">·</span> <Icon size={12} style={{ color: c.primary }} /> {it.category}
                         {it.locker && (
                           <>
@@ -657,7 +652,7 @@ export default function AdminItems() {
                     onClick={(e) => { setFormDateAnchor(e.currentTarget); setFormDateOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} style={{ color: c.primary }} />
-                      <span className="truncate">{formDate ? fmtDay(formDate) : "Select date"}</span>
+                      <span className="vq-date truncate">{formDate ? fmtDay(formDate) : "Select date"}</span>
                     </span>
                     <ChevronDown size={13} style={{ color: c.textMuted }} />
                   </VFilterButton>
@@ -722,7 +717,7 @@ export default function AdminItems() {
                 <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoFile} />
                 {formPreview ? (
                   <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                    <img src={formPreview} alt="Item preview" className="w-full h-40 object-cover" />
+                    <img src={formPreview} alt="Item preview" className="w-full h-40 object-contain" />
                     <button type="button" onClick={clearPhoto}
                       className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors duration-200 cursor-pointer">
                       <X size={14} />

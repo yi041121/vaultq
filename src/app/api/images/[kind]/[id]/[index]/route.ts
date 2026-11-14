@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyImageSignature } from "@/lib/image-url";
+import { imageVersionMatches, verifyImageSignature } from "@/lib/image-url";
+import { ImageValidationError, normalizeImageData } from "@/lib/image-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,27 +63,25 @@ export async function GET(request: NextRequest, { params }: Ctx) {
 
     if (!source) return new NextResponse("Not found", { status: 404 });
 
-    if (source.startsWith("data:")) {
-      const match = source.match(/^data:([^;,]+);base64,([\s\S]+)$/);
-      if (!match) return new NextResponse("Not found", { status: 404 });
-      const mime = match[1];
-      const buffer = Buffer.from(match[2], "base64");
-      return new NextResponse(new Uint8Array(buffer), {
-        headers: {
-          "Content-Type": mime,
-          "Content-Length": String(buffer.length),
-          "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    }
-
-    if (source.startsWith("https://") || source.startsWith("http://")) {
-      return NextResponse.redirect(source, 307);
-    }
-
-    return new NextResponse("Not found", { status: 404 });
+    // A signed URL for an old image must not authorize its replacement.
+    if (!imageVersionMatches(source, version)) return new NextResponse("Not found", { status: 404 });
+    // Do not redirect to untrusted stored URLs or pass legacy MIME types through.
+    // Sanitizing on read also protects photos saved before upload validation.
+    const { buffer, mime } = await normalizeImageData(source);
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": mime,
+        "Content-Length": String(buffer.length),
+        "Content-Disposition": 'inline; filename="photo.webp"',
+        "Cache-Control": "private, no-store, max-age=0",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Cross-Origin-Resource-Policy": "same-origin",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch (error) {
+    if (error instanceof ImageValidationError) return new NextResponse("Unsupported image", { status: 415, headers: { "Cache-Control": "private, no-store" } });
     console.error("Image fetch failed", error);
     return new NextResponse("Failed to load image", { status: 500 });
   }

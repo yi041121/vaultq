@@ -1,4 +1,5 @@
 "use client";
+import { formatDisplayDate as fmtDay, formatDisplayDate as fmtItemDate } from "@/lib/date-format";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -28,6 +29,7 @@ import { clearStudentCache, getCachedClaimedIds, getCachedSearchItems, setCached
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { uniquePhotos } from "@/lib/photo-gallery";
+import { lostReportClaimReason } from "@/lib/lost-report-claim";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -97,6 +99,8 @@ export default function StudentSearch() {
   const claimCameraRef = useRef<HTMLInputElement>(null);
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [claimReportId, setClaimReportId] = useState<string | null>(null);
+  const [claimPrefilling, setClaimPrefilling] = useState(false);
+  const claimPrefillRequest = useRef(0);
 
   // Lost reports are offered explicitly before opening the claim form.
   const [lostReports, setLostReports] = useState<LostReportOption[]>([]);
@@ -186,8 +190,8 @@ export default function StudentSearch() {
           const target = mapped.find((item) => item.id === targetId);
           if (target && !claimedSet.has(target.id)) {
             if (targetReportId) {
-              if (!lostReportsLoaded) void loadLostReports(token);
-              startClaim(target, targetReportId);
+              const reports = lostReportsLoaded ? lostReports : await loadLostReports(token);
+              void startClaim(target, targetReportId, reports);
             } else {
               setViewItem(target);
             }
@@ -270,27 +274,13 @@ export default function StudentSearch() {
     return new Date(d + "T00:00:00");
   }
 
-  function fmtDay(d: Date) {
-    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-  }
-
-  // Keep ranges short enough for the filter bar: drop the repeated month or
-  // year while still showing the year once ("04 - 10 Nov 2026").
+  // Both endpoints use the same complete date format as item cards.
   function fmtRange(from: string, to: string) {
     const start = parseDate(from);
     const end = parseDate(to);
-    if (start.getFullYear() !== end.getFullYear()) return `${fmtDay(start)} - ${fmtDay(end)}`;
-    if (start.getMonth() === end.getMonth()) {
-      return `${String(start.getDate()).padStart(2, "0")} - ${fmtDay(end)}`;
-    }
-    const startDay = start.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-    return `${startDay} - ${fmtDay(end)}`;
+    return `${fmtDay(start)} - ${fmtDay(end)}`;
   }
 
-  function fmtItemDate(d: string) {
-    if (!d) return "—";
-    return new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  }
 
   function toISO(d: Date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -363,14 +353,49 @@ export default function StudentSearch() {
     startClaim(item, null);
   }
 
-  function startClaim(item: FoundItem, reportId: string | null) {
+  function closeClaim() {
+    claimPrefillRequest.current++;
+    setClaimPrefilling(false);
+    setClaimItem(null);
+  }
+
+  async function startClaim(item: FoundItem, reportId: string | null, reports = lostReports) {
+    if (item.reportedByMe || item.status !== "FOUND") {
+      showCenteredMessage("error", "This item is not available for you to claim");
+      return;
+    }
+    const linked = reportId ? reports.find((report) => report.id === reportId) : null;
+    if (reportId && !linked) {
+      showCenteredMessage("error", "That lost report is no longer pending. Select another report or claim without linking.");
+      setViewItem(item);
+      return;
+    }
+    const request = ++claimPrefillRequest.current;
     setClaimItem(item);
     setClaimReportId(reportId);
-    setClaimReason("");
+    setClaimReason(linked ? lostReportClaimReason(linked) : "");
     setClaimPhotos([]);
     setClaimCameraOpen(false);
     setClaimPhotoSourceOpen(false);
     setClaimEditPhoto(null);
+    setClaimPrefilling(!!linked?.images.length);
+    if (!linked?.images.length) return;
+    try {
+      const drafts = await Promise.all(uniquePhotos(linked.images).slice(0, 3).map(async (source, index) => {
+        const response = await fetch(source);
+        if (!response.ok) throw new Error("Could not load report photo");
+        const blob = await response.blob();
+        if (!blob.type.startsWith("image/")) throw new Error("Invalid report photo");
+        const file = new File([blob], `lost-report-${index + 1}`, { type: blob.type });
+        const compressed = await compressImageFile(file);
+        return { file: compressed.file, preview: compressed.preview, originalFile: compressed.file, originalPreview: compressed.preview };
+      }));
+      if (request === claimPrefillRequest.current) setClaimPhotos(drafts);
+    } catch {
+      if (request === claimPrefillRequest.current) showCenteredMessage("error", "Could not load your report photos. Please upload evidence before submitting.");
+    } finally {
+      if (request === claimPrefillRequest.current) setClaimPrefilling(false);
+    }
   }
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -414,7 +439,7 @@ export default function StudentSearch() {
   }
 
   async function handleSubmitClaim() {
-    if (!claimItem) return;
+    if (!claimItem || claimPrefilling || claimSubmitting) return;
     if (!claimReason.trim()) {
       showCenteredMessage("error", "Please describe why this item is yours");
       return;
@@ -450,6 +475,7 @@ export default function StudentSearch() {
         return;
       }
 
+      clearStudentCache();
       setClaimedItemIds((prev) => new Set(prev).add(item.id));
       if (claimReportId) {
         setLostReports((prev) => prev.filter((report) => report.id !== claimReportId));
@@ -474,7 +500,7 @@ export default function StudentSearch() {
   useEscapeKey(!!lostReportPreview, () => setLostReportPreview(null));
   useEscapeKey(!!viewItem, () => setViewItem(null));
   useEscapeKey(!!linkPromptItem, () => setLinkPromptItem(null));
-  useEscapeKey(!!claimItem && !claimCameraOpen && !claimPhotoSourceOpen && claimEditPhoto === null, () => setClaimItem(null));
+  useEscapeKey(!!claimItem && !claimCameraOpen && !claimPhotoSourceOpen && claimEditPhoto === null, closeClaim);
 
   if (!user || !mounted) return null;
 
@@ -578,7 +604,7 @@ export default function StudentSearch() {
                     onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
-                      <span className="min-w-0 truncate">
+                      <span className="vq-date min-w-0 truncate">
                         {dateFrom && dateTo && dateFrom !== dateTo
                           ? fmtRange(dateFrom, dateTo)
                           : dateFrom && dateTo
@@ -748,7 +774,7 @@ export default function StudentSearch() {
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                         onClick={() => setViewItem(item)}>
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                          <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-contain" />
                         ) : (
                           <>
                             <div className="absolute inset-0 opacity-40"
@@ -766,7 +792,7 @@ export default function StudentSearch() {
                           <MapPin size={13} style={{ color: c.textMuted }} /> {item.location || "—"}
                         </p>
                         <p className="text-[13px] flex items-center gap-1 mt-1" style={{ color: c.textMuted }}>
-                          <Clock size={13} style={{ color: c.textLight }} /> {fmtItemDate(item.date)}
+                          <Clock size={13} style={{ color: c.textLight }} /> <time className="vq-date">{fmtItemDate(item.date)}</time>
                         </p>
                       </div>
                       <div className="col-span-2 flex items-center gap-2 mt-3 sm:mt-4" onClick={(e) => e.stopPropagation()}>
@@ -856,7 +882,7 @@ export default function StudentSearch() {
               <div className="min-w-0">
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Link a lost report?</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-                  You reported these items lost. Link the matching report so the admin can verify this claim faster.
+                  Link the matching report to automatically copy its details and photos into your claim. You can review and edit them before submitting.
                 </p>
               </div>
               <button type="button" onClick={() => setLinkPromptItem(null)}
@@ -882,7 +908,7 @@ export default function StudentSearch() {
                       <span className="min-w-0">
                         <span className="block text-sm font-medium truncate" style={{ color: c.text }}>{report.itemName}</span>
                         <span className="block text-[11px] mt-0.5" style={{ color: c.textMuted }}>
-                          {report.category}{report.date ? ` · ${fmtItemDate(report.date)}` : ""}
+                          {report.category}{report.date && <> · <time className="vq-date">{fmtItemDate(report.date)}</time></>}
                         </span>
                       </span>
                     </button>
@@ -918,17 +944,18 @@ export default function StudentSearch() {
       {/* Claim evidence modal */}
       {claimItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setClaimItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeClaim} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-5">
               <div>
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Item</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{claimItem.name} · {claimItem.category} · {claimItem.location || "—"}</p>
               </div>
-              <button type="button" onClick={() => setClaimItem(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={closeClaim} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
 
-            <div className="space-y-4">
+            {claimPrefilling && <p role="status" className="text-xs mb-3" style={{ color: c.primary }}>Loading photos from your lost report…</p>}
+            <fieldset disabled={claimPrefilling || claimSubmitting} className="space-y-4 min-w-0">
               {claimReportId && (() => {
                 const linked = lostReports.find((report) => report.id === claimReportId);
                 if (!linked) return null;
@@ -939,7 +966,7 @@ export default function StudentSearch() {
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate" style={{ color: c.text }}>Linked lost report: {linked.itemName}</p>
                       <p className="text-[11px]" style={{ color: c.textMuted }}>
-                        {linked.category}{linked.date ? ` · ${fmtItemDate(linked.date)}` : ""}
+                        {linked.category}{linked.date && <> · <time className="vq-date">{fmtItemDate(linked.date)}</time></>}
                       </p>
                     </div>
                     <button type="button" onClick={() => openLostReportPreview(linked)}
@@ -977,7 +1004,7 @@ export default function StudentSearch() {
                           <button type="button" onClick={() => setClaimEditPhoto(index)}
                             className="block w-full cursor-pointer" aria-label={`View or crop evidence photo ${index + 1}`}>
                             <img src={photo.preview} alt={`Evidence ${index + 1}`}
-                              className={`w-full object-cover ${claimPhotos.length === 1 ? "h-40" : "h-24"}`} />
+                              className={`w-full object-contain ${claimPhotos.length === 1 ? "h-40" : "h-24"}`} />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[10px] font-semibold text-white">
                                 <Crop size={12} /> Crop
@@ -1020,13 +1047,13 @@ export default function StudentSearch() {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
-                <VButton variant="secondary" onClick={() => setClaimItem(null)}>Cancel</VButton>
-                <VButton onClick={handleSubmitClaim} disabled={claimSubmitting || !claimReason.trim() || claimPhotos.length === 0}>
+                <VButton variant="secondary" onClick={closeClaim}>Cancel</VButton>
+                <VButton onClick={handleSubmitClaim} disabled={claimPrefilling || claimSubmitting || !claimReason.trim() || claimPhotos.length === 0}>
                   <Upload size={14} /> {claimSubmitting ? "Submitting..." : "Submit Claim"}
                 </VButton>
               </div>
               <p className="text-[11px] text-center" style={{ color: c.textLight }}>Admin will verify your description + photo before approval. False claims may be rejected.</p>
-            </div>
+            </fieldset>
           </VCard>
         </div>
       )}

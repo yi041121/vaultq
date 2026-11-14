@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { ImageValidationError, normalizeImageFile, normalizeImageSources } from "@/lib/image-validation";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
@@ -115,20 +117,13 @@ export async function POST(request: NextRequest) {
       date = form.get("date") as string | null;
 
       const files = [...form.getAll("photos"), ...form.getAll("photo")].filter(
-        (entry): entry is File => entry instanceof File && entry.size > 0,
+        (entry): entry is File => entry instanceof File,
       );
       if (files.length > 3) {
         return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
       }
       for (const file of files) {
-        if (!file.type.startsWith("image/")) {
-          return NextResponse.json({ success: false, error: "Photos must be images" }, { status: 400 });
-        }
-        if (file.size > 5 * 1024 * 1024) {
-          return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
-        }
-        const buf = Buffer.from(await file.arrayBuffer());
-        imageUrls.push(`data:${file.type};base64,${buf.toString("base64")}`);
+        imageUrls.push(await normalizeImageFile(file));
       }
       imageUrls = uniquePhotos(imageUrls);
     } else {
@@ -139,14 +134,7 @@ export async function POST(request: NextRequest) {
       description = body.description ?? null;
       location = body.location ?? null;
       date = body.date ?? null;
-      imageUrls = uniquePhotos(Array.isArray(body.imageUrls)
-        ? body.imageUrls
-        : body.imageUrl
-          ? [body.imageUrl]
-          : []);
-      if (imageUrls.length > 3) {
-        return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
-      }
+      imageUrls = await normalizeImageSources(body.imageUrls !== undefined ? body.imageUrls : body.imageUrl ? [body.imageUrl] : []);
     }
 
     if (!type || !(VALID_REPORT_TYPES as readonly string[]).includes(type)) {
@@ -195,8 +183,10 @@ export async function POST(request: NextRequest) {
       { type: "REPORT", link: `/dashboard/student/report?tab=reports&kind=${type}` },
     );
 
+    if (type === "LOST") await notifyInventoryMatches({ reportId: report.id });
     return NextResponse.json({ success: true, data: report }, { status: 201 });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Report creation failed", e);
     return NextResponse.json({ success: false, error: "Failed to submit report" }, { status: 500 });
   }

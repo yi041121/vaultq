@@ -1,4 +1,11 @@
 @import "tailwindcss";
+
+/* Shared date typography across cards, details, filters and timestamps. */
+.vq-date {
+  font-size: 12px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

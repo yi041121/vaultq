@@ -61,6 +61,7 @@ model User{
   claims Claim[]
   notifications Notification[]
   items Item[]
+  authSessions AuthSession[]
 
   @@map("users")
 }
@@ -181,3 +182,23 @@ model Notification{
   @@map("notifications")
 }
 
+model AuthSession {
+  id        String   @id
+  userId    String   @map("user_id")
+  expiresAt DateTime @db.Timestamptz(3) @map("expires_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(3) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model AuthRateLimitBucket {
+  key      String   @id @db.VarChar(96)
+  attempts Int
+  resetAt  DateTime @db.Timestamptz(3) @map("reset_at")
+
+  @@index([resetAt])
+  @@map("auth_rate_limit_buckets")
+}

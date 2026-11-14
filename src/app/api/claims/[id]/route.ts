@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { notifyUser, notifyUsers } from "@/lib/notification-service";
+import { cancelPendingClaim, rejectPendingClaim, ClaimTransitionError } from "@/lib/claim-transition-service";
+import { approvePendingClaim, ClaimReviewError, isReviewWriteConflict } from "@/lib/claim-review-service";
 
 type Ctx = { params: Promise<{ id: string }> };
-
-/** Thrown when another approval won the item or the locker meanwhile. */
-class ClaimApprovalConflict extends Error {}
 
 const CLAIM_INCLUDE = {
   item: {
@@ -110,12 +109,16 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   const { id } = await params;
 
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Invalid review details" }, { status: 400 });
+    }
     const { action, lockerNumber } = body;
     const adminNote = typeof body.adminNote === "string" ? body.adminNote.trim().slice(0, 500) : null;
     if (action !== "approve" && action !== "reject") {
       return NextResponse.json({ success: false, error: "action must be approve or reject" }, { status: 400 });
     }
+    if (lockerNumber != null && typeof lockerNumber !== "string") return NextResponse.json({ success: false, error: "Invalid locker number" }, { status: 400 });
 
     const claim = await prisma.claim.findUnique({
       where: { id },
@@ -137,116 +140,25 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     }
 
     if (action === "reject") {
-      const adminNote = typeof body.adminNote === "string" ? body.adminNote.trim().slice(0, 500) : null;
-      const updated = await prisma.claim.update({
-        where: { id },
-        data: { status: "REJECTED", adminNote: adminNote || null, approvedAt: new Date() },
-      });
-      // A rejected match releases its lost report so the student can claim again.
-      if (claim.matchedReportId) {
-        await prisma.report.update({
-          where: { id: claim.matchedReportId },
-          data: { status: "PENDING", itemId: null, reviewedAt: null, reviewedById: null },
-        }).catch(() => {});
-      }
+      const updated = await rejectPendingClaim(id, adminNote || null);
       await notifyUser(
-        claim.userId,
+        updated.userId,
         "Claim Rejected",
-        `Your claim for ${claim.item.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
+        `Your claim for ${updated.item.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
         { type: "CLAIM", link: "/dashboard/student/claims" },
       );
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // Approve — an item can only be approved once. If another claim was
-    // already approved, this claim can no longer win the item.
-    if (claim.item.status !== "FOUND") {
-      return NextResponse.json({ success: false, error: "Item is no longer available" }, { status: 409 });
-    }
-
     const lockerNum = lockerNumber ? String(lockerNumber).trim().toUpperCase() : null;
-    let lockerId: string | null = claim.item.lockerId;
-
-    if (lockerNum) {
-      const locker = await prisma.locker.findUnique({ where: { lockerNumber: lockerNum } });
-      if (!locker) return NextResponse.json({ success: false, error: "Locker not found" }, { status: 404 });
-      if (locker.status !== "AVAILABLE") return NextResponse.json({ success: false, error: "Locker not available" }, { status: 400 });
-      lockerId = locker.id;
-    }
-
-    // The item row is the single source of truth. Moving it out of FOUND
-    // inside the transaction means two admins approving different claims at
-    // the same time cannot both win: the second update matches zero rows.
-    const { updated, otherPending, matchedReports } = await prisma.$transaction(async (tx) => {
-      const itemData: { status: "CLAIMED"; lockerId?: string } = { status: "CLAIMED" };
-      if (lockerId) itemData.lockerId = lockerId;
-      const won = await tx.item.updateMany({
-        where: { id: claim.itemId, status: "FOUND" },
-        data: itemData,
-      });
-      if (won.count === 0) {
-        throw new ClaimApprovalConflict("This item has already been approved for another student");
-      }
-
-      if (lockerId && lockerId !== claim.item.lockerId) {
-        if (claim.item.lockerId) {
-          await tx.locker.update({ where: { id: claim.item.lockerId }, data: { status: "AVAILABLE" } });
-        }
-        const lockerTaken = await tx.locker.updateMany({
-          where: { id: lockerId, status: "AVAILABLE" },
-          data: { status: "OCCUPIED" },
-        });
-        if (lockerTaken.count === 0) {
-          throw new ClaimApprovalConflict("Locker is no longer available");
-        }
-      }
-
-      // Read rivals only after the item is locked, so a claim submitted at
-      // the same moment is either visible here or blocked by the status.
-      const otherPending = await tx.claim.findMany({
-        where: { itemId: claim.itemId, status: "PENDING", NOT: { id } },
-        select: { id: true, userId: true },
-      });
-
-      // Lost reports previously matched to this item are now resolved.
-      const matchedReports = await tx.report.findMany({
-        where: { itemId: claim.itemId, type: "LOST", status: "MATCHED" },
-        select: { id: true, userId: true },
-      });
-
-      if (otherPending.length) {
-        await tx.claim.updateMany({
-          where: { itemId: claim.itemId, status: "PENDING", NOT: { id } },
-          data: {
-            status: "REJECTED",
-            adminNote: "Item has been approved for another student",
-            approvedAt: new Date(),
-          },
-        });
-      }
-
-      if (matchedReports.length) {
-        await tx.report.updateMany({
-          where: { itemId: claim.itemId, type: "LOST", status: "MATCHED" },
-          data: { status: "CLOSED", reviewedAt: new Date() },
-        });
-      }
-
-      const updated = await tx.claim.update({
-        where: { id },
-        data: { status: "APPROVED", approvedAt: new Date(), adminNote: adminNote || null },
-      });
-
-      return { updated, otherPending, matchedReports };
-    });
+    const { updated, otherPending, matchedReports, itemName, userId, locker } = await approvePendingClaim(id, user.id, { lockerNumber: lockerNum, adminNote });
 
     // Notify the winning student and everyone whose claim was closed.
-    const assignedLockerNumber = lockerNum || claim.item.locker?.lockerNumber || null;
     await notifyUser(
-      claim.userId,
+      userId,
       "Claim Approved",
-      `Your claim for ${claim.item.itemName} has been approved.${
-        assignedLockerNumber ? ` Locker ${assignedLockerNumber} is assigned.` : ""
+      `Your claim for ${itemName} has been approved.${
+        locker ? ` Locker ${locker} is assigned.` : ""
       } View your QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
       { type: "CLAIM", link: "/dashboard/student/claims" },
     );
@@ -255,7 +167,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       otherPending.map((c) => ({
         userId: c.userId,
         title: "Claim Rejected",
-        message: `Your claim for ${claim.item.itemName} was rejected because the item was claimed by another student.`,
+        message: `Your claim for ${itemName} was rejected because the item was claimed by another student.`,
         type: "CLAIM" as const,
         link: "/dashboard/student/claims",
       })),
@@ -263,11 +175,11 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
     await notifyUsers(
       matchedReports
-        .filter((r) => r.userId !== claim.userId)
+        .filter((r) => r.userId !== userId)
         .map((r) => ({
           userId: r.userId,
           title: "Lost Report Closed",
-          message: `The item you reported lost (${claim.item.itemName}) has been claimed by another student, so your report was closed.`,
+          message: `The item you reported lost (${itemName}) has been claimed by another student, so your report was closed.`,
           type: "REPORT" as const,
           link: "/dashboard/student/report?tab=reports&kind=LOST",
         })),
@@ -275,9 +187,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
 
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
-    if (e instanceof ClaimApprovalConflict) {
-      return NextResponse.json({ success: false, error: e.message }, { status: 409 });
-    }
+    if (e instanceof ClaimTransitionError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    if (e instanceof ClaimReviewError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
+    if (isReviewWriteConflict(e)) return NextResponse.json({ success: false, error: "Another review changed this item or locker. Please refresh." }, { status: 409 });
     console.error("Claim review failed", e);
     return NextResponse.json({ success: false, error: "Failed to review claim" }, { status: 500 });
   }
@@ -293,18 +205,10 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
   const { id } = await params;
 
   try {
-    const claim = await prisma.claim.findUnique({ where: { id }, select: { id: true, userId: true, status: true } });
-    if (!claim) return NextResponse.json({ success: false, error: "Claim not found" }, { status: 404 });
-    if (claim.userId !== user.id) {
-      return NextResponse.json({ success: false, error: "Not your claim" }, { status: 403 });
-    }
-    if (claim.status !== "PENDING") {
-      return NextResponse.json({ success: false, error: `Claim already ${claim.status.toLowerCase()}` }, { status: 409 });
-    }
-
-    await prisma.claim.delete({ where: { id } });
-    return NextResponse.json({ success: true, data: { id } });
+    const data = await cancelPendingClaim(id, user.id);
+    return NextResponse.json({ success: true, data });
   } catch (e) {
+    if (e instanceof ClaimTransitionError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Claim cancel failed", e);
     return NextResponse.json({ success: false, error: "Failed to cancel claim" }, { status: 500 });
   }

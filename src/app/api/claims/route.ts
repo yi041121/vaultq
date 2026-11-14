@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { signedImageUrl } from "@/lib/image-url";
 import { uniquePhotos } from "@/lib/photo-gallery";
+import { ImageValidationError, normalizeImageFile, normalizeImageSources } from "@/lib/image-validation";
 
 /** Thrown when the item stops being available while a claim is submitted. */
 class ClaimConflict extends Error {}
@@ -208,34 +209,24 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
       }
       for (const file of files) {
-        if (!file.type.startsWith("image/")) {
-          return NextResponse.json({ success: false, error: "Evidence must be an image" }, { status: 400 });
-        }
-        if (file.size > 5 * 1024 * 1024) {
-          return NextResponse.json({ success: false, error: "Each image must be under 5MB" }, { status: 400 });
-        }
-        // For demo: store as data URL (in production, upload to S3/R2)
-        const buf = Buffer.from(await file.arrayBuffer());
-        evidenceImageUrls.push(`data:${file.type};base64,${buf.toString("base64")}`);
+        evidenceImageUrls.push(await normalizeImageFile(file));
       }
     } else {
       const body = await request.json();
       itemId = body.itemId;
       claimReason = body.claimReason;
       reportId = typeof body.reportId === "string" ? body.reportId : null;
-      const incoming = Array.isArray(body.evidenceImageUrls)
+      const incoming = body.evidenceImageUrls !== undefined
         ? body.evidenceImageUrls
         : body.evidenceImageUrl
           ? [body.evidenceImageUrl]
           : [];
-      for (const value of incoming.slice(0, 3)) {
-        if (typeof value === "string" && value.startsWith("data:image/")) evidenceImageUrls.push(value);
-      }
+      evidenceImageUrls.push(...await normalizeImageSources(incoming));
     }
 
-    if (!itemId) return NextResponse.json({ success: false, error: "itemId required" }, { status: 400 });
-    if (!claimReason?.trim()) return NextResponse.json({ success: false, error: "claimReason required" }, { status: 400 });
-    if (!evidenceImageUrls.length) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
+    if (typeof itemId !== "string" || !itemId.trim()) return NextResponse.json({ success: false, error: "itemId required" }, { status: 400 });
+    if (typeof claimReason !== "string" || !claimReason.trim()) return NextResponse.json({ success: false, error: "claimReason required" }, { status: 400 });
+    if (reportId !== null && typeof reportId !== "string") return NextResponse.json({ success: false, error: "Invalid reportId" }, { status: 400 });
 
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
@@ -269,7 +260,13 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: "Invalid lost report to link" }, { status: 400 });
       }
       linkedReport = { id: report.id };
+      // Reuse only this student's owned report sources, never
+      // arbitrary client-supplied URLs or another student's evidence.
+      if (!evidenceImageUrls.length) {
+        evidenceImageUrls.push(...await normalizeImageSources(uniquePhotos(report.imageUrls.length ? report.imageUrls : [report.imageUrl]).slice(0, 3)));
+      }
     }
+    if (!evidenceImageUrls.length) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
 
     const claim = await prisma.$transaction(async (tx) => {
       // Serialize with approval: either this claim is inserted before the
@@ -281,6 +278,20 @@ export async function POST(request: NextRequest) {
       `;
       if (locked.length === 0) {
         throw new ClaimConflict("Item is no longer available for claim");
+      }
+
+      // The item lock serializes duplicate submissions as well as approvals.
+      // Preflight reads alone let two requests from one student create twins.
+      const duplicate = await tx.claim.findFirst({
+        where: { itemId, status: { in: ["PENDING", "APPROVED"] }, OR: [{ userId: user.id }, { status: "APPROVED" }] },
+        select: { id: true },
+      });
+      if (duplicate) throw new ClaimConflict("You already have an active claim, or this item has been approved for someone else");
+      const finder = await tx.report.findFirst({ where: { itemId, userId: user.id, type: "FOUND", status: "VERIFIED" }, select: { id: true } });
+      if (finder) throw new ClaimConflict("You cannot claim an item you reported as found");
+      if (linkedReport) {
+        const activeLink = await tx.claim.findFirst({ where: { matchedReportId: linkedReport.id, status: { in: ["PENDING", "APPROVED"] } }, select: { id: true } });
+        if (activeLink) throw new ClaimConflict("This lost report is already linked to an active claim");
       }
 
       const created = await tx.claim.create({
@@ -296,10 +307,11 @@ export async function POST(request: NextRequest) {
       if (linkedReport) {
         // Linking moves the lost report out of the lost queue; the claim it
         // created still needs admin approval before the report is closed.
-        await tx.report.update({
-          where: { id: linkedReport.id },
+        const linked = await tx.report.updateMany({
+          where: { id: linkedReport.id, userId: user.id, type: "LOST", status: "PENDING", itemId: null },
           data: { status: "MATCHED", itemId, reviewedAt: null, reviewedById: null },
         });
+        if (!linked.count) throw new ClaimConflict("This lost report was already linked or reviewed. Please refresh and try again.");
       }
       return created;
     });
@@ -317,6 +329,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: claim }, { status: 201 });
   } catch (e) {
+    if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     if (e instanceof ClaimConflict) {
       return NextResponse.json({ success: false, error: e.message }, { status: 409 });
     }
