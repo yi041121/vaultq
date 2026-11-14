@@ -219,6 +219,21 @@ test("phone quick-action FAB reuses the role actions without the theme toggle", 
   assert.match(source, /const quickActions = quickActionsForRole\(userRole\)/);
 });
 
+test("claim form offers a detailed no-photo verification path", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/app/dashboard/student/search/page.tsx"), "utf8");
+  assert.match(source, /NO_PHOTO_REASON_MIN_LENGTH/);
+  assert.match(source, /setClaimNoPhoto\(true\)/);
+  assert.match(source, /form\.append\("noPhoto", "true"\)/);
+  assert.match(source, /I don&apos;t have a photo of this item/);
+});
+
+test("skipping a matching lost report requires explicit confirmation", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../src/app/dashboard/student/search/page.tsx"), "utf8");
+  assert.match(source, /linkSkipConfirmed/);
+  assert.match(source, /I confirm this item is not from my pending lost report/);
+  assert.match(source, /linkChoice === null && !linkSkipConfirmed/);
+});
+
 function quickActionHarness(href) {
   const source = fs.readFileSync(path.join(__dirname, "../src/lib/use-page-quick-action.ts"), "utf8");
   const code = ts.transpileModule(source, {

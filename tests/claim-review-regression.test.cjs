@@ -107,6 +107,7 @@ function harness(options = {}) {
     const deps = {
       "next/server": { NextResponse: Response }, "@/lib/prisma": { prisma }, "@/lib/auth": { authenticateRequest: async () => user },
       "@/lib/claim-review-service": review, "@/lib/claim-transition-service": transition, "@/lib/image-validation": validation,
+      "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
       "@/lib/notification-service": { notifyUser: async (...args) => notifications.push(args), notifyUsers: async rows => notifications.push(...rows) },
       "@/lib/photo-gallery": load("src/lib/photo-gallery.ts", {}), "@/lib/image-url": { signedImageUrl: () => "" },
     };

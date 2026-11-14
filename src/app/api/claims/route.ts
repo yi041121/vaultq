@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { signedImageUrl } from "@/lib/image-url";
 import { uniquePhotos } from "@/lib/photo-gallery";
 import { ImageValidationError, normalizeImageFile, normalizeImageSources } from "@/lib/image-validation";
+import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 
 /** Thrown when the item stops being available while a claim is submitted. */
 class ClaimConflict extends Error {}
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Locker numbers are only revealed once the claim is approved.
-    let data: any[] =
+    let data =
       user.role === "STUDENT"
         ? claimsWithEvidence.map((claim) =>
             claim.status === "APPROVED"
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
     // Admin verification queue: send signed image URLs instead of megabytes of
     // base64 data. The browser can lazy-load only the photos it actually shows.
     if (new URL(request.url).searchParams.get("light") === "1") {
-      data = data.map((claim: any) => {
+      data = data.map((claim) => {
         const evidenceSources: string[] = claim.evidenceImageUrls?.length
           ? claim.evidenceImageUrls
           : claim.evidenceImageUrl
@@ -196,6 +197,7 @@ export async function POST(request: NextRequest) {
     let itemId: string | null = null;
     let claimReason: string | null = null;
     let reportId: string | null = null;
+    let noPhoto = false;
     const evidenceImageUrls: string[] = [];
 
     const contentType = request.headers.get("content-type") || "";
@@ -204,6 +206,8 @@ export async function POST(request: NextRequest) {
       itemId = form.get("itemId") as string | null;
       claimReason = form.get("claimReason") as string | null;
       reportId = (form.get("reportId") as string | null) || null;
+      const noPhotoValue = form.get("noPhoto");
+      noPhoto = noPhotoValue === "true" || noPhotoValue === "1";
       const files = form.getAll("evidence").filter((entry): entry is File => entry instanceof File);
       if (files.length > 3) {
         return NextResponse.json({ success: false, error: "You can upload up to 3 photos" }, { status: 400 });
@@ -216,6 +220,7 @@ export async function POST(request: NextRequest) {
       itemId = body.itemId;
       claimReason = body.claimReason;
       reportId = typeof body.reportId === "string" ? body.reportId : null;
+      noPhoto = body.noPhoto === true || body.noPhoto === "true" || body.noPhoto === "1";
       const incoming = body.evidenceImageUrls !== undefined
         ? body.evidenceImageUrls
         : body.evidenceImageUrl
@@ -227,6 +232,19 @@ export async function POST(request: NextRequest) {
     if (typeof itemId !== "string" || !itemId.trim()) return NextResponse.json({ success: false, error: "itemId required" }, { status: 400 });
     if (typeof claimReason !== "string" || !claimReason.trim()) return NextResponse.json({ success: false, error: "claimReason required" }, { status: 400 });
     if (reportId !== null && typeof reportId !== "string") return NextResponse.json({ success: false, error: "Invalid reportId" }, { status: 400 });
+
+    // Validate the photo/no-photo rule before touching the item row. A linked
+    // lost report may still supply photos, so defer that case until after the
+    // report is loaded below.
+    if (!evidenceImageUrls.length && !reportId) {
+      if (!noPhoto) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
+      if (claimReason.trim().length < NO_PHOTO_REASON_MIN_LENGTH) {
+        return NextResponse.json({
+          success: false,
+          error: `Without a photo, describe the item in at least ${NO_PHOTO_REASON_MIN_LENGTH} characters so an admin can verify ownership in person.`,
+        }, { status: 400 });
+      }
+    }
 
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item) return NextResponse.json({ success: false, error: "Item not found" }, { status: 404 });
@@ -266,7 +284,15 @@ export async function POST(request: NextRequest) {
         evidenceImageUrls.push(...await normalizeImageSources(uniquePhotos(report.imageUrls.length ? report.imageUrls : [report.imageUrl]).slice(0, 3)));
       }
     }
-    if (!evidenceImageUrls.length) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
+    if (!evidenceImageUrls.length) {
+      if (!noPhoto) return NextResponse.json({ success: false, error: "Photo evidence is required" }, { status: 400 });
+      if ((claimReason || "").trim().length < NO_PHOTO_REASON_MIN_LENGTH) {
+        return NextResponse.json({
+          success: false,
+          error: `Without a photo, describe the item in at least ${NO_PHOTO_REASON_MIN_LENGTH} characters so an admin can verify ownership in person.`,
+        }, { status: 400 });
+      }
+    }
 
     const claim = await prisma.$transaction(async (tx) => {
       // Serialize with approval: either this claim is inserted before the
@@ -299,7 +325,7 @@ export async function POST(request: NextRequest) {
           itemId,
           userId: user.id,
           claimReason: claimReason.trim(),
-          evidenceImageUrl: evidenceImageUrls[0],
+          evidenceImageUrl: evidenceImageUrls[0] || null,
           evidenceImageUrls,
           matchedReportId: linkedReport?.id || null,
         },

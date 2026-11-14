@@ -325,6 +325,7 @@ async function listClaimPhotos(reportSources, light = true, main = "photo-a") {
     "@/lib/auth": { authenticateRequest: async () => ({ id: "admin", role: "ADMIN" }) },
     "@/lib/photo-gallery": photos,
     "@/lib/image-validation": imageValidation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
     "@/lib/image-url": { signedImageUrl: (kind, id, index) => `/images/${kind}/${id}/${index}` },
     "@/lib/prisma": { prisma: { claim: { findMany: async () => [{
       id: "claim", itemId: "item", userId: "student", status: "PENDING",
@@ -372,6 +373,7 @@ async function listReportPhotos(sources) {
     "@/lib/image-url": { signedImageUrl: (kind, id, index) => `/images/${kind}/${id}/${index}` },
     "@/lib/photo-gallery": photos,
     "@/lib/image-validation": imageValidation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
   }, { URL });
   return route.GET({ url: "https://vaultq.example/api/reports?light=1" });
 }
@@ -530,6 +532,7 @@ function inventoryRoute(status, changedCount = 1) {
     "@/lib/match-notification-service": { notifyInventoryMatches: async () => {} },
     "@/lib/prisma": { prisma: { item: { findUnique: async () => existing }, $transaction: (operation) => operation(tx) } },
     "@/lib/image-validation": imageValidation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
   });
   return { route, writes, context: { params: Promise.resolve({ id: "item" }) }, request: { json: async () => ({ description: "changed" }) } };
 }

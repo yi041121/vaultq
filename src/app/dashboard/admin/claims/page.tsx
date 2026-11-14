@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import {
   Package, Grid3X3, Lock, FileText, Users, Search,
   CheckCircle2, XCircle, Eye, RotateCcw, Camera, X, PackageSearch, Sparkles,
-  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Loader2,
+  ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Loader2, AlertCircle,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { useEscapeKey } from "@/lib/use-escape-key";
@@ -808,6 +808,12 @@ export default function AdminClaims() {
                                 {cl.studentEmail || (cl.studentId !== "—" ? cl.studentId : cl.student)}
                               </p>
                             </div>
+                            {evidencePhotos.length === 0 && cl.status === "PENDING" && (
+                              <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold rounded-lg px-1.5 py-0.5"
+                                style={{ color: "#92400e", backgroundColor: "#fef3c7", border: "1px solid #fde68a" }}>
+                                <AlertCircle size={11} /> No photo — verify in person
+                              </p>
+                            )}
                             {cl.status === "PENDING" && (pendingClaimCount.get(cl.itemId) || 0) > 1 && (
                               <button type="button"
                                 onClick={(e) => {

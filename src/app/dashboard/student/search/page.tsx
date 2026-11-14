@@ -31,6 +31,7 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { uniquePhotos } from "@/lib/photo-gallery";
 import { lostReportClaimReason } from "@/lib/lost-report-claim";
+import { NO_PHOTO_REASON_HELP, NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 
 interface User { id: string; name: string; email: string; role: string; }
 
@@ -101,6 +102,7 @@ export default function StudentSearch() {
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [claimReportId, setClaimReportId] = useState<string | null>(null);
   const [claimPrefilling, setClaimPrefilling] = useState(false);
+  const [claimNoPhoto, setClaimNoPhoto] = useState(false);
   const claimPrefillRequest = useRef(0);
 
   // Lost reports are offered explicitly before opening the claim form.
@@ -108,6 +110,7 @@ export default function StudentSearch() {
   const [lostReportsLoaded, setLostReportsLoaded] = useState(false);
   const [linkPromptItem, setLinkPromptItem] = useState<FoundItem | null>(null);
   const [linkChoice, setLinkChoice] = useState<string | null>(null);
+  const [linkSkipConfirmed, setLinkSkipConfirmed] = useState(false);
   const [lostReportPreview, setLostReportPreview] = useState<{ report: LostReportOption; index: number } | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -353,6 +356,7 @@ export default function StudentSearch() {
     if (reports.length > 0) {
       setLinkPromptItem(item);
       setLinkChoice(null);
+      setLinkSkipConfirmed(false);
       return;
     }
     startClaim(item, null);
@@ -362,6 +366,8 @@ export default function StudentSearch() {
     claimPrefillRequest.current++;
     setClaimPrefilling(false);
     setClaimItem(null);
+    setClaimNoPhoto(false);
+    setLinkSkipConfirmed(false);
   }
 
   async function startClaim(item: FoundItem, reportId: string | null, reports = lostReports) {
@@ -378,6 +384,8 @@ export default function StudentSearch() {
     const request = ++claimPrefillRequest.current;
     setClaimItem(item);
     setClaimReportId(reportId);
+    setClaimNoPhoto(false);
+    setLinkSkipConfirmed(false);
     setClaimReason(linked ? lostReportClaimReason(linked) : "");
     setClaimPhotos([]);
     setClaimCameraOpen(false);
@@ -430,6 +438,7 @@ export default function StudentSearch() {
         }),
       );
       setClaimPhotos((prev) => [...prev, ...drafts].slice(0, 3));
+      setClaimNoPhoto(false);
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
     }
@@ -445,12 +454,17 @@ export default function StudentSearch() {
 
   async function handleSubmitClaim() {
     if (!claimItem || claimPrefilling || claimSubmitting) return;
-    if (!claimReason.trim()) {
+    const reason = claimReason.trim();
+    if (!reason) {
       showCenteredMessage("error", "Please describe why this item is yours");
       return;
     }
-    if (!claimPhotos.length) {
+    if (!claimNoPhoto && !claimPhotos.length) {
       showCenteredMessage("error", "Please upload photo evidence");
+      return;
+    }
+    if (claimNoPhoto && reason.length < NO_PHOTO_REASON_MIN_LENGTH) {
+      showCenteredMessage("error", `${NO_PHOTO_REASON_HELP} At least ${NO_PHOTO_REASON_MIN_LENGTH} characters are required.`);
       return;
     }
 
@@ -465,9 +479,13 @@ export default function StudentSearch() {
     try {
       const form = new FormData();
       form.append("itemId", item.id);
-      form.append("claimReason", claimReason.trim());
+      form.append("claimReason", reason);
       if (claimReportId) form.append("reportId", claimReportId);
-      claimPhotos.forEach((photo) => form.append("evidence", photo.file));
+      if (claimNoPhoto) {
+        form.append("noPhoto", "true");
+      } else {
+        claimPhotos.forEach((photo) => form.append("evidence", photo.file));
+      }
 
       const res = await fetch("/api/claims", {
         method: "POST",
@@ -489,12 +507,15 @@ export default function StudentSearch() {
       setClaimReportId(null);
       setClaimReason("");
       setClaimPhotos([]);
+      setClaimNoPhoto(false);
       setClaimCameraOpen(false);
       setClaimPhotoSourceOpen(false);
       setClaimEditPhoto(null);
       if (fileRef.current) fileRef.current.value = "";
       if (claimCameraRef.current) claimCameraRef.current.value = "";
-      showCenteredMessage("success", "Claim submitted with evidence — awaiting verification");
+      showCenteredMessage("success", claimNoPhoto
+        ? "Claim submitted for in-person verification — awaiting review"
+        : "Claim submitted with evidence — awaiting verification");
     } catch (e) {
       showCenteredMessage("error", e instanceof Error ? e.message : "Failed to submit claim");
     } finally {
@@ -504,7 +525,7 @@ export default function StudentSearch() {
 
   useEscapeKey(!!lostReportPreview, () => setLostReportPreview(null));
   useEscapeKey(!!viewItem, () => setViewItem(null));
-  useEscapeKey(!!linkPromptItem, () => setLinkPromptItem(null));
+  useEscapeKey(!!linkPromptItem, () => { setLinkPromptItem(null); setLinkSkipConfirmed(false); });
   useEscapeKey(!!claimItem && !claimCameraOpen && !claimPhotoSourceOpen && claimEditPhoto === null, closeClaim);
 
   if (!user || !mounted) return null;
@@ -881,7 +902,7 @@ export default function StudentSearch() {
       {/* Always offer the student's pending lost reports before claiming */}
       {linkPromptItem && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setLinkPromptItem(null)} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { setLinkPromptItem(null); setLinkSkipConfirmed(false); }} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0">
@@ -890,7 +911,7 @@ export default function StudentSearch() {
                   Link the matching report to automatically copy its details and photos into your claim. You can review and edit them before submitting.
                 </p>
               </div>
-              <button type="button" onClick={() => setLinkPromptItem(null)}
+              <button type="button" onClick={() => { setLinkPromptItem(null); setLinkSkipConfirmed(false); }}
                 className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 cursor-pointer shrink-0 ml-3"
                 style={{ backgroundColor: c.primarySoft, color: c.primary }} aria-label="Close link lost report dialog">
                 <X size={16} />
@@ -904,7 +925,7 @@ export default function StudentSearch() {
                   <div key={report.id}
                     className="w-full flex items-center gap-2 rounded-xl border transition-colors duration-150"
                     style={{ borderColor: selected ? c.primary : c.borderLight, backgroundColor: selected ? c.primarySoft : c.card }}>
-                    <button type="button" onClick={() => setLinkChoice(selected ? null : report.id)}
+                    <button type="button" onClick={() => { setLinkChoice(selected ? null : report.id); setLinkSkipConfirmed(false); }}
                       className="flex-1 min-w-0 flex items-start gap-3 p-3 text-left cursor-pointer">
                       <span className="mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0"
                         style={{ borderColor: selected ? c.primary : c.border }}>
@@ -925,7 +946,7 @@ export default function StudentSearch() {
                   </div>
                 );
               })}
-              <button type="button" onClick={() => setLinkChoice(null)}
+              <button type="button" onClick={() => { setLinkChoice(null); setLinkSkipConfirmed(false); }}
                 className="w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-colors duration-150 cursor-pointer"
                 style={{ borderColor: linkChoice === null ? c.primary : c.borderLight, backgroundColor: linkChoice === null ? c.primarySoft : c.card }}>
                 <span className="mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0"
@@ -934,11 +955,23 @@ export default function StudentSearch() {
                 </span>
                 <span className="text-sm" style={{ color: c.text }}>Don&apos;t link a lost report</span>
               </button>
+              {linkChoice === null && (
+                <div className="rounded-xl border p-3 text-[11px] leading-relaxed" style={{ backgroundColor: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }}>
+                  This claim will not be linked to a lost report. If one of your pending reports is for this item, it will stay open and may be matched separately.
+                  <label className="mt-2 flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" checked={linkSkipConfirmed}
+                      onChange={(event) => setLinkSkipConfirmed(event.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-[#92400e]" />
+                    <span>I confirm this item is not from my pending lost report(s).</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-3">
-              <VButton variant="secondary" onClick={() => setLinkPromptItem(null)}>Cancel</VButton>
-              <VButton onClick={() => { const item = linkPromptItem; const reportId = linkChoice; setLinkPromptItem(null); startClaim(item, reportId); }}>
+              <VButton variant="secondary" onClick={() => { setLinkPromptItem(null); setLinkSkipConfirmed(false); }}>Cancel</VButton>
+              <VButton disabled={linkChoice === null && !linkSkipConfirmed}
+                onClick={() => { const item = linkPromptItem; const reportId = linkChoice; setLinkPromptItem(null); setLinkSkipConfirmed(false); startClaim(item, reportId); }}>
                 Continue
               </VButton>
             </div>
@@ -986,16 +1019,22 @@ export default function StudentSearch() {
                 <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Why is this yours? <span style={{ color: c.danger }}>*</span></label>
                 <VTextarea value={claimReason} onChange={(e) => setClaimReason(e.target.value)} rows={3}
                   placeholder="Describe distinctive details, proof of ownership..." />
+                {claimNoPhoto && (
+                  <p className="text-[11px] mt-1 text-right"
+                    style={{ color: claimReason.trim().length >= NO_PHOTO_REASON_MIN_LENGTH ? "#15803d" : c.danger }}>
+                    {claimReason.trim().length}/{NO_PHOTO_REASON_MIN_LENGTH} characters for in-person verification
+                  </p>
+                )}
               </div>
 
               <div>
                 <div className="flex items-center justify-between gap-3 mb-1.5">
                   <label className="text-sm font-medium" style={{ color: c.text }}>
-                    Photo Evidence <span style={{ color: c.danger }}>*</span>
+                    Photo Evidence {!claimNoPhoto && <span style={{ color: c.danger }}>*</span>}
                   </label>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px]" style={{ color: c.textLight }}>{claimPhotos.length}/3</span>
-                    {claimPhotos.length > 0 && claimPhotos.length < 3 && (
+                    <span className="text-[11px]" style={{ color: c.textLight }}>{claimNoPhoto ? "No photo" : `${claimPhotos.length}/3`}</span>
+                    {!claimNoPhoto && claimPhotos.length > 0 && claimPhotos.length < 3 && (
                       <button type="button" onClick={() => setClaimPhotoSourceOpen(true)}
                         className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
                         style={{ borderColor: c.border, color: c.primary }}>
@@ -1006,9 +1045,24 @@ export default function StudentSearch() {
                 </div>
                 <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoChange} />
                 <input ref={claimCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
-                {claimPhotos.length === 0 ? (
+                {claimNoPhoto ? (
+                  <div className="rounded-xl border-2 border-dashed p-4 text-center" style={{ borderColor: c.border, backgroundColor: c.fill }}>
+                    <p className="text-xs font-semibold" style={{ color: c.text }}>No photo attached</p>
+                    <p className="text-[11px] mt-1 leading-relaxed" style={{ color: c.textMuted }}>{NO_PHOTO_REASON_HELP}</p>
+                    <button type="button" onClick={() => setClaimNoPhoto(false)}
+                      className="mt-2 h-8 px-3 rounded-lg border bg-white text-[11px] font-semibold cursor-pointer"
+                      style={{ borderColor: c.border, color: c.primary }}>
+                      Add a photo instead
+                    </button>
+                  </div>
+                ) : claimPhotos.length === 0 ? (
                   <div>
                     <PhotoPicker onUpload={() => fileRef.current?.click()} onTakePhoto={openClaimCamera} />
+                    <button type="button" onClick={() => setClaimNoPhoto(true)}
+                      className="mt-2 w-full h-8 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      style={{ color: c.primary }}>
+                      I don&apos;t have a photo of this item
+                    </button>
                   </div>
                 ) : (
                   <div>
@@ -1048,16 +1102,23 @@ export default function StudentSearch() {
                     </div>
                   </div>
                 )}
-                <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
+                {!claimNoPhoto && (
+                  <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
+                )}
               </div>
 
               <div className="flex items-center justify-center gap-3 pt-2">
                 <VButton variant="secondary" onClick={closeClaim}>Cancel</VButton>
-                <VButton onClick={handleSubmitClaim} disabled={claimPrefilling || claimSubmitting || !claimReason.trim() || claimPhotos.length === 0}>
+                <VButton onClick={handleSubmitClaim}
+                  disabled={claimPrefilling || claimSubmitting || !claimReason.trim() || (claimNoPhoto ? claimReason.trim().length < NO_PHOTO_REASON_MIN_LENGTH : claimPhotos.length === 0)}>
                   <Upload size={14} /> {claimSubmitting ? "Submitting..." : "Submit Claim"}
                 </VButton>
               </div>
-              <p className="text-[11px] text-center" style={{ color: c.textLight }}>Admin will verify your description + photo before approval. False claims may be rejected.</p>
+              <p className="text-[11px] text-center" style={{ color: c.textLight }}>
+                {claimNoPhoto
+                  ? "No photo attached. Admin will verify your description in person before approval. False claims may be rejected."
+                  : "Admin will verify your description + photo before approval. False claims may be rejected."}
+              </p>
             </fieldset>
           </VCard>
         </div>

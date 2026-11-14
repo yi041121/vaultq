@@ -107,6 +107,7 @@ function imageRoute(source) {
     "@/lib/prisma": { prisma: { item: { findUnique: async () => { reads++; return { imageUrl: source }; } } } },
     "@/lib/image-url": signatures,
     "@/lib/image-validation": validation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
   });
   return { route, reads: () => reads, context: { params: Promise.resolve({ kind: "item", id: "item-1", index: "0" }) } };
 }
@@ -157,6 +158,7 @@ function writeRoute(file, { role = "STUDENT", reportType = "LOST" } = {}) {
     "@/lib/prisma": { prisma },
     "@/lib/auth": { authenticateRequest: async () => ({ id: "student", role }) },
     "@/lib/image-validation": validation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
     "@/lib/image-url": signatures,
     "@/lib/photo-gallery": load("src/lib/photo-gallery.ts"),
     "@/lib/categories": { isItemCategory: () => true },
@@ -241,7 +243,8 @@ test("valid report create/edit, inventory create/edit and claim resubmission sto
         $transaction: async (fn) => fn(transaction),
       } },
       "@/lib/auth": { authenticateRequest: async () => ({ id: "student", role: kind.startsWith("item") ? "ADMIN" : "STUDENT" }) },
-      "@/lib/image-validation": validation, "@/lib/image-url": signatures,
+      "@/lib/image-validation": validation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 }, "@/lib/image-url": signatures,
       "@/lib/photo-gallery": load("src/lib/photo-gallery.ts"), "@/lib/categories": { isItemCategory: () => true },
       "@/lib/notification-service": { notifyUser: async () => {} }, "@/lib/match-notification-service": { notifyInventoryMatches: async () => {} },
       "@/lib/report-include": { REPORT_INCLUDE: {} }, "@/lib/text-validation": { startsWithNumber: () => false },

@@ -120,6 +120,7 @@ function claimHarness(options = {}) {
     "@/lib/image-url": { signedImageUrl: () => "" },
     "@/lib/photo-gallery": load("src/lib/photo-gallery.ts"),
     "@/lib/image-validation": imageValidation,
+    "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
   });
   const request = {
     headers: { get: () => "application/json" },
