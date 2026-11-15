@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { colors, radius, size, font, iconSize } from "@/lib/design";
 import { scrollPageToTop } from "@/lib/scroll-to-top";
+import { PillSearchInput } from "@/components/pill-search-input";
 
 /* ---------------------------------- Button --------------------------------- */
 
@@ -143,40 +144,24 @@ export function VFilterButton({ children, style, active, onClick, className = ""
 
 /* ------------------------------- Search input ------------------------------ */
 
-export function VSearchInput({ value, onChange, placeholder = "Search items...", className = "", size: inputSize = "md", clearable = false }: {
+/**
+ * Search field used across the app. Every search box shares the pill style
+ * (icon on the right, hover-to-type, one-click clear), so this wrapper simply
+ * forwards to the shared implementation.
+ */
+export function VSearchInput({ value, onChange, placeholder = "Search items...", className = "", clearable = false, "aria-label": ariaLabel }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  /** Kept for older call sites; the pill style has one height. */
   size?: "md" | "lg";
   clearable?: boolean;
+  "aria-label"?: string;
 }) {
-  const large = inputSize === "lg";
   return (
-    <div className={`relative ${className}`}>
-      <Search size={large ? 18 : 16} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: colors.textMuted }} />
-      <input
-        type="text"
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`w-full ${large ? "h-11 text-sm sm:h-12 sm:text-[15px]" : "h-11 text-sm"} pl-10 ${clearable ? "pr-11" : "pr-4"} border bg-white ${radius.input} transition-shadow duration-200`}
-        style={{ borderColor: colors.border, color: colors.text, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
-        onFocus={(e) => { e.target.style.borderColor = colors.primary; e.target.style.boxShadow = "0 0 0 3px rgba(53,92,138,0.12)"; }}
-        onBlur={(e) => { e.target.style.borderColor = colors.border; e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.02)"; }}
-      />
-      {clearable && value && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onChange("")}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer hover:bg-[#f1f5f9]"
-          style={{ color: colors.textMuted }}
-        >
-          <X size={15} />
-        </button>
-      )}
-    </div>
+    <PillSearchInput value={value} onChange={onChange} placeholder={placeholder}
+      className={className} clearable={clearable} aria-label={ariaLabel} />
   );
 }
 
@@ -252,16 +237,18 @@ export function VDropdown({ trigger, children, open, onOpenChange, align = "left
   );
 }
 
-export function VDropdownItem({ children, active, onSelect, style }: {
+export function VDropdownItem({ children, active, onSelect, style, dense }: {
   children: React.ReactNode;
   active?: boolean;
   onSelect?: () => void;
   style?: React.CSSProperties;
+  /** Tighter vertical padding for long option lists. */
+  dense?: boolean;
 }) {
   return (
     <button
       type="button"
-      className="vq-dropdown-item w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left cursor-pointer"
+      className={`vq-dropdown-item w-full flex items-center gap-2.5 px-3 text-sm text-left cursor-pointer ${dense ? "py-1.5" : "py-2"}`}
       style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: active ? colors.primarySoft : "transparent", fontWeight: active ? 600 : 400, ...style }}
       onClick={onSelect}
     >

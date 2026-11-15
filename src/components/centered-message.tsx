@@ -23,8 +23,9 @@ interface Msg {
 let listener: ((m: Msg) => void) | null = null;
 let idSeq = 0;
 
-export function showCenteredMessage(kind: Kind, title: string, subtitle?: string, duration = 1500) {
-  listener?.({ id: ++idSeq, kind, title, subtitle, duration });
+export function showCenteredMessage(kind: Kind, title: string, subtitle?: string, duration?: number) {
+  // Errors need longer to read (and for assistive tech to announce them).
+  listener?.({ id: ++idSeq, kind, title, subtitle, duration: duration ?? (kind === "error" ? 4000 : 1800) });
 }
 
 export function CenteredMessageHost() {
@@ -41,13 +42,25 @@ export function CenteredMessageHost() {
     return () => clearTimeout(t);
   }, [msg]);
 
+  useEffect(() => {
+    if (!msg) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" || event.key === "Enter") setMsg(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [msg]);
+
   if (!msg) return null;
 
   const isError = msg.kind === "error";
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"
       style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
-      onClick={() => setMsg(null)}>
+      onClick={() => setMsg(null)}
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
+      aria-atomic="true">
       <div className="rounded-[20px] px-8 py-6 flex flex-col items-center animate-in fade-in zoom-in-95 duration-200"
         style={{ background: colors.card, boxShadow: "0 20px 48px rgba(0,0,0,0.28)" }}>
         <div className="w-14 h-14 rounded-full flex items-center justify-center mb-3"

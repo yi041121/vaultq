@@ -302,6 +302,8 @@ test("item and evidence photo previews never crop the photo edges away", () => {
     "src/app/dashboard/student/page.tsx",
     "src/app/dashboard/student/claims/page.tsx",
     "src/app/dashboard/student/report/page.tsx",
+    "src/components/student/report-card.tsx",
+    "src/components/student/report-matches-panel.tsx",
     "src/app/dashboard/student/search/page.tsx",
     "src/app/dashboard/admin/page.tsx",
     "src/app/dashboard/admin/claims/page.tsx",

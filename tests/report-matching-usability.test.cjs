@@ -141,7 +141,10 @@ test("next-step guidance never treats a report match or pending claim as collect
 });
 
 test("student matches can be reopened and admin confirmation describes the real approval action", () => {
-  const student = fs.readFileSync(path.join(__dirname, "../src/app/dashboard/student/report/page.tsx"), "utf8");
+  const student = [
+    "../src/app/dashboard/student/report/page.tsx",
+    "../src/components/student/report-card.tsx",
+  ].map((file) => fs.readFileSync(path.join(__dirname, file), "utf8")).join("\n");
   assert.match(student, /Check possible matches/);
   assert.match(student, /report\.status === "PENDING" && !report\.item/);
   assert.match(student, /report: activeSuggestionReportId/);

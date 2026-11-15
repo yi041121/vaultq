@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ItemDetailsModal } from "@/components/item-details-modal";
+import { PillSearchInput } from "@/components/pill-search-input";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { FloatingPanel } from "@/components/date-calendar";
@@ -22,7 +23,7 @@ import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import {
-  VCard, VContentPanel, VBadge, VFilterButton, VPaginationFooter, VDropdown, VDropdownItem, VSearchInput, VButton, VTextarea,
+  VCard, VContentPanel, VBadge, VFilterButton, VPaginationFooter, VDropdown, VDropdownItem, VButton, VTextarea,
   vcolors as c,
 } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
@@ -551,8 +552,8 @@ export default function StudentSearch() {
           {/* Search + filters — shared layout with the admin pages. */}
           <FilterPanel
             search={
-              <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
-                size="lg" clearable placeholder="Search items..." />
+              <PillSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
+                clearable placeholder="Search items..." />
             }
             filters={
               <div className="grid w-full grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-2 sm:contents">

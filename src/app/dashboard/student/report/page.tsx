@@ -1,16 +1,14 @@
 "use client";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
-import { formatDisplayDate as fmtDay, formatDisplayDate as fmtReportDate, formatDisplayTimestamp as fmtTimestamp, formatDisplayTimestamp } from "@/lib/date-format";
+import { formatDisplayDate as fmtDay, formatDisplayDate as fmtReportDate } from "@/lib/date-format";
 
 import { Suspense, useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   PackageSearch, PackageCheck, Clock, X, CheckCircle2,
   Loader2, RefreshCw, Plus, FileText, RotateCcw,
-  Monitor, Briefcase, CreditCard, Key, BookText, CupSoda, Grid3X3, Crop,
-  ChevronDown, ZoomIn, MapPin, Eye, Sparkles,
-  ChevronLeft, ChevronRight, CircleAlert, ArrowLeftRight,
-  type LucideIcon,
+  Grid3X3, Crop,
+  ChevronDown, CircleAlert, ArrowLeftRight,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -26,15 +24,33 @@ import { CustomScrollbar } from "@/components/custom-scrollbar";
 import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { StudentShell } from "@/components/student-shell";
 import {
-  VCard, VContentPanel, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VBadge, VFilterButton, vcolors as c,
+  VCard, VContentPanel, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
+import { CATEGORY_ICONS as categoryIcons } from "@/lib/category-icons";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
 import { clearStudentCache, getCachedReports, setCachedReports } from "@/lib/student-cache";
 import { useEscapeKey } from "@/lib/use-escape-key";
-import { reportNextStep } from "@/lib/student-workflow";
 import { scrollPageToTop } from "@/lib/scroll-to-top";
 import { fetchReportPages } from "@/lib/report-pages";
+import {
+  REPORT_DESCRIPTION_HELPFUL,
+  validateReportForm,
+  type ReportFormErrors,
+} from "@/lib/report-form";
+import {
+  clearReportDraft,
+  hasDraftContent,
+  loadReportDraft,
+  saveReportDraft,
+  type ReportDraft,
+} from "@/lib/report-draft";
+import { ReportCard, itemStatusLabel } from "@/components/student/report-card";
+import { ReportTypeChooser } from "@/components/student/report-type-chooser";
+import { ReportMatchesPanel } from "@/components/student/report-matches-panel";
+import { ReportListToolbar } from "@/components/student/report-list-toolbar";
+import { filterReports, statusIsAvailableFor, type ReportStatusFilter, type ReportTypeFilter } from "@/lib/report-list-filter";
+import type { ReportSuggestion } from "@/lib/report-suggestions";
 
 interface User { id: string; name: string; email: string; role: string; }
 type ReportType = "LOST" | "FOUND";
@@ -102,48 +118,17 @@ type ItemDetail = {
   isRejected?: boolean;
 };
 
-type ReportSuggestion = {
-  id: string;
-  itemName: string;
-  category: string | null;
-  description: string | null;
-  foundLocation: string | null;
-  foundDate: string | null;
-  imageUrl: string | null;
-  score: number;
-  label: "Strong" | "Possible" | "Weak";
-  reasons: string[];
-};
-
-const categoryIcons: Record<string, LucideIcon> = {
-  Electronics: Monitor,
-  Bags: Briefcase,
-  "Student Cards": CreditCard,
-  Keys: Key,
-  Documents: BookText,
-  "Water Bottles": CupSoda,
-  Others: Grid3X3,
-};
-
 // Report type tags use their own colour and an outline style so they never
 // look like the status pill beside them (e.g. "Lost" vs "Pending").
 const FOUND_COLOR = "#4a9d6b";
-const FOUND_BUTTON = "#3f8a5c";
-const reportTypeColor = (type: ReportType) => (type === "LOST" ? "#355C8A" : FOUND_COLOR);
 
-// Logged item statuses shown inside a report card. Once the report itself is
-// VERIFIED the card shows "Verified" instead, matching the badge at the top.
-const itemStatusLabel: Record<string, string> = {
-  FOUND: "Found",
-  CLAIMED: "Claimed",
-  RETRIEVED: "Retrieved",
-  EXPIRED: "Expired",
-};
-
-function fmtReportTime(value: string | null) {
-  if (!value) return "";
-  const formatted = formatDisplayTimestamp(value);
-  return formatted === "—" ? "" : formatted;
+/**
+ * Keeps the status filter valid when the Lost/Found tab changes. "Matched"
+ * only exists for lost reports and "Verified" only for found reports, so an
+ * impossible leftover status falls back to the pending default.
+ */
+function statusForKind(kind: ReportTypeFilter, current: ReportStatusFilter): ReportStatusFilter {
+  return statusIsAvailableFor(kind, current) ? current : "PENDING";
 }
 
 function StudentReportContent() {
@@ -152,7 +137,11 @@ function StudentReportContent() {
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<"new" | "reports">("new");
-  const [reportKind, setReportKind] = useState<ReportType>("LOST");
+  const [reportKind, setReportKind] = useState<ReportTypeFilter>("ALL");
+  const [reportStatus, setReportStatus] = useState<ReportStatusFilter>("PENDING");
+  const [reportTypeOpen, setReportTypeOpen] = useState(false);
+  const [reportQuery, setReportQuery] = useState("");
+  const [duplicateReport, setDuplicateReport] = useState<{ itemName: string; type: ReportType } | null>(null);
 
   const [type, setType] = useState<ReportType | null>(null);
   const [expandedChoice, setExpandedChoice] = useState<ReportType | null>(null);
@@ -181,15 +170,56 @@ function StudentReportContent() {
   const [suggestionDetail, setSuggestionDetail] = useState<ReportSuggestion | null>(null);
   const [matchesReport, setMatchesReport] = useState<UserReport | null>(null);
   const suggestionRequestRef = useRef(0);
-  const matchesHeadingRef = useRef<HTMLHeadingElement>(null);
+  const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const activeSuggestionReportId = matchesReport?.id ?? submittedReportId;
 
   useEffect(() => () => { suggestionRequestRef.current++; }, []);
   useEffect(() => {
-    if (!matchesReport) return;
-    matchesHeadingRef.current?.focus({ preventScroll: true });
+    if (!matchesReport && !submitted) return;
+    resultHeadingRef.current?.focus({ preventScroll: true });
     scrollPageToTop();
-  }, [matchesReport]);
+  }, [matchesReport, submitted]);
+
+  // Draft autosave: text fields only, debounced. Photos cannot be restored.
+  useEffect(() => {
+    if (!type) return;
+    const owner = getBrowserSessionKey();
+    if (!owner) return;
+    const draft = { owner, type, itemName, category, description, location, date };
+    if (!hasDraftContent(draft)) return;
+    const timer = window.setTimeout(() => saveReportDraft(draft), 500);
+    return () => window.clearTimeout(timer);
+  }, [type, itemName, category, description, location, date]);
+
+  // Lock background scrolling and move focus into the report dialog.
+  useEffect(() => {
+    if (!type) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const frame = window.requestAnimationFrame(() => formHeadingRef.current?.focus({ preventScroll: true }));
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [type]);
+
+  // Escape closes the form (the draft is kept) unless a nested dialog is open.
+  useEffect(() => {
+    if (!type) return;
+    function onEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || submitting || reportHelpOpen || photoSourceTarget || cameraTarget || editingPhoto !== null) return;
+      if (dateOpen) { setDateOpen(false); return; }
+      if (categoryOpen) { setCategoryOpen(false); return; }
+      event.preventDefault();
+      closeReportForm();
+    }
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+    // closeReportForm is a stable component-scoped handler; state values below
+    // decide whether a nested surface should receive Escape first.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, submitting, reportHelpOpen, photoSourceTarget, cameraTarget, editingPhoto, dateOpen, categoryOpen]);
+
 
   const [reports, setReports] = useState<UserReport[]>(() => getCachedReports() ?? []);
   const [reportsLoading, setReportsLoading] = useState(() => getCachedReports() === null);
@@ -210,11 +240,17 @@ function StudentReportContent() {
   const editPhotoInputRef = useRef<HTMLInputElement>(null);
   const editCameraInputRef = useRef<HTMLInputElement>(null);
   const formScrollRef = useRef<HTMLDivElement>(null);
+  const formDialogRef = useRef<HTMLDivElement>(null);
+  const formHeadingRef = useRef<HTMLHeadingElement>(null);
+  const choiceRefs = useRef<Record<ReportType, HTMLButtonElement | null>>({ LOST: null, FOUND: null });
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState<ReportDraft | null>(null);
 
-  const formValid = !!(
-    type && itemName.trim().length >= 2 && category && description.trim().length >= 5 &&
-    location.trim().length >= 2 && date
-  );
+  const formValidation = validateReportForm({ type, itemName, category, description, location, date });
+  // Errors stay hidden until the first submit attempt, then update live while
+  // the student fixes each field.
+  const formErrors: ReportFormErrors = submitAttempted ? formValidation : {};
+  const descriptionLength = description.trim().length;
 
   async function loadReports(token: string) {
     if (!getCachedReports()) setReportsLoading(true);
@@ -304,10 +340,13 @@ function StudentReportContent() {
 
     const params = new URLSearchParams(window.location.search);
     const queryType = params.get("type");
-    if (queryType === "lost") setType("LOST");
-    if (queryType === "found") setType("FOUND");
+    if (queryType === "lost") selectType("LOST");
+    if (queryType === "found") selectType("FOUND");
     const queryKind = params.get("kind");
-    if (queryKind === "LOST" || queryKind === "FOUND") setReportKind(queryKind);
+    if (queryKind === "LOST" || queryKind === "FOUND") {
+      setReportKind(queryKind);
+      setReportStatus((current) => statusForKind(queryKind, current));
+    }
     if (params.get("tab") === "reports") setTab("reports");
   }, []);
 
@@ -317,11 +356,15 @@ function StudentReportContent() {
     if (!mounted) return;
     const kind = searchParams.get("kind");
     // URL-driven tab/type sync; the query string is an external input.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (kind === "LOST" || kind === "FOUND") setReportKind(kind);
+    if (kind === "LOST" || kind === "FOUND") {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setReportKind(kind);
+      setReportStatus((current) => statusForKind(kind, current));
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }
     const typeParam = searchParams.get("type");
-    if (typeParam === "lost") setType("LOST");
-    if (typeParam === "found") setType("FOUND");
+    if (typeParam === "lost") selectType("LOST");
+    if (typeParam === "found") selectType("FOUND");
     const tabParam = searchParams.get("tab");
     if (tabParam === "reports") setTab("reports");
     if (tabParam === "new") setTab("new");
@@ -336,6 +379,7 @@ function StudentReportContent() {
   }
 
   function handleLogout() {
+    clearReportDraft();
     clearStudentCache();
     clearStoredBrowserSession();
     localStorage.removeItem("user");
@@ -355,16 +399,60 @@ function StudentReportContent() {
     setEditingPhoto(null);
     setCameraTarget(null);
     setPhotoSourceTarget(null);
+    setCategoryOpen(false);
+    setDateOpen(false);
+    setSubmitAttempted(false);
   }
 
   function closeReportForm() {
     if (submitting) return;
+    const closingType = type;
+    // Keep the latest keystrokes in the on-device draft before clearing the UI.
+    const owner = getBrowserSessionKey();
+    if (owner && closingType) {
+      saveReportDraft({ owner, type: closingType, itemName, category, description, location, date });
+    }
     resetForm();
+    // Return keyboard focus to the Lost/Found choice that opened the form.
+    if (closingType) window.requestAnimationFrame(() => choiceRefs.current[closingType]?.focus());
   }
 
-  function selectType(next: ReportType) {
+  function selectType(next: ReportType, options: { skipDraft?: boolean } = {}) {
+    if (!options.skipDraft) {
+      const draft = loadReportDraft(getBrowserSessionKey());
+      if (draft && draft.type === next && hasDraftContent(draft)) {
+        setExpandedChoice(next);
+        setDraftPrompt(draft);
+        return;
+      }
+    }
     setType(next);
+    setExpandedChoice(next);
+    setSubmitAttempted(false);
     clearSubmission();
+  }
+
+  function resumeDraft() {
+    const draft = draftPrompt;
+    if (!draft) return;
+    setDraftPrompt(null);
+    setType(draft.type);
+    setExpandedChoice(draft.type);
+    setItemName(draft.itemName);
+    setCategory(draft.category);
+    setDescription(draft.description);
+    setLocation(draft.location);
+    setDate(draft.date);
+    setPhotos([]);
+    setSubmitAttempted(false);
+    clearSubmission();
+  }
+
+  function discardDraft() {
+    const draft = draftPrompt;
+    clearReportDraft();
+    setDraftPrompt(null);
+    if (draft) selectType(draft.type, { skipDraft: true });
   }
 
   /** Swap the open form to the other report type, keeping what was typed. */
@@ -398,6 +486,26 @@ function StudentReportContent() {
 
   function toggleDateCalendar() {
     setDateOpen((open) => !open);
+  }
+
+  /** Keep Tab focus inside the report dialog while it is open. */
+  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    const root = formDialogRef.current;
+    if (!root) return;
+    const focusable = Array.from(root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -435,8 +543,13 @@ function StudentReportContent() {
 
   async function handleSubmit() {
     if (!type) return;
-    if (!formValid) {
-      showCenteredMessage("error", "Please complete all required fields");
+    setSubmitAttempted(true);
+    const errors = validateReportForm({ type, itemName, category, description, location, date });
+    if (Object.keys(errors).length > 0) {
+      showCenteredMessage("error", "Please fix the highlighted fields");
+      window.requestAnimationFrame(() => {
+        formDialogRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+      });
       return;
     }
     const token = getBrowserSessionKey();
@@ -463,12 +576,19 @@ function StudentReportContent() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
+        // A duplicate pending report is recoverable: offer the existing one
+        // instead of a dead-end error toast.
+        if (res.status === 409 && /already have a pending report/i.test(data?.error || "")) {
+          setDuplicateReport({ itemName: itemName.trim(), type });
+          return;
+        }
         showCenteredMessage("error", data?.error || "Failed to submit report");
         return;
       }
 
       const submittedType = type;
       const newReportId = typeof data.data?.id === "string" ? data.data.id : null;
+      clearReportDraft();
       resetForm();
       setSubmitted(submittedType);
       setMatchesReport(null);
@@ -752,47 +872,98 @@ function StudentReportContent() {
 
   const lostReportCount = reports.filter((report) => report.type === "LOST").length;
   const foundReportCount = reports.filter((report) => report.type === "FOUND").length;
-  const visibleReports = reports.filter((report) => report.type === reportKind);
+  const visibleReports = filterReports(reports, { type: reportKind, status: reportStatus, query: reportQuery });
+  // Distinguishes "you have no reports of this type" from "your filters hid
+  // them", so an empty result never looks like missing data.
+  const hasReportsOfType = reportKind === "ALL"
+    ? reports.length > 0
+    : reports.some((report) => report.type === reportKind);
+  const kindLabel = reportKind === "ALL" ? "All types" : reportKind === "LOST" ? "Lost" : "Found";
+  const kindCount = reportKind === "ALL" ? reports.length
+    : reportKind === "LOST" ? lostReportCount : foundReportCount;
+
+  function changeReportKind(next: ReportTypeFilter) {
+    setReportKind(next);
+    setReportStatus((current) => statusForKind(next, current));
+  }
+
+  function resetReportFilters() {
+    setReportStatus("ALL");
+    setReportQuery("");
+  }
 
   return (
     <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report Items" logout={handleLogout}>
       <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 sm:px-6 lg:px-8 xl:px-10 pt-5 lg:pt-8 w-full flex flex-col items-stretch">
-          <div data-filter-panel className={`shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border p-4 lg:p-5 mb-6 lg:mb-8 ${tab === "new" ? "sm:w-fit" : "w-full"}`}
-            style={{ backgroundColor: c.panel, borderColor: c.border }}>
-          {/* Tabs */}
-          <div className="w-full sm:w-[448px] h-11 shrink-0 flex rounded-xl border bg-white overflow-hidden" style={{ borderColor: c.border }}>
-            <button type="button"
-              className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
-              style={{ backgroundColor: tab === "new" ? c.primary : "transparent", color: tab === "new" ? "#fff" : c.textMuted }}
-              onClick={() => { clearSubmission(); switchTab("new"); }}>
-              New report
-            </button>
-            <button type="button"
-              className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
-              style={{ backgroundColor: tab === "reports" ? c.primary : "transparent", color: tab === "reports" ? "#fff" : c.textMuted }}
-              onClick={() => { clearSubmission(); switchTab("reports"); }}>
-              My reports{reports.length > 0 ? ` (${reports.length})` : ""}
-            </button>
-          </div>
-          {tab === "reports" && !matchesReport && (
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:ml-auto" role="group" aria-label="Filter reports by type">
-              <VFilterButton active={reportKind === "LOST"} onClick={() => setReportKind("LOST")}>
-                <PackageSearch size={14} style={{ color: reportKind === "LOST" ? c.primary : c.textMuted }} />
-                Lost ({lostReportCount})
-              </VFilterButton>
-              <VFilterButton active={reportKind === "FOUND"} onClick={() => setReportKind("FOUND")}>
-                <PackageCheck size={14} style={{ color: reportKind === "FOUND" ? c.primary : c.textMuted }} />
-                Found ({foundReportCount})
-              </VFilterButton>
+          <div data-filter-panel className="mb-6 flex shrink-0 flex-col gap-3 lg:mb-8 xl:flex-row xl:items-center">
+            {/* Tabs sit in their own bordered container so they read as a
+                separate control from the report search beside them. */}
+            <div className="rounded-2xl border p-2 sm:w-fit" style={{ backgroundColor: c.panel, borderColor: c.border }}>
+              <div className="flex h-12 w-full overflow-hidden rounded-xl border bg-white sm:w-[360px]" style={{ borderColor: c.border }}>
+                <button type="button"
+                  className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer"
+                  style={{ backgroundColor: tab === "new" ? c.primary : "transparent", color: tab === "new" ? "#fff" : c.textMuted }}
+                  onClick={() => { clearSubmission(); switchTab("new"); }}>
+                  New report
+                </button>
+                <button type="button"
+                  className="flex-1 h-full text-xs font-semibold transition-all duration-150 cursor-pointer border-l"
+                  style={{ borderColor: c.border, backgroundColor: tab === "reports" ? c.primary : "transparent", color: tab === "reports" ? "#fff" : c.textMuted }}
+                  onClick={() => { clearSubmission(); switchTab("reports"); }}>
+                  My reports{reports.length > 0 ? ` (${reports.length})` : ""}
+                </button>
+              </div>
             </div>
-          )}
+            {tab === "reports" && !matchesReport && (
+              <div className="min-w-0 w-full rounded-2xl border p-2 xl:ml-auto xl:w-fit" style={{ backgroundColor: c.panel, borderColor: c.border }}>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                  <ReportListToolbar
+                    query={reportQuery}
+                    onQueryChange={setReportQuery}
+                    type={reportKind}
+                    status={reportStatus}
+                    onStatusChange={setReportStatus}
+                  />
+                  <VDropdown open={reportTypeOpen} onOpenChange={setReportTypeOpen} width="w-[160px]" align="right"
+                    trigger={
+                      <VFilterButton
+                        aria-label={`Filter by report type: ${kindLabel}`}
+                        aria-haspopup="listbox" aria-expanded={reportTypeOpen}
+                        style={reportKind === "ALL" ? undefined : { borderColor: c.primary, color: c.primary, backgroundColor: c.primarySoft }}
+                        onClick={() => setReportTypeOpen((open) => !open)}>
+                        {reportKind === "ALL"
+                          ? <Grid3X3 size={14} style={{ color: c.textMuted }} />
+                          : reportKind === "LOST"
+                            ? <PackageSearch size={14} style={{ color: c.primary }} />
+                            : <PackageCheck size={14} style={{ color: FOUND_COLOR }} />}
+                        {kindLabel} ({kindCount})
+                        <ChevronDown size={14} />
+                      </VFilterButton>
+                    }>
+                    {(close) => (
+                      <>
+                        <VDropdownItem active={reportKind === "ALL"}
+                          onSelect={() => { changeReportKind("ALL"); close(); }}>
+                          <Grid3X3 size={14} style={{ color: c.textMuted }} /> All types ({reports.length})
+                        </VDropdownItem>
+                        <VDropdownItem active={reportKind === "LOST"}
+                          onSelect={() => { changeReportKind("LOST"); close(); }}>
+                          <PackageSearch size={14} style={{ color: c.primary }} /> Lost ({lostReportCount})
+                        </VDropdownItem>
+                        <VDropdownItem active={reportKind === "FOUND"}
+                          onSelect={() => { changeReportKind("FOUND"); close(); }}>
+                          <PackageCheck size={14} style={{ color: FOUND_COLOR }} /> Found ({foundReportCount})
+                        </VDropdownItem>
+                      </>
+                    )}
+                  </VDropdown>
+                </div>
+              </div>
+            )}
           </div>
 
           <VContentPanel>
-          <p className="mb-4 text-xs leading-relaxed" style={{ color: c.textMuted }}>
-            <strong>Report:</strong> tell us what you lost or found. <strong>Claim:</strong> request a specific found item. An admin verifies ownership before collection.
-          </p>
           {tab === "reports" && !matchesReport ? (
             <div className="w-full min-w-0 flex-1 flex flex-col">
               {reportsLoading ? (
@@ -830,219 +1001,57 @@ function StudentReportContent() {
                 </VCard>
               ) : (
                 <div className="flex flex-1 flex-col gap-6 lg:gap-8">
-                  {visibleReports.length === 0 ? (
+                  {visibleReports.length === 0 && hasReportsOfType ? (
+                    <VCard className="py-16 text-center flex-1 flex flex-col items-center justify-center">
+                      <PackageSearch size={36} className="mb-4" style={{ color: c.textLight }} />
+                      <p className="text-base font-medium" style={{ color: c.textMuted }}>No reports match your filters</p>
+                      <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>Try a different search or show all statuses.</p>
+                      <VButton variant="secondary" onClick={resetReportFilters}>
+                        <RotateCcw size={14} /> Clear filters
+                      </VButton>
+                    </VCard>
+                  ) : visibleReports.length === 0 ? (
                     <VCard className="py-16 text-center flex-1 flex flex-col items-center justify-center">
                       {reportKind === "LOST"
                         ? <PackageSearch size={36} className="mb-4" style={{ color: c.textLight }} />
-                        : <PackageCheck size={36} className="mb-4" style={{ color: c.textLight }} />}
+                        : reportKind === "FOUND"
+                          ? <PackageCheck size={36} className="mb-4" style={{ color: c.textLight }} />
+                          : <FileText size={36} className="mb-4" style={{ color: c.textLight }} />}
                       <p className="text-base font-medium" style={{ color: c.textMuted }}>
-                        No {reportKind === "LOST" ? "lost" : "found"} reports
+                        {reportKind === "ALL" ? "No reports yet" : `No ${reportKind === "LOST" ? "lost" : "found"} reports`}
                       </p>
                       <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>
                         {reportKind === "LOST"
                           ? "Report a lost item to start tracking it."
-                          : "Report something you found so it can be returned."}
+                          : reportKind === "FOUND"
+                            ? "Report something you found so it can be returned."
+                            : "Report a lost item or hand in something you found."}
                       </p>
-                      <VButton onClick={() => { switchTab("new"); selectType(reportKind); }}>
-                        <Plus size={14} /> Report {reportKind === "LOST" ? "lost item" : "found item"}
+                      <VButton onClick={() => {
+                        switchTab("new");
+                        if (reportKind !== "ALL") selectType(reportKind);
+                      }}>
+                        <Plus size={14} /> {reportKind === "ALL" ? "New report" : `Report ${reportKind === "LOST" ? "lost item" : "found item"}`}
                       </VButton>
                     </VCard>
                   ) : (
                   <div className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-5">
-                  {visibleReports.map((report) => {
-                    const Icon = categoryIcons[report.category] || FileText;
-                    const verifiedWithItem = report.status === "VERIFIED" && !!report.item;
-                    const matchedWithItem = report.status === "MATCHED" && !!report.item;
-                    const linkedWithItem = matchedWithItem;
-                    const rejected = report.status === "REJECTED";
-                    // Verified, linked and rejected reports share the compact
-                    // "item first" layout; only the thumbnail source differs.
-                    const showsItemFirst = verifiedWithItem || linkedWithItem || rejected;
-                    const itemName = report.item?.name || report.itemName;
-                    // Linked/rejected cards show the student's uploaded photo.
-                    const itemThumb = linkedWithItem || rejected
-                      ? report.images[0] || report.item?.imageUrl
-                      : report.item?.imageUrl;
-                    const itemBlock = (report.item || rejected) && (
-                          <div className="rounded-xl p-3.5 mb-3 flex flex-wrap items-center gap-3" style={{ backgroundColor: c.fill }}>
-                            <button
-                              type="button"
-                              aria-label={linkedWithItem || rejected ? `View your ${report.itemName} photos` : `View ${itemName} details`}
-                              className="group flex flex-1 min-w-[160px] items-center gap-3 text-left cursor-pointer"
-                              onClick={() => {
-                                if ((linkedWithItem || rejected) && report.images.length) {
-                                  setViewer({ photos: report.images, index: 0, title: report.itemName });
-                                } else if (linkedWithItem || rejected) {
-                                  openReportDetail(report);
-                                } else {
-                                  void openItemDetail(report);
-                                }
-                              }}>
-                              {itemThumb ? (
-                                <span className="relative rounded-lg overflow-hidden border shrink-0 block" style={{ borderColor: c.border }}>
-                                  <img src={itemThumb} alt={itemName} className="w-12 h-12 object-contain" />
-                                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-colors duration-200 flex items-center justify-center">
-                                    <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white">
-                                      <ZoomIn size={14} />
-                                    </span>
-                                  </span>
-                                </span>
-                              ) : (
-                                <span className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: c.borderLight }}>
-                                  <PackageCheck size={20} style={{ color: c.primary }} />
-                                </span>
-                              )}
-                              <span className="flex-1 min-w-0">
-                                <span className="block text-xs font-semibold" style={{ color: c.text }}>
-                                  {linkedWithItem
-                                    ? `Lost reporting: ${report.itemName}`
-                                    : rejected
-                                      ? `${report.type === "LOST" ? "Lost" : "Found"} report: ${report.itemName}`
-                                      : `${report.type === "LOST" ? "Matched item" : "Logged item"}: ${report.item?.name}`}
-                                </span>
-                                <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                                  {(report.status === "VERIFIED" || report.status === "MATCHED" || rejected) && (
-                                    <VBadge color={reportTypeColor(report.type)}
-                                      style={{ backgroundColor: "transparent", border: "1px solid currentColor" }}>
-                                      {report.typeLabel}
-                                    </VBadge>
-                                  )}
-                                  {report.status === "VERIFIED" || report.status === "MATCHED" || rejected ? (
-                                    <VBadge color={report.color}>{report.statusLabel}</VBadge>
-                                  ) : (
-                                    <span className="text-[11px]" style={{ color: c.textMuted }}>
-                                      {report.item ? itemStatusLabel[report.item.status] || report.item.status : ""}
-                                    </span>
-                                  )}
-                                </span>
-                              </span>
-                            </button>
-                            {linkedWithItem && (
-                              <VButton variant="secondary" size="sm" onClick={() => void openItemDetail(report)}>
-                                <PackageCheck size={13} /> {matchedWithItem ? "Matched item" : "Item details"}
-                              </VButton>
-                            )}
-                            <VButton variant="secondary" size="sm" onClick={() => (linkedWithItem || rejected ? openReportDetail(report) : void openItemDetail(report))}>
-                              <Eye size={13} /> View
-                            </VButton>
-                          </div>
-                    );
-                    return (
-                      <VCard key={report.id} className="p-5 lg:p-6 flex flex-col">
-                        {showsItemFirst && itemBlock}
-                        {!showsItemFirst && (
-                          <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 -mt-0.5"
-                              style={{ backgroundColor: c.primary }}>
-                              <Icon size={18} style={{ color: "#fff" }} />
-                            </div>
-                            <div className="min-w-0">
-                              <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{report.itemName}</h3>
-                              <p className="text-[11px] mt-0.5" style={{ color: c.textLight }}>
-                                <time className="vq-date">{fmtReportDate(report.date)}</time>{" · "}{report.location || "—"}{" · "}{report.category}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <VBadge color={reportTypeColor(report.type)}
-                              style={{ backgroundColor: "transparent", border: "1px solid currentColor" }}>
-                              {report.typeLabel}
-                            </VBadge>
-                            {/* A verified report shows its badge on the logged item below, so hide the duplicate here. */}
-                            {!showsItemFirst && (
-                              <VBadge color={report.color}>{report.statusLabel}</VBadge>
-                            )}
-                          </div>
-                        </div>
-                        )}
-                        {/* The details popup already shows the description for verified reports. */}
-                        {!showsItemFirst && (
-                          <div className="rounded-xl border p-3 mb-3" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
-                            <p className="text-[11px] font-semibold uppercase tracking-wider mb-1" style={{ color: c.textLight }}>Description</p>
-                            <p className="text-sm leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>{report.description}</p>
-                          </div>
-                        )}
-
-                        {/* Same photo block as admin verification: one bordered
-                            preview with a count badge; the viewer shows the rest. */}
-                        {report.images.length > 0 && !showsItemFirst && (
-                          <div className="mb-3">
-                            <p className="text-[10px] font-semibold mb-1.5" style={{ color: c.textLight }}>Report photos</p>
-                            <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                              <button type="button"
-                                aria-label={`View ${report.itemName} report photo`}
-                                className="relative block w-full h-[240px] xl:h-[260px] group cursor-pointer"
-                                style={{ backgroundColor: c.fill }}
-                                onClick={() => setViewer({ photos: report.images, index: 0, title: report.itemName })}>
-                                <img src={report.images[0]} alt={`${report.itemName} report photo`}
-                                  loading="lazy" decoding="async" className="block w-full h-full object-contain" />
-                                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-150 flex items-center justify-center">
-                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-[10px] font-semibold text-white">
-                                    <ZoomIn size={12} /> View photo
-                                  </span>
-                                </span>
-                                {report.images.length > 1 && (
-                                  <span className="absolute top-2 right-2 rounded-full bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5">
-                                    {report.images.length} photos
-                                  </span>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {report.adminNote && (
-                          <div className="rounded-xl p-3 mb-3 text-xs" style={{ backgroundColor: "#fef2f2", color: c.danger }}>
-                            <span className="font-semibold">Admin note: </span>{report.adminNote}
-                          </div>
-                        )}
-
-                        {(showsItemFirst || linkedWithItem) && report.reviewedAt && (
-                          <p className="text-[11px] text-right mt-3" style={{ color: c.textLight }}>
-                            {report.status === "MATCHED" ? "Matched" : report.status === "REJECTED" ? "Rejected" : "Verified"} by admin · <time className="vq-date">{fmtReportTime(report.reviewedAt)}</time>
-                          </p>
-                        )}
-
-                        {!showsItemFirst && itemBlock}
-
-                        <p className="mb-3 rounded-xl p-3 text-xs leading-relaxed" style={{ backgroundColor: c.primarySoft, color: c.textMuted }}>
-                          {reportNextStep(report.type, report.status)}
-                        </p>
-
-                        {report.type === "LOST" && report.status === "PENDING" && !report.item && (
-                          <VButton className="mb-3 w-full" size="sm" onClick={() => checkReportMatches(report)}>
-                            <Sparkles size={14} /> Check possible matches
-                          </VButton>
-                        )}
-
-                        {report.type === "LOST" && (report.status === "MATCHED" || report.status === "CLOSED") && (
-                          <VButton variant="secondary" className="mb-3 w-full" size="sm" onClick={() => router.push("/dashboard/student/claims")}>
-                            View my claims
-                          </VButton>
-                        )}
-
-
-                        {report.type === "FOUND" && report.status === "PENDING" && (
-                          <div className="rounded-xl p-3.5 mb-3 text-xs leading-relaxed flex gap-2" style={{ backgroundColor: `color-mix(in srgb, ${c.accent} 7%, transparent)`, color: c.textMuted }}>
-                            <PackageCheck size={16} className="shrink-0 mt-0.5" style={{ color: c.accent }} />
-                            <span>Please hand this item to the Lost &amp; Found office. An admin will verify it and assign a locker.</span>
-                          </div>
-                        )}
-
-                        {report.status === "PENDING" && (
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            <VButton variant="secondary" size="sm" onClick={() => openEdit(report)}>
-                              Edit
-                            </VButton>
-                            <VButton variant="danger" size="sm" onClick={() => setWithdrawTarget(report)}>
-                              Withdraw
-                            </VButton>
-                          </div>
-                        )}
-                      </VCard>
-                    );
-                  })}
+                  {visibleReports.map((report) => (
+                    <ReportCard
+                      key={report.id}
+                      report={report}
+                      onViewPhotos={(target) => {
+                        if (target.images.length) setViewer({ photos: target.images, index: 0, title: target.itemName });
+                        else openReportDetail(target);
+                      }}
+                      onViewReport={openReportDetail}
+                      onViewItem={(target) => { void openItemDetail(target); }}
+                      onEdit={(target) => { void openEdit(target); }}
+                      onWithdraw={setWithdrawTarget}
+                      onCheckMatches={checkReportMatches}
+                      onViewClaims={() => router.push("/dashboard/student/claims")}
+                    />
+                  ))}
                   </div>
                   )}
                 </div>
@@ -1057,7 +1066,7 @@ function StudentReportContent() {
                     {matchesReport
                       ? <PackageSearch size={48} className="mb-5 mx-auto" style={{ color: c.primary }} />
                       : <CheckCircle2 size={56} className="mb-5 mx-auto" style={{ color: c.accent }} />}
-                    <h2 ref={matchesHeadingRef} tabIndex={-1} className="text-2xl font-bold mb-2" style={{ color: c.text }}>
+                    <h2 ref={resultHeadingRef} tabIndex={-1} className="text-2xl font-bold mb-2" style={{ color: c.text }}>
                       {matchesReport ? `Matches for ${matchesReport.itemName}` : submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
                     </h2>
                     <p className="text-base mb-4 max-w-lg mx-auto" style={{ color: c.textMuted }}>
@@ -1076,160 +1085,40 @@ function StudentReportContent() {
                   </VCard>
 
                   {(submitted === "LOST" || matchesReport) && (
-                    <VCard className="p-5 lg:p-6 text-left">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-base font-semibold flex items-center gap-2" style={{ color: c.text }}>
-                            <Sparkles size={16} style={{ color: c.primary }} />
-                            Possible matches
-                          </h3>
-                          <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-                            Based on your item name, identifying details, category, date, and location. Similarity scores are not ownership probabilities.
-                          </p>
-                        </div>
-                        {!suggestionsLoading && !suggestionsError && suggestions.length > 0 && (
-                          <VBadge color={c.primary}>{suggestions.length} found</VBadge>
-                        )}
-                      </div>
-
-                      {suggestionsLoading ? (
-                        <div className="mt-4 rounded-xl border px-4 py-8 text-center" style={{ borderColor: c.borderLight }}>
-                          <Loader2 size={22} className="animate-spin mx-auto mb-2" style={{ color: c.primary }} />
-                          <p className="text-xs" style={{ color: c.textMuted }}>Checking the inventory...</p>
-                        </div>
-                      ) : suggestionsError ? (
-                        <div className="mt-4 rounded-xl border px-4 py-6 text-center" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
-                          <p className="text-sm font-medium" style={{ color: c.textMuted }}>Could not check matches right now</p>
-                          <p className="text-xs mt-1 mb-3" style={{ color: c.textLight }}>{suggestionsError}</p>
-                          <VButton variant="secondary" size="sm"
-                            onClick={() => {
-                              const token = getBrowserSessionKey();
-                              if (token && activeSuggestionReportId) void loadSuggestions(activeSuggestionReportId, token);
-                            }}>
-                            <RefreshCw size={13} /> Try again
-                          </VButton>
-                        </div>
-                      ) : suggestions.length === 0 ? (
-                        <div className="mt-4 rounded-xl border px-4 py-7 text-center" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
-                          <PackageSearch size={28} className="mx-auto mb-2" style={{ color: c.textLight }} />
-                          <p className="text-sm font-medium" style={{ color: c.textMuted }}>No close matches yet</p>
-                          <p className="text-xs mt-1 leading-relaxed" style={{ color: c.textLight }}>
-                            Your report stays pending. We&apos;ll notify you if a matching item is added to the inventory.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-2.5 mt-4">
-                          {suggestions.map((suggestion) => (
-                            <div key={suggestion.id}
-                              className="rounded-xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3"
-                              style={{ borderColor: c.borderLight, backgroundColor: c.card }}>
-                              {suggestion.imageUrl ? (
-                                <img src={suggestion.imageUrl} alt={suggestion.itemName}
-                                  className="w-full sm:w-14 h-32 sm:h-14 rounded-lg object-contain shrink-0" />
-                              ) : (
-                                <div className="w-full sm:w-14 h-20 sm:h-14 rounded-lg flex items-center justify-center shrink-0"
-                                  style={{ backgroundColor: c.fill }}>
-                                  <PackageSearch size={20} style={{ color: c.primary }} />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-sm font-semibold" style={{ color: c.text }}>{suggestion.itemName}</p>
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                                    style={suggestion.score >= 70
-                                      ? { backgroundColor: "#dcfce7", color: "#15803d" }
-                                      : suggestion.score >= 50
-                                        ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
-                                        : { backgroundColor: c.fill, color: c.textMuted }}>
-                                    {suggestion.label} similarity · {suggestion.score}/100
-                                  </span>
-                                </div>
-                                <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>
-                                  {suggestion.category || "Others"} · <time className="vq-date">{fmtDay(suggestion.foundDate || "")}</time>
-                                  {suggestion.foundLocation ? ` · ${suggestion.foundLocation}` : ""}
-                                </p>
-                                {suggestion.reasons.length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                    {suggestion.reasons.map((reason) => (
-                                      <span key={reason} className="text-[10px] px-1.5 py-0.5 rounded-md"
-                                        style={{ backgroundColor: c.fill, color: c.textMuted }}>
-                                        {reason}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <VButton size="sm" onClick={() => claimSuggestion(suggestion)}>
-                                  Start claim
-                                </VButton>
-                                <VButton variant="secondary" size="sm" onClick={() => setSuggestionDetail(suggestion)}>
-                                  View item details
-                                </VButton>
-                              </div>
-                            </div>
-                          ))}
-                          <p className="text-[11px] leading-relaxed pt-1" style={{ color: c.textLight }}>
-                            Review the item before claiming. Claiming opens the normal evidence form and links this lost report.
-                          </p>
-                        </div>
-                      )}
-                    </VCard>
+                    <ReportMatchesPanel
+                      suggestions={suggestions}
+                      loading={suggestionsLoading}
+                      error={suggestionsError}
+                      onRetry={() => {
+                        const token = getBrowserSessionKey();
+                        if (token && activeSuggestionReportId) void loadSuggestions(activeSuggestionReportId, token);
+                      }}
+                      onStartClaim={claimSuggestion}
+                      onViewDetails={setSuggestionDetail}
+                    />
                   )}
                 </div>
               ) : (
                 <div className={`flex flex-col py-4 lg:py-0 ${type ? "pointer-events-none select-none" : ""}`} aria-hidden={!!type}>
-                  <div className="grid grid-cols-1 gap-5 w-full max-w-[420px] mx-auto">
-                    <button type="button" onClick={() => activateChoice("LOST")} aria-label="Report Lost Item"
-                      aria-expanded={expandedChoice === "LOST"} data-expanded={expandedChoice === "LOST"}
-                      className="vq-report-choice group flex w-full flex-col items-center text-center rounded-2xl border-2 p-8 transition-all duration-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
-                      style={{ borderColor: `color-mix(in srgb, ${c.primary} 55%, ${c.border})`, backgroundColor: c.card }}>
-                      <div className="w-16 h-16 shrink-0 rounded-xl flex items-center justify-center" style={{ backgroundColor: c.primarySoft }}>
-                        <PackageSearch size={30} style={{ color: c.primary }} />
-                      </div>
-                      <h3 className="text-lg font-semibold mt-4" style={{ color: c.text }}>Lost Item</h3>
-                      <div className="vq-report-choice-details w-full">
-                        <div className="min-h-0 overflow-hidden"><div className="pt-4">
-                        <p className="text-sm mb-4" style={{ color: c.textMuted }}>I lost something on campus and need help finding it.</p>
-                        <span className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: c.primary }}>
-                          Select Lost Item <ChevronRight size={16} />
-                        </span>
-                        </div></div>
-                      </div>
-                    </button>
-                    <button type="button" onClick={() => activateChoice("FOUND")} aria-label="Report Found Item"
-                      aria-expanded={expandedChoice === "FOUND"} data-expanded={expandedChoice === "FOUND"}
-                      className="vq-report-choice group flex w-full flex-col items-center text-center rounded-2xl border-2 p-8 transition-all duration-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none"
-                      style={{ borderColor: `color-mix(in srgb, ${FOUND_COLOR} 60%, ${c.border})`, backgroundColor: c.card }}>
-                      <div className="w-16 h-16 shrink-0 rounded-xl flex items-center justify-center" style={{ backgroundColor: `color-mix(in srgb, ${FOUND_COLOR} 10%, transparent)` }}>
-                        <PackageCheck size={30} style={{ color: FOUND_COLOR }} />
-                      </div>
-                      <h3 className="text-lg font-semibold mt-4" style={{ color: FOUND_COLOR }}>Found Item</h3>
-                      <div className="vq-report-choice-details w-full">
-                        <div className="min-h-0 overflow-hidden"><div className="pt-4">
-                        <p className="text-sm mb-4" style={{ color: c.textMuted }}>I found an item and want to hand it in.</p>
-                        <span className="w-full inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: FOUND_BUTTON }}>
-                          Select Found Item <ChevronRight size={16} />
-                        </span>
-                        </div></div>
-                      </div>
-                    </button>
-                  </div>
+                  <ReportTypeChooser expandedChoice={expandedChoice} onActivate={activateChoice}
+                    onButtonRef={(choice, node) => { choiceRefs.current[choice] = node; }} />
                 </div>
               )}
               {type && (
                 <div inert={reportHelpOpen} className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                   <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
                     onClick={() => { if (!submitting) closeReportForm(); }} />
-                  <div className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-visible lg:overflow-y-auto">
+                  <div ref={formDialogRef} role="dialog" aria-modal="true" aria-labelledby="report-form-title"
+                    onKeyDown={trapFocus}
+                    className="relative w-full max-w-[1120px] max-h-[92dvh] overflow-visible lg:overflow-y-auto">
                   <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
                   <div className="relative min-w-0">
                   <div ref={formScrollRef} className="vq-card vq-form-scroll bg-white rounded-2xl border min-w-0 p-6 sm:p-8 max-h-[calc(92dvh-2rem)] overflow-y-auto overscroll-contain lg:max-h-none lg:overflow-visible"
                     style={{ borderColor: c.border, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}>
                   <div className="flex items-center gap-2 mb-5">
-                    <p className="min-w-0 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
+                    <h2 id="report-form-title" ref={formHeadingRef} tabIndex={-1} className="min-w-0 text-lg sm:text-xl lg:text-2xl font-bold tracking-tight" style={{ color: c.text }}>
                       Reporting: <span style={{ color: type === "LOST" ? c.textMuted : FOUND_COLOR }}>{type === "LOST" ? "Lost Item" : "Found Item"}</span>
-                    </p>
+                    </h2>
                     <div className="ml-auto flex shrink-0 items-center gap-1.5">
                       <button type="button" aria-label={type === "LOST" ? "Switch to found report" : "Switch to lost report"}
                         title={type === "LOST" ? "Switch to found report" : "Switch to lost report"}
@@ -1253,22 +1142,30 @@ function StudentReportContent() {
                   <div className="mb-5">
                     <div className="space-y-3">
                       <div>
-                        <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                          Item name <span style={{ color: c.danger }}>*</span>
+                        <label htmlFor="report-item-name" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                          Item name <span style={{ color: c.danger }} aria-hidden="true">*</span>
                         </label>
-                        <VInput value={itemName} maxLength={100} onChange={(e) => setItemName(e.target.value)}
+                        <VInput id="report-item-name" value={itemName} maxLength={100}
+                          onChange={(e) => setItemName(e.target.value)}
+                          aria-required="true" aria-invalid={!!formErrors.itemName}
+                          aria-describedby={formErrors.itemName ? "report-item-name-error" : undefined}
                           placeholder={type === "LOST" ? "e.g. Black Adidas backpack" : "e.g. Silver Samsung phone"} />
+                        {formErrors.itemName && (
+                          <p id="report-item-name-error" role="alert" className="mt-1 text-[11px]" style={{ color: c.danger }}>{formErrors.itemName}</p>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                            Category <span style={{ color: c.danger }}>*</span>
+                          <label id="report-category-label" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                            Category <span style={{ color: c.danger }} aria-hidden="true">*</span>
                           </label>
                           <VDropdown open={categoryOpen} onOpenChange={setCategoryOpen} width="w-full"
                             trigger={
-                              <button type="button"
+                              <button type="button" aria-labelledby="report-category-label"
+                                aria-required="true" aria-invalid={!!formErrors.category}
+                                aria-describedby={formErrors.category ? "report-category-error" : undefined}
                                 className="flex items-center gap-2 w-full h-11 pl-3.5 pr-10 rounded-xl text-sm border bg-white text-left cursor-pointer relative"
-                                style={{ borderColor: c.border, color: category ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                                style={{ borderColor: formErrors.category ? c.danger : c.border, color: category ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                                 onClick={() => setCategoryOpen(!categoryOpen)}>
                                 {category
                                   ? (
@@ -1294,14 +1191,19 @@ function StudentReportContent() {
                               </>
                             )}
                           </VDropdown>
+                          {formErrors.category && (
+                            <p id="report-category-error" role="alert" className="mt-1 text-[11px]" style={{ color: c.danger }}>{formErrors.category}</p>
+                          )}
                         </div>
                         <div className="relative">
-                          <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                            {type === "LOST" ? "Date lost" : "Date found"} <span style={{ color: c.danger }}>*</span>
+                          <label id="report-date-label" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                            {type === "LOST" ? "Date lost" : "Date found"} <span style={{ color: c.danger }} aria-hidden="true">*</span>
                           </label>
                           <VFilterButton
+                            aria-labelledby="report-date-label" aria-required="true" aria-invalid={!!formErrors.date}
+                            aria-describedby={formErrors.date ? "report-date-error" : undefined}
                             className="w-full justify-between"
-                            style={{ height: 44, fontWeight: 400, color: date ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
+                            style={{ height: 44, fontWeight: 400, color: date ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)", borderColor: formErrors.date ? c.danger : undefined }}
                             onClick={(e) => { setDateAnchor(e.currentTarget); toggleDateCalendar(); }}>
                             <span className="flex items-center gap-1.5 min-w-0">
                               <Clock size={14} style={{ color: c.primary }} />
@@ -1314,6 +1216,9 @@ function StudentReportContent() {
                             <CalendarPopover anchor={dateAnchor} value={date}
                               onChange={setDate} onClose={() => setDateOpen(false)} />
                           )}
+                          {formErrors.date && (
+                            <p id="report-date-error" role="alert" className="mt-1 text-[11px]" style={{ color: c.danger }}>{formErrors.date}</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1322,17 +1227,42 @@ function StudentReportContent() {
                   <div className="mb-5">
                     <div className="space-y-3">
                       <div>
-                        <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                          {type === "LOST" ? "Last seen location" : "Found location"} <span style={{ color: c.danger }}>*</span>
+                        <label htmlFor="report-location" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                          {type === "LOST" ? "Last seen location" : "Found location"} <span style={{ color: c.danger }} aria-hidden="true">*</span>
                         </label>
-                        <VInput value={location} maxLength={200} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Library 3rd Floor" />
+                        <VInput id="report-location" value={location} maxLength={200}
+                          onChange={(e) => setLocation(e.target.value)}
+                          aria-required="true" aria-invalid={!!formErrors.location}
+                          aria-describedby={formErrors.location ? "report-location-error" : undefined}
+                          placeholder="e.g. Library 3rd Floor" />
+                        {formErrors.location && (
+                          <p id="report-location-error" role="alert" className="mt-1 text-[11px]" style={{ color: c.danger }}>{formErrors.location}</p>
+                        )}
                       </div>
                       <div>
-                        <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                          Description <span style={{ color: c.danger }}>*</span>
+                        <label htmlFor="report-description" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                          Description <span style={{ color: c.danger }} aria-hidden="true">*</span>
                         </label>
-                        <VTextarea value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} rows={3}
+                        <VTextarea id="report-description" value={description} maxLength={2000}
+                          onChange={(e) => setDescription(e.target.value)} rows={3}
+                          aria-required="true" aria-invalid={!!formErrors.description}
+                          aria-describedby={`report-description-help${formErrors.description ? " report-description-error" : ""}`}
                           placeholder="Provide details like color, brand and distinguishing features..." />
+                        {formErrors.description && (
+                          <p id="report-description-error" role="alert" className="mt-1 text-[11px]" style={{ color: c.danger }}>{formErrors.description}</p>
+                        )}
+                        <div className="mt-1 flex items-start justify-between gap-3">
+                          <p id="report-description-help" className="text-[11px] leading-relaxed" style={{ color: c.textLight }}>
+                            Add colour, brand, distinguishing marks or contents.
+                            {descriptionLength > 0 && descriptionLength < REPORT_DESCRIPTION_HELPFUL && (
+                              <span style={{ color: "#b45309" }}> More detail improves matching.</span>
+                            )}
+                          </p>
+                          <span className="shrink-0 text-[11px] tabular-nums"
+                            style={{ color: descriptionLength >= REPORT_DESCRIPTION_HELPFUL ? "#15803d" : c.textLight }}>
+                            {description.length}/2000
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1403,7 +1333,7 @@ function StudentReportContent() {
 
                   <div data-report-actions className="flex items-center justify-center gap-3 pt-4 border-t mt-auto" style={{ borderColor: c.borderLight }}>
                     <VButton variant="secondary" size="lg" onClick={closeReportForm}>Cancel</VButton>
-                    <VButton size="lg" onClick={handleSubmit} disabled={!formValid || submitting}>
+                    <VButton size="lg" onClick={handleSubmit} disabled={submitting}>
                       {submitting && <Loader2 size={15} className="animate-spin" />}
                       {submitting ? "Submitting..." : "Submit"}
                     </VButton>
@@ -1725,6 +1655,38 @@ function StudentReportContent() {
         confirmLabel={withdrawing ? "Withdrawing..." : "Withdraw"}
         onCancel={() => { if (!withdrawing) setWithdrawTarget(null); }}
         onConfirm={handleWithdraw}
+      />
+
+      <ConfirmDialog
+        open={!!draftPrompt}
+        title="Continue your saved draft?"
+        subtitle="We kept the text you typed on this device. Photos are not saved in drafts."
+        tone="primary"
+        cancelLabel="Start new"
+        confirmLabel="Continue draft"
+        onCancel={discardDraft}
+        onConfirm={resumeDraft}
+      />
+
+      <ConfirmDialog
+        open={!!duplicateReport}
+        title="You already have a pending report"
+        subtitle={duplicateReport ? `A pending report for “${duplicateReport.itemName}” already exists. Open My Reports to view or edit it instead of submitting a duplicate.` : undefined}
+        tone="primary"
+        cancelLabel="Keep editing"
+        confirmLabel="View my reports"
+        onCancel={() => setDuplicateReport(null)}
+        onConfirm={() => {
+          const duplicate = duplicateReport;
+          if (!duplicate) return;
+          setDuplicateReport(null);
+          clearReportDraft();
+          closeReportForm();
+          setReportKind(duplicate.type);
+          setReportStatus("PENDING");
+          setReportQuery(duplicate.itemName);
+          switchTab("reports");
+        }}
       />
     </StudentShell>
   );

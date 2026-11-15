@@ -2,7 +2,7 @@ import {
   BookText, Briefcase, CreditCard, CupSoda, Grid3X3, Key, Monitor, type LucideIcon,
 } from "lucide-react";
 
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
+export const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Electronics: Monitor,
   Bags: Briefcase,
   "Student Cards": CreditCard,
