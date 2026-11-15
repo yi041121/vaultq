@@ -2,9 +2,9 @@
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { claimNextStep } from "@/lib/student-workflow";
 import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
-import { formatDisplayDate as fmtDay, formatDisplayDate as fmtDate, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
+import { formatDisplayDate as fmtDay, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, FileText, Clock, QrCode, CheckCircle2,
@@ -17,10 +17,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StudentShell } from "@/components/student-shell";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { EvidenceSlider } from "@/components/evidence-slider";
-import { compressImageFile } from "@/lib/image-compression";
-import { PhotoPicker } from "@/components/photo-picker";
-import { PhotoSourceDialog } from "@/components/photo-source-dialog";
-import { CameraCaptureModal } from "@/components/camera-capture-modal";
+import { PhotoEvidenceField, type EvidencePhoto } from "@/components/photo-evidence-field";
 import { VCard, VContentPanel, VBadge, VPaginationFooter, VButton, VTextarea, VSearchInput, VFilterButton, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
 import { matchesSearch } from "@/lib/search";
@@ -86,12 +83,8 @@ export default function StudentClaims() {
   const [resubmitClaim, setResubmitClaim] = useState<UserClaim | null>(null);
   const [resubmitReason, setResubmitReason] = useState("");
   const [resubmitNoPhoto, setResubmitNoPhoto] = useState(false);
-  const [resubmitPhotos, setResubmitPhotos] = useState<{ file?: File; preview: string; existing?: boolean }[]>([]);
+  const [resubmitPhotos, setResubmitPhotos] = useState<EvidencePhoto[]>([]);
   const [resubmitting, setResubmitting] = useState(false);
-  const resubmitInputRef = useRef<HTMLInputElement>(null);
-  const resubmitCameraRef = useRef<HTMLInputElement>(null);
-  const [resubmitSourceOpen, setResubmitSourceOpen] = useState(false);
-  const [resubmitCameraOpen, setResubmitCameraOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pageSize = 6;
 
@@ -214,44 +207,7 @@ export default function StudentClaims() {
     setResubmitNoPhoto(false);
     setResubmitClaim(cl);
     setResubmitReason(cl.reason || "");
-    setResubmitPhotos((cl.evidenceImageUrls || []).map((preview) => ({ preview, existing: true })));
-    if (resubmitInputRef.current) resubmitInputRef.current.value = "";
-  }
-
-  function openResubmitCamera() {
-    if (window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function") {
-      setResubmitCameraOpen(true);
-      return;
-    }
-    resubmitCameraRef.current?.click();
-  }
-
-  async function handleResubmitFiles(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files || []);
-    event.target.value = "";
-    if (!files.length) return;
-    if (resubmitPhotos.length + files.length > 3) {
-      showCenteredMessage("error", "You can upload up to 3 photos");
-      return;
-    }
-    for (const file of files) {
-      if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
-        showCenteredMessage("error", "Please upload image files only");
-        return;
-      }
-    }
-    try {
-      const drafts = await Promise.all(
-        files.map(async (file) => {
-          const compressed = await compressImageFile(file);
-          return { file: compressed.file, preview: compressed.preview };
-        }),
-      );
-      setResubmitPhotos((prev) => [...prev, ...drafts].slice(0, 3));
-      setResubmitNoPhoto(false);
-    } catch (e) {
-      showCenteredMessage("error", e instanceof Error ? e.message : "Could not process one of the images");
-    }
+    setResubmitPhotos((cl.evidenceImageUrls || []).map((preview) => ({ preview, originalPreview: preview })));
   }
 
   async function handleResubmit() {
@@ -264,7 +220,9 @@ export default function StudentClaims() {
     if (!token) return;
     setResubmitting(true);
     try {
-      const keepImages = resubmitPhotos.filter((photo) => photo.existing).map((photo) => photo.preview);
+      const keepImages = resubmitPhotos
+        .filter((photo) => !photo.file && /^https?:/i.test(photo.preview))
+        .map((photo) => photo.preview);
       if (!resubmitPhotos.length && !resubmitNoPhoto) {
         showCenteredMessage("error", "Please keep or add at least one photo");
         return;
@@ -299,7 +257,7 @@ export default function StudentClaims() {
 
   useEscapeKey(!!detailsClaim, () => setDetailsClaim(null));
   useEscapeKey(!!qrModal, () => setQrModal(null));
-  useEscapeKey(!!resubmitClaim && !resubmitCameraOpen && !resubmitSourceOpen, () => setResubmitClaim(null));
+  useEscapeKey(!!resubmitClaim, () => setResubmitClaim(null));
 
   if (!user || !mounted) return null;
 
@@ -654,47 +612,26 @@ export default function StudentClaims() {
               placeholder="Describe distinctive details, proof of ownership..." />
 
             <div className="mt-4">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <p className="text-xs font-semibold" style={{ color: c.text }}>Photo Evidence</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px]" style={{ color: c.textLight }}>{resubmitPhotos.length}/3</span>
-                  {resubmitPhotos.length < 3 && resubmitPhotos.length > 0 && (
-                    <button type="button" onClick={() => setResubmitSourceOpen(true)}
-                      className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-semibold border bg-white cursor-pointer"
-                      style={{ borderColor: c.border, color: c.primary }}>
-                      <Camera size={13} /> Add photo
-                    </button>
-                  )}
-                </div>
-              </div>
-              <input ref={resubmitInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleResubmitFiles} />
-              <input ref={resubmitCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleResubmitFiles} />
-              {resubmitPhotos.length === 0 ? (
-                <div>
-                  {resubmitNoPhoto ? (
-                    <p className="rounded-xl border p-3 text-xs leading-relaxed" style={{ borderColor: c.border, color: c.textMuted }}>No photo attached. Describe distinctive ownership details in at least {NO_PHOTO_REASON_MIN_LENGTH} characters. Admin must verify ownership in person.</p>
-                  ) : <PhotoPicker onUpload={() => resubmitInputRef.current?.click()} onTakePhoto={openResubmitCamera} />}
-                  <label className="mt-3 flex items-start gap-2 text-xs cursor-pointer" style={{ color: c.textMuted }}>
-                    <input type="checkbox" checked={resubmitNoPhoto} onChange={(event) => setResubmitNoPhoto(event.target.checked)} className="mt-0.5" />
-                    I don&apos;t have a photo — request in-person verification
-                  </label>
-                  {resubmitNoPhoto && <p className="mt-2 text-xs" style={{ color: c.textMuted }}>{resubmitReason.trim().length}/{NO_PHOTO_REASON_MIN_LENGTH} characters</p>}
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {resubmitPhotos.map((photo, index) => (
-                    <div key={`${index}-${photo.preview.slice(-12)}`} className="relative rounded-lg overflow-hidden border" style={{ borderColor: c.border }}>
-                      <img src={photo.preview} alt={`Evidence ${index + 1}`} className={`w-full object-contain ${resubmitPhotos.length === 1 ? "h-40" : "h-24"}`} />
-                      <button type="button" aria-label={`Remove evidence photo ${index + 1}`}
-                        onClick={() => setResubmitPhotos((prev) => prev.filter((_, i) => i !== index))}
-                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center cursor-pointer">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="text-[11px] mt-1.5 text-center" style={{ color: c.textLight }}>Up to 3 photos · 5MB max each</p>
+              <PhotoEvidenceField
+                photos={resubmitPhotos}
+                onChange={(next) => { setResubmitPhotos(next); if (next.length) setResubmitNoPhoto(false); }}
+                required
+                label="Photo Evidence"
+                emptyExtra={
+                  <div>
+                    {resubmitNoPhoto && (
+                      <p className="rounded-xl border p-3 text-xs leading-relaxed" style={{ borderColor: c.border, color: c.textMuted }}>
+                        No photo attached. Describe distinctive ownership details in at least {NO_PHOTO_REASON_MIN_LENGTH} characters. Admin must verify ownership in person.
+                      </p>
+                    )}
+                    <label className="mt-3 flex items-start gap-2 text-xs cursor-pointer" style={{ color: c.textMuted }}>
+                      <input type="checkbox" checked={resubmitNoPhoto} onChange={(event) => setResubmitNoPhoto(event.target.checked)} className="mt-0.5" />
+                      I don&apos;t have a photo — request in-person verification
+                    </label>
+                    {resubmitNoPhoto && <p className="mt-2 text-xs" style={{ color: c.textMuted }}>{resubmitReason.trim().length}/{NO_PHOTO_REASON_MIN_LENGTH} characters</p>}
+                  </div>
+                }
+              />
             </div>
 
             <div className="flex items-center justify-end gap-2 mt-5">
@@ -705,27 +642,6 @@ export default function StudentClaims() {
             </div>
           </VCard>
         </div>
-      )}
-
-      {resubmitSourceOpen && (
-        <PhotoSourceDialog
-          title="Add evidence photo"
-          description="Attach another photo for your claim (up to 3)."
-          onClose={() => setResubmitSourceOpen(false)}
-          onTakePhoto={() => { setResubmitSourceOpen(false); openResubmitCamera(); }}
-          onUpload={() => { setResubmitSourceOpen(false); resubmitInputRef.current?.click(); }}
-        />
-      )}
-
-      {resubmitCameraOpen && (
-        <CameraCaptureModal
-          onClose={() => setResubmitCameraOpen(false)}
-          onUseUpload={() => { setResubmitCameraOpen(false); resubmitInputRef.current?.click(); }}
-          onCapture={(photo) => {
-            setResubmitPhotos((prev) => (prev.length >= 3 ? prev : [...prev, { file: photo.file, preview: photo.preview }]));
-            setResubmitCameraOpen(false);
-          }}
-        />
       )}
 
       {/* Locker QR */}

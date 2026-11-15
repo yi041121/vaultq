@@ -130,10 +130,13 @@ test("report page implements dialog semantics, inline errors and draft recovery"
   assert.match(source, /saveReportDraft/);
   assert.match(source, /Continue your saved draft\?/);
   assert.match(source, /clearReportDraft\(\)/);
-  // Reports list improvements.
-  assert.match(card, /report\.reference/);
-  assert.match(card, /Admin note:/);
-  assert.match(card, /role="note"/);
+  // Reports list improvements: the card keeps a glanceable summary and the
+  // popup carries the reference, gallery, admin note and guidance.
+  assert.match(card, /line-clamp-2/);
+  assert.match(source, /reference: report\.reference/);
+  assert.match(source, /adminNote: report\.adminNote/);
+  assert.match(source, /nextStep: reportNextStep/);
+  assert.match(source, /role="note"/);
 });
 
 test("centred messages are announced and errors stay longer", () => {
@@ -265,13 +268,21 @@ test("My Reports puts tabs, search, status and the type dropdown in one hover-ex
   assert.match(toolbar, /width="w-\[150px\]"/);
   assert.match(toolbar, /dense active=\{entry\.value === status\}/);
 
+  // Both dropdowns share one compact width so the pair lines up.
+  assert.equal((toolbar.match(/w-\[124px\]/g) ?? []).length, 1, "status trigger is compact");
+  assert.equal((panel.match(/w-\[124px\]/g) ?? []).length, 1, "type trigger is the same compact width");
+  assert.match(panel, /width="w-\[150px\]"/, "type menu matches the status menu width");
+
+  // Shared reset control, same as every other filter bar.
+  assert.match(panel, /<ResetFiltersButton disabled=\{!reportFiltersActive\} onClick=\{resetReportFilters\} \/>/);
+
   // Both dropdowns auto-open on hover because they live in a filter panel.
   const vault = fs.readFileSync(path.join(ROOT, "src/components/ui/vault.tsx"), "utf8");
   assert.match(vault, /closest\("\[data-filter-panel\]"\)/);
   assert.match(vault, /onPointerEnter/);
 });
 
-test("My Reports defaults to Pending and only offers statuses the type can reach", () => {
+test("My Reports only offers statuses the type can reach", () => {
   // Lost reports move Pending -> Matched -> Closed/Rejected; found reports
   // move Pending -> Verified/Rejected. All types shows the union.
   const values = (type) => [...filter.reportStatusFilters(type)].map((entry) => entry.value);
@@ -285,7 +296,7 @@ test("My Reports defaults to Pending and only offers statuses the type can reach
   assert.equal(filter.statusIsAvailableFor("ALL", "MATCHED"), true);
 
   const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
-  assert.match(page, /useState<ReportStatusFilter>\("PENDING"\)/, "pending is the default status");
+  assert.match(page, /useState<ReportStatusFilter>\("ALL"\)/, "all statuses is the default");
   assert.match(page, /useState<ReportTypeFilter>\("ALL"\)/, "all types is the default filter");
   assert.match(page, /function statusForKind/, "kind changes normalise the status filter");
   assert.match(page, /statusForKind\(kind, current\)/, "URL-driven kind changes are normalised too");
@@ -301,5 +312,117 @@ test("the status field stays white for Pending and turns blue only when narrowed
   assert.match(toolbar, /const narrowed = status !== "PENDING" && status !== "ALL"/);
   assert.match(toolbar, /style=\{narrowed \? \{ borderColor: c\.primary, color: c\.primary, backgroundColor: c\.primarySoft \} : undefined\}/);
   assert.doesNotMatch(toolbar, /active=\{status !== "ALL"\}/, "the trigger must not use the toggle style");
+});
+
+test("Reset filters restores the default All types / All statuses view", () => {
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
+  const reset = page.match(/function resetReportFilters\(\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
+  assert.match(reset, /setReportKind\("ALL"\)/);
+  assert.match(reset, /setReportStatus\("ALL"\)/);
+  assert.match(reset, /setReportQuery\(""\)/);
+  // "Reset" is only enabled once the view differs from those defaults.
+  assert.match(page, /reportKind !== "ALL" \|\| reportStatus !== "ALL" \|\| reportQuery\.trim\(\)\.length > 0/);
+  // The empty-state "Clear filters" uses the same reset.
+  assert.match(page, /onClick=\{resetReportFilters\}/);
+});
+
+test("Check matches opens a popup instead of replacing the report list", () => {
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
+  // The list no longer hides behind the matches view.
+  assert.doesNotMatch(page, /tab === "reports" && !matchesReport/);
+  assert.doesNotMatch(page, /tab === "reports" && !matchesReport \?/);
+  assert.match(page, /\{tab === "reports" \? \(/);
+  // Matches live in their own dialog, closed with an X.
+  const modal = page.slice(page.indexOf("{matchesReport && ("));
+  assert.match(modal, /fixed inset-0 z-\[55\]/);
+  assert.match(modal, /<ReportMatchesPanel/);
+  assert.match(modal, /onClose=\{\(\) => setMatchesReport\(null\)\}/);
+  // The suggestion popup keeps its centred Start claim / Close footer.
+  assert.match(page, /className="flex w-full items-center justify-center gap-2"/);
+});
+
+test("matches popup closes with an X and no separate count", () => {
+  const panel = fs.readFileSync(path.join(ROOT, "src/components/student/report-matches-panel.tsx"), "utf8");
+  assert.doesNotMatch(panel, /Back to my reports/);
+  assert.doesNotMatch(panel, /suggestions\.length\} found/);
+  assert.match(panel, /aria-label="Close matches"/);
+  assert.match(panel, /<X size=\{16\} \/>/);
+  const card = fs.readFileSync(path.join(ROOT, "src/components/student/report-card.tsx"), "utf8");
+  assert.doesNotMatch(card, /matchCount/);
+  assert.match(card, /Check matches/);
+});
+
+test("the lost-report link form only appears for related items", () => {
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/search/page.tsx"), "utf8");
+  assert.match(page, /suggestMatches\(/);
+  assert.match(page, /const related = reports\.filter/);
+  assert.match(page, /if \(related\.length > 0\)/);
+  assert.match(page, /\{linkPromptReports\.map/);
+});
+
+test("newly added inventory notifies matching pending lost reports", () => {
+  const items = fs.readFileSync(path.join(ROOT, "src/app/api/items/route.ts"), "utf8");
+  assert.match(items, /await notifyInventoryMatches\(\{ itemId: item\.id \}\)/);
+  const reports = fs.readFileSync(path.join(ROOT, "src/app/api/reports/route.ts"), "utf8");
+  assert.match(reports, /if \(type === "LOST"\) await notifyInventoryMatches\(\{ reportId: report\.id \}\)/);
+  const verify = fs.readFileSync(path.join(ROOT, "src/app/api/reports/[id]/verify/route.ts"), "utf8");
+  assert.match(verify, /notifyInventoryMatches\(\{ itemId:/);
+});
+
+test("withdrawing a report leaves a notification receipt", () => {
+  const route = fs.readFileSync(path.join(ROOT, "src/app/api/reports/[id]/route.ts"), "utf8");
+  const withdraw = route.slice(route.indexOf("export async function DELETE"));
+  assert.match(withdraw, /notifyUser\(/, "the student is notified");
+  assert.match(withdraw, /"Report withdrawn"/);
+  assert.match(withdraw, /type: true, itemName: true/, "the message uses the report type and item");
+  assert.match(withdraw, /link: "\/dashboard\/student\/report\?tab=reports"/);
+});
+
+test("report cards show a glanceable summary and defer the rest to the popup", () => {
+  const card = fs.readFileSync(path.join(ROOT, "src/components/student/report-card.tsx"), "utf8");
+  assert.doesNotMatch(card, /showsItemFirst/, "there is only one card layout");
+
+  // A glance: photo, name, when/where/category, status and a short description.
+  assert.match(card, /report\.images\[0\] \|\| report\.item\?\.imageUrl/);
+  assert.match(card, /line-clamp-2/);
+  for (const marker of ["report.itemName", "report.statusLabel", "fmtDate(report.date)", "report.category", "View details"]) {
+    assert.ok(card.includes(marker), `card shows ${marker}`);
+  }
+  // An admin note is the one extra block that stays visible.
+  assert.match(card, /Admin note:/);
+
+  // The heavier details stay in the popup.
+  assert.doesNotMatch(card, /report\.reference/);
+  assert.doesNotMatch(card, /reportNextStep/);
+  assert.doesNotMatch(card, /Report photos/);
+  assert.doesNotMatch(card, /onEdit|onWithdraw/, "edit/withdraw moved into the popup");
+
+  // At most two actions on a card: one contextual action plus View details.
+  assert.ok((card.match(/<VButton/g) ?? []).length <= 3, "cards keep only the contextual action and View details");
+  assert.match(card, /Check matches/);
+
+  // The reviewer line and a bordered description live on the card now.
+  assert.match(card, /Reviewed by admin/);
+  assert.match(card, /report\.reviewedAt/);
+  assert.match(card, /rounded-xl border px-3 py-2\.5/);
+  assert.match(card, /borderColor: c\.border, backgroundColor: c\.fill/);
+  // Reviewer label/date on the left; actions stay on the right.
+  const actionRow = card.indexOf("mt-3 flex items-center gap-3");
+  assert.ok(actionRow > 0, "reviewer and action row exists");
+  const actions = card.slice(actionRow);
+  assert.ok(actions.indexOf("Reviewed by admin") < actions.indexOf("View details"), "reviewer comes first, on the left");
+  assert.match(actions, /ml-auto flex shrink-0 items-center gap-2/);
+  assert.match(actions, /Reviewed by admin<\/p>[\s\S]{0,160}<time className="vq-date">/);
+
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
+  assert.doesNotMatch(page, /Reviewed by admin/, "the popup no longer repeats the reviewer line");
+  for (const field of ["description: report.description", "images: report.images", "reference: report.reference", "adminNote: report.adminNote", "nextStep: reportNextStep"]) {
+    assert.ok(page.includes(field), `details include ${field}`);
+  }
+  assert.match(page, /<ItemDetailsModal/);
+  assert.match(page, /notice=\{/);
+  // Edit and withdraw are now reachable from the details popup.
+  assert.match(page, /void openEdit\(report\)/);
+  assert.match(page, /setWithdrawTarget\(report\)/);
 });
 

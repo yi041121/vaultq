@@ -97,7 +97,7 @@ test("closed or already matched reports receive no possible-match notification",
 test("claim explanation includes every lost-report detail with the shared date format", () => {
   const helper = load("src/lib/lost-report-claim.ts", { "./date-format": load("src/lib/date-format.ts") });
   assert.equal(helper.lostReportClaimReason({ itemName: "Bottle", category: "Water Bottles", date: "2026-11-13", location: "Library", description: "Blue with a sticker" }),
-    "Item: Bottle\nCategory: Water Bottles\nLost on: 13 Nov 2026\nLost at: Library\nDescription: Blue with a sticker");
+    "I lost my Bottle (Water Bottles) at Library on 13 Nov 2026; identifying details: Blue with a sticker.");
 });
 
 function claimHarness(options = {}) {

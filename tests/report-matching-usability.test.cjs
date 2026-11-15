@@ -144,11 +144,13 @@ test("student matches can be reopened and admin confirmation describes the real 
   const student = [
     "../src/app/dashboard/student/report/page.tsx",
     "../src/components/student/report-card.tsx",
+    "../src/components/student/report-matches-panel.tsx",
   ].map((file) => fs.readFileSync(path.join(__dirname, file), "utf8")).join("\n");
-  assert.match(student, /Check possible matches/);
-  assert.match(student, /report\.status === "PENDING" && !report\.item/);
+  assert.match(student, /Check matches/);
+  assert.match(student, /const pending = report\.status === "PENDING"/);
+  assert.match(student, /pending && !report\.item/);
   assert.match(student, /report: activeSuggestionReportId/);
-  assert.match(student, /Back to my reports/);
+  assert.match(student, /Close matches/);
   assert.doesNotMatch(student, /\{suggestion\.score\}%/);
   assert.match(student, /requestId === suggestionRequestRef\.current/);
   for (const screen of ["claims", "reports"]) {

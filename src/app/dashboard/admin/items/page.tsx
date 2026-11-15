@@ -7,12 +7,12 @@ import { useRouter } from "next/navigation";
 import {
   Package, Grid3X3, Lock, FileText, Users, Plus, Search, MapPin, Clock,
   Briefcase, CreditCard, Key, BookText, CupSoda, Monitor, ChevronDown,
-  ArrowUpDown, RotateCcw, Pencil, Trash2, X, Camera, Upload, PackageSearch, Eye,
+  ArrowUpDown, RotateCcw, Pencil, Trash2, X, PackageSearch, Eye,
 } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
-import { compressImageFile } from "@/lib/image-compression";
 import { CalendarPopover } from "@/components/date-calendar";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
+import { PhotoEvidenceField, type EvidencePhoto } from "@/components/photo-evidence-field";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { usePageQuickAction } from "@/lib/use-page-quick-action";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
@@ -113,12 +113,7 @@ export default function AdminItems() {
   const [formDateOpen, setFormDateOpen] = useState(false);
   const [formDateAnchor, setFormDateAnchor] = useState<HTMLElement | null>(null);
   const [formLockerOpen, setFormLockerOpen] = useState(false);
-  const [formPhoto, setFormPhoto] = useState<File | null>(null);
-  const [formPreview, setFormPreview] = useState<string | null>(null);
-  const [showCamera, setShowCamera] = useState(false);
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const liveVideoRef = useRef<HTMLVideoElement>(null);
-  const liveStreamRef = useRef<MediaStream | null>(null);
+  const [formPhotos, setFormPhotos] = useState<EvidencePhoto[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
   const [loading, setLoading] = useState(itemsCache === null);
   const [lockerMap, setLockerMap] = useState<Record<string, string>>({});
@@ -228,9 +223,8 @@ export default function AdminItems() {
   useEscapeKey(formDateOpen, () => setFormDateOpen(false));
   useEscapeKey(formCatOpen || formLockerOpen, () => { setFormCatOpen(false); setFormLockerOpen(false); });
   useEscapeKey(statusOpen || categoryOpen || sortOpen, () => { setStatusOpen(false); setCategoryOpen(false); setSortOpen(false); });
-  useEscapeKey(showModal, closeItemModal, !saving && !formDateOpen && !formCatOpen && !formLockerOpen && !showCamera);
+  useEscapeKey(showModal, closeItemModal, !saving && !formDateOpen && !formCatOpen && !formLockerOpen);
   useEscapeKey(!!viewItem && !viewer, () => setViewItem(null));
-  useEscapeKey(showCamera, closeLiveCamera);
   useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
 
   if (!user || !mounted) return null;
@@ -253,36 +247,15 @@ export default function AdminItems() {
 
   function openAdd() {
     setEditing(null);
-    setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhoto(null); setFormPreview(null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
+    setFormName(""); setFormCategory(null); setFormLocation(""); setFormDate(new Date().toISOString().slice(0, 10)); setFormLocker(""); setFormDesc(""); setFormPhotos([]); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
   }
   function openEdit(it: Item) {
     if (it.status === "CLAIMED" || it.status === "RETRIEVED") { setViewItem(it); return; }
     setEditing(it);
-    setFormName(it.name); setFormCategory(it.category); setFormLocation(it.location); setFormDate(it.date); setFormLocker(it.locker || ""); setFormDesc(it.description || ""); setFormPhoto(null); setFormPreview(it.imageUrl || null); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
+    setFormName(it.name); setFormCategory(it.category); setFormLocation(it.location); setFormDate(it.date); setFormLocker(it.locker || ""); setFormDesc(it.description || ""); setFormPhotos(it.imageUrl ? [{ preview: it.imageUrl, originalPreview: it.imageUrl }] : []); setFormDateOpen(false); setFormLockerOpen(false); setFormCatOpen(false); setFormDateAnchor(null);
     setShowModal(true);
   }
-  async function handlePhotoFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
-      showCenteredMessage("error", "Please choose an image file");
-      return;
-    }
-    try {
-      const compressed = await compressImageFile(file);
-      setFormPhoto(compressed.file);
-      setFormPreview(compressed.preview);
-    } catch (err) {
-      showCenteredMessage("error", err instanceof Error ? err.message : "Could not process this image");
-    }
-  }
-  function clearPhoto() {
-    setFormPhoto(null);
-    setFormPreview(null);
-    if (uploadRef.current) uploadRef.current.value = "";
-  }
-
   async function openItemPhotos(item: Item) {
     if (!item.imageUrl) return;
     setViewer({ photos: [item.imageUrl], index: 0, title: item.name });
@@ -306,56 +279,6 @@ export default function AdminItems() {
     } catch {
       // Keep the single card photo.
     }
-  }
-  async function openLiveCamera() {
-    setShowCamera(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      liveStreamRef.current = stream;
-      // wait for video element
-      setTimeout(() => {
-        if (liveVideoRef.current) {
-          liveVideoRef.current.srcObject = stream;
-          liveVideoRef.current.play().catch(() => {});
-        }
-      }, 50);
-    } catch {
-      showCenteredMessage("error", "Cannot open camera — use Upload or Take Photo instead");
-      setShowCamera(false);
-    }
-  }
-  function closeLiveCamera() {
-    if (liveStreamRef.current) {
-      liveStreamRef.current.getTracks().forEach((t) => t.stop());
-      liveStreamRef.current = null;
-    }
-    setShowCamera(false);
-  }
-  function captureLivePhoto() {
-    const video = liveVideoRef.current;
-    if (!video || video.readyState < 2) {
-      showCenteredMessage("error", "Camera not ready yet");
-      return;
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
-    canvas.toBlob(async (blob) => {
-      if (!blob) return;
-      const file = new File([blob], `item-${Date.now()}.jpg`, { type: "image/jpeg" });
-      try {
-        const compressed = await compressImageFile(file);
-        setFormPhoto(compressed.file);
-        setFormPreview(compressed.preview);
-        showCenteredMessage("success", "Photo captured");
-        closeLiveCamera();
-      } catch (err) {
-        showCenteredMessage("error", err instanceof Error ? err.message : "Could not process this photo");
-      }
-    }, "image/jpeg", 0.9);
   }
   async function handleSave() {
     if (!formName.trim() || !formCategory || !formLocation.trim() || !formDate) {
@@ -382,7 +305,8 @@ export default function AdminItems() {
         foundDate: formDate,
       };
       // Send photo preview as imageUrl (data URL) when a new photo was chosen
-      if (formPreview && formPreview.startsWith("data:") && (!editing || formPreview !== editing.imageUrl)) payload.imageUrl = formPreview;
+      const preview = formPhotos[0]?.preview;
+      if (preview && preview.startsWith("data:") && (!editing || preview !== editing.imageUrl)) payload.imageUrl = preview;
       if (!editing) {
         if (lockerId) payload.lockerId = lockerId;
         const res = await fetch("/api/items", {
@@ -714,62 +638,19 @@ export default function AdminItems() {
                 <VTextarea value={formDesc} onChange={(e) => setFormDesc(e.target.value)} rows={2} placeholder="Color, brand, distinguishing features..." />
               </div>
               <div>
-                <label className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>Photo</label>
-                <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoFile} />
-                {formPreview ? (
-                  <div className="relative rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
-                    <img src={formPreview} alt="Item preview" className="w-full h-40 object-contain" />
-                    <button type="button" onClick={clearPhoto}
-                      className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors duration-200 cursor-pointer">
-                      <X size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => uploadRef.current?.click()}
-                      className="h-24 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                      style={{ borderColor: c.border, color: c.textMuted, backgroundColor: c.fill }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = c.primary; e.currentTarget.style.color = c.primary; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.textMuted; }}>
-                      <Upload size={20} /><span className="text-xs font-medium">Upload</span>
-                      <span className="text-[11px]" style={{ color: c.textLight }}>Gallery / Files</span>
-                    </button>
-                    <button type="button" onClick={openLiveCamera}
-                      className="h-24 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                      style={{ borderColor: c.border, color: c.textMuted, backgroundColor: c.fill }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = c.primary; e.currentTarget.style.color = c.primary; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = c.border; e.currentTarget.style.color = c.textMuted; }}>
-                      <Camera size={20} /><span className="text-xs font-medium">Take Photo</span>
-                      <span className="text-[11px]" style={{ color: c.textLight }}>Live camera</span>
-                    </button>
-                  </div>
-                )}
+                <PhotoEvidenceField
+                  photos={formPhotos}
+                  onChange={setFormPhotos}
+                  max={1}
+                  label="Photo"
+                  optional
+                  hint="One photo · 5MB max"
+                />
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
                 <VButton variant="secondary" onClick={closeItemModal}>Cancel</VButton>
                 <VButton onClick={handleSave} disabled={saving}>{saving ? "Saving..." : editing ? "Save Changes" : "Add Item"}</VButton>
               </div>
-            </div>
-          </VCard>
-        </div>
-      )}
-
-      {/* Live camera modal for desktop */}
-      {showCamera && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeLiveCamera} />
-          <VCard className="relative w-full max-w-md p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold" style={{ color: c.text }}>Take Photo</h3>
-              <button type="button" onClick={closeLiveCamera} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
-            </div>
-            <div className="rounded-xl overflow-hidden bg-black aspect-[4/3] flex items-center justify-center">
-              <video ref={liveVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            </div>
-            <p className="text-[11px] mt-3 text-center" style={{ color: c.textMuted }}>Position item in frame, then capture.</p>
-            <div className="flex items-center justify-end gap-2 mt-4">
-              <VButton variant="secondary" onClick={closeLiveCamera}>Cancel</VButton>
-              <VButton onClick={captureLivePhoto}><Camera size={14} /> Capture</VButton>
             </div>
           </VCard>
         </div>

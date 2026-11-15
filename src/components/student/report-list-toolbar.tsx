@@ -35,10 +35,11 @@ export function ReportListToolbar({ query, onQueryChange, type, status, onStatus
         trigger={
           <VFilterButton aria-label={`Filter by status: ${statusLabel}`}
             aria-haspopup="listbox" aria-expanded={statusOpen}
+            className="w-[124px] justify-between"
             style={narrowed ? { borderColor: c.primary, color: c.primary, backgroundColor: c.primarySoft } : undefined}
             onClick={() => setStatusOpen((open) => !open)}>
-            <span className="max-w-[110px] truncate">{statusLabel}</span>
-            <ChevronDown size={14} />
+            <span className="min-w-0 truncate">{statusLabel}</span>
+            <ChevronDown size={14} className="shrink-0" />
           </VFilterButton>
         }>
         {(close) => (

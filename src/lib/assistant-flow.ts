@@ -59,7 +59,7 @@ const studentFlow: AssistantFlow = {
     action: { label: "Open my claims", path: "/dashboard/student/claims" },
   },
   reports: {
-    message: "Open My Reports to track your lost and found reports. For a pending lost report, choose Check possible matches to review available items and start a linked claim. Suggestions do not prove ownership. An unlinked lost report can remain pending even if you submitted a separate claim; the admin reviews and resolves it.",
+    message: "Open My Reports to track your lost and found reports. For a pending lost report, choose Check matches on its card to review available items and start a linked claim. Suggestions do not prove ownership. An unlinked lost report can remain pending even if you submitted a separate claim; the admin reviews and resolves it.",
     action: { label: "Open my reports", path: "/dashboard/student/report?tab=reports" },
   },
   notifications: {

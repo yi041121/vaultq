@@ -1,9 +1,10 @@
 "use client";
 
-import { Loader2, PackageSearch, RefreshCw, Sparkles } from "lucide-react";
+import type { RefObject } from "react";
+import { Loader2, PackageSearch, RefreshCw, Sparkles, X } from "lucide-react";
 import { formatDisplayDate } from "@/lib/date-format";
 import type { ReportSuggestion } from "@/lib/report-suggestions";
-import { VBadge, VButton, VCard, vcolors as c } from "@/components/ui/vault";
+import { VButton, VCard, vcolors as c } from "@/components/ui/vault";
 
 export interface ReportMatchesPanelProps {
   suggestions: ReportSuggestion[];
@@ -12,25 +13,38 @@ export interface ReportMatchesPanelProps {
   onRetry: () => void;
   onStartClaim: (suggestion: ReportSuggestion) => void;
   onViewDetails: (suggestion: ReportSuggestion) => void;
+  /** Overrides the panel heading, e.g. "Matches for backpack". */
+  title?: string;
+  onClose?: () => void;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
 }
 
 /** Possible inventory matches shown after a lost report is submitted or reopened. */
-export function ReportMatchesPanel({ suggestions, loading, error, onRetry, onStartClaim, onViewDetails }: ReportMatchesPanelProps) {
+export function ReportMatchesPanel({
+  suggestions, loading, error, onRetry, onStartClaim, onViewDetails, title, onClose, headingRef,
+}: ReportMatchesPanelProps) {
   return (
     <VCard className="p-5 lg:p-6 text-left">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold flex items-center gap-2" style={{ color: c.text }}>
+        <div className="min-w-0">
+          <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined}
+            className="text-base font-semibold flex items-center gap-2" style={{ color: c.text }}>
             <Sparkles size={16} style={{ color: c.primary }} />
-            Possible matches
-          </h3>
+            {title ?? "Possible matches"}
+          </h2>
           <p className="text-xs mt-1" style={{ color: c.textMuted }}>
-            Based on your item name, identifying details, category, date, and location. Similarity scores are not ownership probabilities.
+            Similarity is a hint, not proof of ownership.
           </p>
         </div>
-        {!loading && !error && suggestions.length > 0 && (
-          <VBadge color={c.primary}>{suggestions.length} found</VBadge>
-        )}
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <button type="button" onClick={onClose} aria-label="Close matches"
+              className="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer"
+              style={{ backgroundColor: c.primarySoft, color: c.primary }}>
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -51,7 +65,7 @@ export function ReportMatchesPanel({ suggestions, loading, error, onRetry, onSta
           <PackageSearch size={28} className="mx-auto mb-2" style={{ color: c.textLight }} />
           <p className="text-sm font-medium" style={{ color: c.textMuted }}>No close matches yet</p>
           <p className="text-xs mt-1 leading-relaxed" style={{ color: c.textLight }}>
-            Your report stays pending. We&apos;ll notify you if a matching item is added to the inventory.
+            Your report stays pending. We&apos;ll notify you if a matching item appears.
           </p>
         </div>
       ) : (
@@ -78,7 +92,7 @@ export function ReportMatchesPanel({ suggestions, loading, error, onRetry, onSta
                       : suggestion.score >= 50
                         ? { backgroundColor: "#dbeafe", color: "#1d4ed8" }
                         : { backgroundColor: c.fill, color: c.textMuted }}>
-                    {suggestion.label} similarity · {suggestion.score}/100
+                    {suggestion.label} · {suggestion.score}/100
                   </span>
                 </div>
                 <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>
@@ -96,7 +110,7 @@ export function ReportMatchesPanel({ suggestions, loading, error, onRetry, onSta
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 sm:ml-auto">
                 <VButton size="sm" onClick={() => onStartClaim(suggestion)}>
                   Start claim
                 </VButton>
@@ -106,9 +120,6 @@ export function ReportMatchesPanel({ suggestions, loading, error, onRetry, onSta
               </div>
             </div>
           ))}
-          <p className="text-[11px] leading-relaxed pt-1" style={{ color: c.textLight }}>
-            Review the item before claiming. Claiming opens the normal evidence form and links this lost report.
-          </p>
         </div>
       )}
     </VCard>

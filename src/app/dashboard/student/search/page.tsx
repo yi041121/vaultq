@@ -33,6 +33,7 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch, dateSearchValues } from "@/lib/search";
 import { uniquePhotos } from "@/lib/photo-gallery";
 import { lostReportClaimReason } from "@/lib/lost-report-claim";
+import { suggestMatches } from "@/lib/report-match";
 import { fetchReportPages } from "@/lib/report-pages";
 import { NO_PHOTO_REASON_HELP, NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 
@@ -112,6 +113,7 @@ export default function StudentSearch() {
   const [lostReports, setLostReports] = useState<LostReportOption[]>([]);
   const [lostReportsLoaded, setLostReportsLoaded] = useState(false);
   const [linkPromptItem, setLinkPromptItem] = useState<FoundItem | null>(null);
+  const [linkPromptReports, setLinkPromptReports] = useState<LostReportOption[]>([]);
   const [linkChoice, setLinkChoice] = useState<string | null>(null);
   const [linkSkipConfirmed, setLinkSkipConfirmed] = useState(false);
   const [lostReportPreview, setLostReportPreview] = useState<{ report: LostReportOption; index: number } | null>(null);
@@ -122,6 +124,12 @@ export default function StudentSearch() {
 
   function openLostReportPreview(report: LostReportOption) {
     setLostReportPreview({ report, index: 0 });
+  }
+
+  function closeLinkPrompt() {
+    setLinkPromptItem(null);
+    setLinkPromptReports([]);
+    setLinkSkipConfirmed(false);
   }
 
   async function loadLostReports(token: string): Promise<LostReportOption[]> {
@@ -348,12 +356,25 @@ export default function StudentSearch() {
     }
     setViewItem(null);
 
-    // Always ask which lost report to link when the student has any pending.
+    // Only offer a lost report that actually looks like this item. An
+    // unrelated claim opens straight away without the link form.
     let reports = lostReports;
     const token = getBrowserSessionKey();
     if (!lostReportsLoaded && token) reports = await loadLostReports(token);
 
-    if (reports.length > 0) {
+    const related = reports.filter((report) => suggestMatches(
+      {
+        itemName: report.itemName, category: report.category, description: report.description,
+        location: report.location, date: report.date,
+      },
+      [{
+        id: item.id, itemName: item.name, category: item.category, description: item.description,
+        foundLocation: item.location, foundDate: item.date,
+      }],
+    ).length > 0);
+
+    if (related.length > 0) {
+      setLinkPromptReports(related);
       setLinkPromptItem(item);
       setLinkChoice(null);
       setLinkSkipConfirmed(false);
@@ -525,7 +546,7 @@ export default function StudentSearch() {
 
   useEscapeKey(!!lostReportPreview, () => setLostReportPreview(null));
   useEscapeKey(!!viewItem, () => setViewItem(null));
-  useEscapeKey(!!linkPromptItem, () => { setLinkPromptItem(null); setLinkSkipConfirmed(false); });
+  useEscapeKey(!!linkPromptItem, closeLinkPrompt);
   useEscapeKey(!!claimItem && !claimCameraOpen && !claimPhotoSourceOpen && claimEditPhoto === null, closeClaim);
 
   if (!user || !mounted) return null;
@@ -902,7 +923,7 @@ export default function StudentSearch() {
       {/* Always offer the student's pending lost reports before claiming */}
       {linkPromptItem && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { setLinkPromptItem(null); setLinkSkipConfirmed(false); }} />
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => { closeLinkPrompt(); }} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0">
@@ -911,7 +932,7 @@ export default function StudentSearch() {
                   Link the matching report to automatically copy its details and photos into your claim. You can review and edit them before submitting.
                 </p>
               </div>
-              <button type="button" onClick={() => { setLinkPromptItem(null); setLinkSkipConfirmed(false); }}
+              <button type="button" onClick={() => { closeLinkPrompt(); }}
                 className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 cursor-pointer shrink-0 ml-3"
                 style={{ backgroundColor: c.primarySoft, color: c.primary }} aria-label="Close link lost report dialog">
                 <X size={16} />
@@ -919,7 +940,7 @@ export default function StudentSearch() {
             </div>
 
             <div className="space-y-2 max-h-64 overflow-auto mb-4">
-              {lostReports.map((report) => {
+              {linkPromptReports.map((report) => {
                 const selected = linkChoice === report.id;
                 return (
                   <div key={report.id}
@@ -969,9 +990,9 @@ export default function StudentSearch() {
             </div>
 
             <div className="flex items-center justify-end gap-3">
-              <VButton variant="secondary" onClick={() => { setLinkPromptItem(null); setLinkSkipConfirmed(false); }}>Cancel</VButton>
+              <VButton variant="secondary" onClick={() => { closeLinkPrompt(); }}>Cancel</VButton>
               <VButton disabled={linkChoice === null && !linkSkipConfirmed}
-                onClick={() => { const item = linkPromptItem; const reportId = linkChoice; setLinkPromptItem(null); setLinkSkipConfirmed(false); startClaim(item, reportId); }}>
+                onClick={() => { const item = linkPromptItem; const reportId = linkChoice; closeLinkPrompt(); startClaim(item, reportId); }}>
                 Continue
               </VButton>
             </div>

@@ -21,7 +21,6 @@ import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { PhotoPicker } from "@/components/photo-picker";
 import { CustomScrollbar } from "@/components/custom-scrollbar";
-import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import { StudentShell } from "@/components/student-shell";
 import {
   VCard, VContentPanel, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
@@ -31,6 +30,7 @@ import { CATEGORY_ICONS as categoryIcons } from "@/lib/category-icons";
 import { mapReport, type UserReport } from "@/lib/report-mapper";
 import { clearStudentCache, getCachedReports, setCachedReports } from "@/lib/student-cache";
 import { useEscapeKey } from "@/lib/use-escape-key";
+import { reportNextStep } from "@/lib/student-workflow";
 import { scrollPageToTop } from "@/lib/scroll-to-top";
 import { fetchReportPages } from "@/lib/report-pages";
 import {
@@ -45,10 +45,11 @@ import {
   saveReportDraft,
   type ReportDraft,
 } from "@/lib/report-draft";
-import { ReportCard, itemStatusLabel } from "@/components/student/report-card";
+import { ReportCard } from "@/components/student/report-card";
 import { ReportTypeChooser } from "@/components/student/report-type-chooser";
 import { ReportMatchesPanel } from "@/components/student/report-matches-panel";
 import { ReportListToolbar } from "@/components/student/report-list-toolbar";
+import { ResetFiltersButton } from "@/components/filter-panel";
 import { filterReports, statusIsAvailableFor, type ReportStatusFilter, type ReportTypeFilter } from "@/lib/report-list-filter";
 import type { ReportSuggestion } from "@/lib/report-suggestions";
 
@@ -114,8 +115,11 @@ type ItemDetail = {
   imageIndex: number;
   statusLabel: string;
   color: string;
-  reviewedAt?: string | null;
   isRejected?: boolean;
+  reference?: string;
+  adminNote?: string | null;
+  nextStep?: string;
+  report?: UserReport;
 };
 
 // Report type tags use their own colour and an outline style so they never
@@ -138,7 +142,7 @@ function StudentReportContent() {
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<"new" | "reports">("new");
   const [reportKind, setReportKind] = useState<ReportTypeFilter>("ALL");
-  const [reportStatus, setReportStatus] = useState<ReportStatusFilter>("PENDING");
+  const [reportStatus, setReportStatus] = useState<ReportStatusFilter>("ALL");
   const [reportTypeOpen, setReportTypeOpen] = useState(false);
   const [reportQuery, setReportQuery] = useState("");
   const [duplicateReport, setDuplicateReport] = useState<{ itemName: string; type: ReportType } | null>(null);
@@ -773,72 +777,9 @@ function StudentReportContent() {
     }
   }
 
-  // Opens the logged item in a read-only details popup. The report data is
-  // shown instantly, then refreshed from the item record when it arrives.
-  async function openItemDetail(report: UserReport) {
-    const item = report.item;
-    if (!item) return;
-    const statusLabel = report.status === "VERIFIED"
-      ? "Found"
-      : itemStatusLabel[item.status] || item.status;
-    const color = report.status === "VERIFIED" ? report.color : c.textMuted;
-
-    // Item details only ever show the inventory item's own photos. The lost
-    // report photos stay in the separate report view.
-    const initialImages = item.imageUrl ? [item.imageUrl] : [];
-
-    setItemDetail({
-      id: item.id,
-      name: item.name,
-      category: report.category,
-      description: report.description,
-      location: report.location,
-      date: report.date,
-      imageUrl: initialImages[0] || null,
-      images: initialImages,
-      imageIndex: 0,
-      statusLabel,
-      color,
-    });
-
-    const token = getBrowserSessionKey();
-    if (!token) return;
-    try {
-      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}`, {
-        headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" },
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => ({}));
-      const fresh = data?.data;
-      if (!res.ok || !data?.success || !fresh) return;
-      const reportImages: string[] = Array.isArray(fresh.reports)
-        ? fresh.reports.flatMap((r: { imageUrls?: unknown }) => (Array.isArray(r.imageUrls) ? r.imageUrls as string[] : []))
-        : [];
-      // Prefer the original item image from the details response over the
-      // signed list URL, so the same photo is not shown twice.
-      const images = await dedupePhotos(itemPhotoSources(item.imageUrl, fresh.imageUrl, reportImages));
-      setItemDetail((prev) => {
-        if (!prev || prev.id !== item.id) return prev;
-        const merged = images.length ? images : prev.images;
-        return {
-          ...prev,
-          name: fresh.itemName || prev.name,
-          category: fresh.category || prev.category,
-          description: fresh.description || prev.description,
-          location: fresh.foundLocation || prev.location,
-          date: fresh.foundDate ? String(fresh.foundDate).slice(0, 10) : prev.date,
-          imageUrl: merged[0] || prev.imageUrl,
-          images: merged,
-          imageIndex: Math.min(prev.imageIndex, Math.max(0, merged.length - 1)),
-        };
-      });
-    } catch {
-      // Keep the report-derived details if the item lookup fails.
-    }
-  }
-
-  // Matched reports keep the lost-report photo and description; View shows
-  // what the student originally reported rather than the inventory record.
+  // The report's own details: what was reported, its photos, the reference
+  // and the admin guidance. This is where everything the compact card leaves
+  // out is shown.
   function openReportDetail(report: UserReport) {
     setItemDetail({
       id: report.id,
@@ -850,13 +791,17 @@ function StudentReportContent() {
       imageUrl: report.images[0] || null,
       images: report.images,
       imageIndex: 0,
-      statusLabel: "Lost",
+      statusLabel: report.statusLabel,
       color: report.color,
-      reviewedAt: report.reviewedAt,
       isRejected: report.status === "REJECTED",
+      reference: report.reference,
+      adminNote: report.adminNote,
+      nextStep: reportNextStep(report.type, report.status),
+      report,
     });
   }
 
+  useEscapeKey(!!matchesReport, () => setMatchesReport(null));
   useEscapeKey(!!itemDetail && !viewer, () => setItemDetail(null));
   useEscapeKey(!!photoSourceTarget, () => setPhotoSourceTarget(null));
   // Escape deliberately does not close the report form: it must be dismissed
@@ -879,15 +824,16 @@ function StudentReportContent() {
     ? reports.length > 0
     : reports.some((report) => report.type === reportKind);
   const kindLabel = reportKind === "ALL" ? "All types" : reportKind === "LOST" ? "Lost" : "Found";
-  const kindCount = reportKind === "ALL" ? reports.length
-    : reportKind === "LOST" ? lostReportCount : foundReportCount;
+  const reportFiltersActive = reportKind !== "ALL" || reportStatus !== "ALL" || reportQuery.trim().length > 0;
 
   function changeReportKind(next: ReportTypeFilter) {
     setReportKind(next);
     setReportStatus((current) => statusForKind(next, current));
   }
 
+  /** Back to the default view: every type, every status, no search. */
   function resetReportFilters() {
+    setReportKind("ALL");
     setReportStatus("ALL");
     setReportQuery("");
   }
@@ -915,7 +861,7 @@ function StudentReportContent() {
                 </button>
               </div>
             </div>
-            {tab === "reports" && !matchesReport && (
+            {tab === "reports" && (
               <div className="min-w-0 w-full rounded-2xl border p-2 xl:ml-auto xl:w-fit" style={{ backgroundColor: c.panel, borderColor: c.border }}>
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                   <ReportListToolbar
@@ -925,20 +871,23 @@ function StudentReportContent() {
                     status={reportStatus}
                     onStatusChange={setReportStatus}
                   />
-                  <VDropdown open={reportTypeOpen} onOpenChange={setReportTypeOpen} width="w-[160px]" align="right"
+                  <VDropdown open={reportTypeOpen} onOpenChange={setReportTypeOpen} width="w-[150px]" align="right"
                     trigger={
                       <VFilterButton
                         aria-label={`Filter by report type: ${kindLabel}`}
                         aria-haspopup="listbox" aria-expanded={reportTypeOpen}
+                        className="w-[124px] justify-between"
                         style={reportKind === "ALL" ? undefined : { borderColor: c.primary, color: c.primary, backgroundColor: c.primarySoft }}
                         onClick={() => setReportTypeOpen((open) => !open)}>
-                        {reportKind === "ALL"
-                          ? <Grid3X3 size={14} style={{ color: c.textMuted }} />
-                          : reportKind === "LOST"
-                            ? <PackageSearch size={14} style={{ color: c.primary }} />
-                            : <PackageCheck size={14} style={{ color: FOUND_COLOR }} />}
-                        {kindLabel} ({kindCount})
-                        <ChevronDown size={14} />
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {reportKind === "ALL"
+                            ? <Grid3X3 size={14} className="shrink-0" style={{ color: c.textMuted }} />
+                            : reportKind === "LOST"
+                              ? <PackageSearch size={14} className="shrink-0" style={{ color: c.primary }} />
+                              : <PackageCheck size={14} className="shrink-0" style={{ color: FOUND_COLOR }} />}
+                          <span className="truncate">{kindLabel}</span>
+                        </span>
+                        <ChevronDown size={14} className="shrink-0" />
                       </VFilterButton>
                     }>
                     {(close) => (
@@ -958,13 +907,14 @@ function StudentReportContent() {
                       </>
                     )}
                   </VDropdown>
+                  <ResetFiltersButton disabled={!reportFiltersActive} onClick={resetReportFilters} />
                 </div>
               </div>
             )}
           </div>
 
           <VContentPanel>
-          {tab === "reports" && !matchesReport ? (
+          {tab === "reports" ? (
             <div className="w-full min-w-0 flex-1 flex flex-col">
               {reportsLoading ? (
                 <div className="space-y-4" aria-busy="true" aria-label="Loading your reports">
@@ -1040,14 +990,7 @@ function StudentReportContent() {
                     <ReportCard
                       key={report.id}
                       report={report}
-                      onViewPhotos={(target) => {
-                        if (target.images.length) setViewer({ photos: target.images, index: 0, title: target.itemName });
-                        else openReportDetail(target);
-                      }}
                       onViewReport={openReportDetail}
-                      onViewItem={(target) => { void openItemDetail(target); }}
-                      onEdit={(target) => { void openEdit(target); }}
-                      onWithdraw={setWithdrawTarget}
                       onCheckMatches={checkReportMatches}
                       onViewClaims={() => router.push("/dashboard/student/claims")}
                     />
@@ -1060,31 +1003,34 @@ function StudentReportContent() {
           ) : (
             <div data-report-workspace className="grid w-full min-w-0 mx-auto gap-6 items-start max-w-3xl flex-1 content-center">
               <div className="w-full min-w-0 max-w-3xl mx-auto xl:mx-0">
-              {submitted || matchesReport ? (
+              {submitted ? (
                 <div className="space-y-5">
                   <VCard className="p-8 lg:p-10 text-center">
-                    {matchesReport
-                      ? <PackageSearch size={48} className="mb-5 mx-auto" style={{ color: c.primary }} />
-                      : <CheckCircle2 size={56} className="mb-5 mx-auto" style={{ color: c.accent }} />}
+                    <CheckCircle2 size={56} className="mb-5 mx-auto" style={{ color: c.accent }} />
                     <h2 ref={resultHeadingRef} tabIndex={-1} className="text-2xl font-bold mb-2" style={{ color: c.text }}>
-                      {matchesReport ? `Matches for ${matchesReport.itemName}` : submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
+                      {submitted === "LOST" ? "Lost Report Submitted" : "Found Report Submitted"}
                     </h2>
                     <p className="text-base mb-4 max-w-lg mx-auto" style={{ color: c.textMuted }}>
-                      {submitted === "LOST" || matchesReport
-                        ? "Review possible matches below. Suggestions are not proof of ownership; an admin reviews every claim."
-                        : "Please hand the item to the Lost & Found office so it can be verified and stored in a locker."}
+                      {submitted === "LOST"
+                        ? "Review possible matches below."
+                        : "Hand the item to the Lost & Found office so it can be verified and stored in a locker."}
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-3">
-                      {!matchesReport && <VButton variant="secondary" size="lg" onClick={() => { clearSubmission(); resetForm(); }}>
+                      <VButton variant="secondary" size="lg" onClick={() => { clearSubmission(); resetForm(); }}>
                         Report another
-                      </VButton>}
-                      <VButton size="lg" onClick={() => { const kind = matchesReport?.type ?? submitted; clearSubmission(); if (kind) setReportKind(kind); switchTab("reports"); }}>
-                        {matchesReport ? "Back to my reports" : "View my reports"}
+                      </VButton>
+                      <VButton size="lg" onClick={() => {
+                        const kind = submitted;
+                        clearSubmission();
+                        if (kind) setReportKind(kind);
+                        switchTab("reports");
+                      }}>
+                        View my reports
                       </VButton>
                     </div>
                   </VCard>
 
-                  {(submitted === "LOST" || matchesReport) && (
+                  {submitted === "LOST" && (
                     <ReportMatchesPanel
                       suggestions={suggestions}
                       loading={suggestionsLoading}
@@ -1442,10 +1388,56 @@ function StudentReportContent() {
           description={itemDetail.description}
           photos={itemDetail.images}
           photoIndex={itemDetail.imageIndex}
+          extra={itemDetail.reference ? (
+            <span className="flex items-center gap-1">
+              Ref <span className="font-mono text-xs">{itemDetail.reference}</span>
+            </span>
+          ) : undefined}
+          notice={itemDetail.adminNote || itemDetail.nextStep ? (
+            <div className="space-y-2.5">
+              {itemDetail.adminNote && (
+                <div role="note" className="flex gap-2 rounded-xl border p-3 text-xs leading-relaxed"
+                  style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", color: "#991b1b" }}>
+                  <CircleAlert size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span><span className="font-semibold">Admin note: </span>{itemDetail.adminNote}</span>
+                </div>
+              )}
+              {itemDetail.nextStep && (
+                <p className="rounded-xl p-3 text-xs leading-relaxed"
+                  style={{ backgroundColor: c.primarySoft, color: c.textMuted }}>
+                  {itemDetail.nextStep}
+                </p>
+              )}
+            </div>
+          ) : undefined}
           onPhotoIndexChange={(index) => setItemDetail((prev) => (prev ? { ...prev, imageIndex: index } : prev))}
           onViewPhoto={() => setViewer({ photos: itemDetail.images, index: itemDetail.imageIndex, title: itemDetail.name })}
           onClose={() => setItemDetail(null)}
-          footer={<VButton variant="secondary" className="flex-1" onClick={() => setItemDetail(null)}>Close</VButton>}
+          footer={
+            <>
+              {itemDetail.report?.status === "PENDING" && (
+                <>
+                  <VButton variant="secondary" onClick={() => {
+                    const report = itemDetail.report;
+                    if (!report) return;
+                    setItemDetail(null);
+                    void openEdit(report);
+                  }}>
+                    Edit
+                  </VButton>
+                  <VButton variant="danger" onClick={() => {
+                    const report = itemDetail.report;
+                    if (!report) return;
+                    setItemDetail(null);
+                    setWithdrawTarget(report);
+                  }}>
+                    Withdraw
+                  </VButton>
+                </>
+              )}
+              <VButton variant="secondary" className="flex-1" onClick={() => setItemDetail(null)}>Close</VButton>
+            </>
+          }
         />
       )}
 
@@ -1619,6 +1611,28 @@ function StudentReportContent() {
         </div>
       )}
 
+      {matchesReport && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={() => setMatchesReport(null)} />
+          <div className="relative w-full max-w-3xl max-h-[90vh] overflow-auto">
+            <ReportMatchesPanel
+              title={`Matches for ${matchesReport.itemName}`}
+              headingRef={resultHeadingRef}
+              onClose={() => setMatchesReport(null)}
+              suggestions={suggestions}
+              loading={suggestionsLoading}
+              error={suggestionsError}
+              onRetry={() => {
+                const token = getBrowserSessionKey();
+                if (token && activeSuggestionReportId) void loadSuggestions(activeSuggestionReportId, token);
+              }}
+              onStartClaim={(suggestion) => { claimSuggestion(suggestion); setMatchesReport(null); }}
+              onViewDetails={setSuggestionDetail}
+            />
+          </div>
+        </div>
+      )}
+
       {suggestionDetail && (
         <ItemDetailsModal
           title={suggestionDetail.itemName}
@@ -1630,10 +1644,10 @@ function StudentReportContent() {
           description={suggestionDetail.description}
           photos={suggestionDetail.imageUrl ? [suggestionDetail.imageUrl] : []}
           photoIndex={0}
+          zIndex="z-[70]"
           onClose={() => setSuggestionDetail(null)}
-          footerNote="Possible match only — ownership has not been verified. Start a claim if you believe this item is yours."
           footer={
-            <>
+            <div className="flex w-full items-center justify-center gap-2">
               <VButton variant="secondary" onClick={() => setSuggestionDetail(null)}>Close</VButton>
               <VButton onClick={() => {
                 const item = suggestionDetail;
@@ -1642,7 +1656,7 @@ function StudentReportContent() {
               }}>
                 Start claim
               </VButton>
-            </>
+            </div>
           }
         />
       )}

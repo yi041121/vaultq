@@ -242,7 +242,7 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
   try {
     const report = await prisma.report.findUnique({
       where: { id },
-      select: { id: true, userId: true, status: true },
+      select: { id: true, userId: true, status: true, type: true, itemName: true },
     });
     if (!report) return NextResponse.json({ success: false, error: "Report not found" }, { status: 404 });
     if (report.userId !== user.id) {
@@ -254,6 +254,16 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
 
     const removed = await prisma.report.deleteMany({ where: { id, userId: user.id, status: "PENDING" } });
     if (removed.count !== 1) return NextResponse.json({ success: false, error: "Report was linked or reviewed. Please refresh." }, { status: 409 });
+
+    // Keep a receipt in the student's notifications: the report is gone from
+    // their list, so this is the only record that they withdrew it.
+    await notifyUser(
+      user.id,
+      "Report withdrawn",
+      `Your ${report.type === "LOST" ? "lost" : "found"} item report for ${report.itemName} was withdrawn. You can submit a new report any time.`,
+      { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
+    );
+
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
     console.error("Report withdrawal failed", e);

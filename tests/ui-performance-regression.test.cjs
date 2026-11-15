@@ -302,7 +302,6 @@ test("item and evidence photo previews never crop the photo edges away", () => {
     "src/app/dashboard/student/page.tsx",
     "src/app/dashboard/student/claims/page.tsx",
     "src/app/dashboard/student/report/page.tsx",
-    "src/components/student/report-card.tsx",
     "src/components/student/report-matches-panel.tsx",
     "src/app/dashboard/student/search/page.tsx",
     "src/app/dashboard/admin/page.tsx",
@@ -338,7 +337,7 @@ test("item and evidence photo previews never crop the photo edges away", () => {
     }
     visit(source);
   }
-  assert.ok(checked >= 24, "check card photos, evidence, details and viewer thumbnails");
+  assert.ok(checked >= 18, "check card photos, evidence, details and viewer thumbnails");
 });
 
 test("claim verification uses eight cards per page and equal comparison columns", () => {

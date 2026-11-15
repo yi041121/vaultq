@@ -21,6 +21,8 @@ export interface ItemDetailsModalProps {
   onViewPhoto?: () => void;
   onClose: () => void;
   extra?: ReactNode;
+  /** Extra blocks (admin note, guidance) shown under the description. */
+  notice?: ReactNode;
   footer?: ReactNode;
   footerNote?: ReactNode;
   maxWidth?: string;
@@ -46,6 +48,7 @@ export function ItemDetailsModal({
   onViewPhoto,
   onClose,
   extra,
+  notice,
   footer,
   footerNote,
   maxWidth = "max-w-lg",
@@ -148,6 +151,8 @@ export function ItemDetailsModal({
             <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
             <p className="text-sm leading-relaxed [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>{description || "No description provided."}</p>
           </div>
+
+          {notice && <div className="mb-5">{notice}</div>}
 
           {(footer || footerNote) && (
             <div className="flex flex-wrap items-center gap-3">
