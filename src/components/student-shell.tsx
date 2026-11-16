@@ -4,7 +4,7 @@ import { getBrowserSessionKey } from "@/lib/browser-session-store";
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, Menu, MessageCircle, X } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, Menu, MessageCircle, X } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost, { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -63,7 +63,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const desktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, getServerDesktopSnapshot);
   useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
-  const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
   const [adminQuickOpen, setAdminQuickOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const adminFabRef = useRef<HTMLDivElement>(null);
@@ -122,7 +121,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     } else {
       router.push(action.path);
     }
-    setShortcutDockOpen(false);
     setAdminQuickOpen(false);
   }
 
@@ -317,29 +315,11 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
       </aside>
 
       {desktop && (
-        <div role="group" aria-label="Quick shortcuts"
+        <div role="group" aria-label="Display and assistant"
           className="fixed bottom-3 right-6 z-40 flex items-center gap-2 rounded-full border p-2 shadow-lg"
           style={{ backgroundColor: colors.card, borderColor: colors.border }}>
-          <button type="button" onClick={() => setShortcutDockOpen((open) => !open)}
-            aria-label={shortcutDockOpen ? "Collapse quick shortcuts" : "Expand quick shortcuts"}
-            aria-expanded={shortcutDockOpen} title={shortcutDockOpen ? "Collapse shortcuts" : "More shortcuts"}
-            className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2"
-            style={{ backgroundColor: shortcutDockOpen ? colors.primarySoft : colors.borderLight, color: shortcutDockOpen ? colors.primary : colors.textMuted }}>
-            {shortcutDockOpen ? <X size={17} /> : <LayoutGrid size={17} />}
-          </button>
-          {shortcutDockOpen && quickActions.map((action) => (
-            <button key={action.label} type="button" onClick={() => runQuickAction(action)}
-              aria-label={action.label} title={action.label}
-              className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2"
-              style={{ backgroundColor: colors.borderLight, color: colors.textMuted }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = colors.primarySoft; e.currentTarget.style.color = colors.primary; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = colors.borderLight; e.currentTarget.style.color = colors.textMuted; }}>
-              <action.icon size={17} />
-            </button>
-          ))}
-          {shortcutDockOpen && <span aria-hidden="true" className="mx-0.5 h-6 w-px" style={{ backgroundColor: colors.borderLight }} />}
           <ThemeToggle />
-          <button type="button" onClick={() => { setShortcutDockOpen(false); setAssistantOpen(true); }}
+          <button type="button" onClick={() => setAssistantOpen(true)}
             aria-label="Open VaultQ assistant" title="VaultQ Assistant" aria-haspopup="dialog"
             className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{ backgroundColor: colors.primarySoft, color: colors.primary }}>

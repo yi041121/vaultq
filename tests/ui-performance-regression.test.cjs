@@ -228,11 +228,18 @@ test("phone floating actions are role and page aware", () => {
   assert.equal((source.match(/aria-label="Open VaultQ assistant"/g) ?? []).length, 2,
     "desktop dock and floating student button keep the assistant entry");
 
-  // The desktop shortcut dock keeps the role actions and the assistant entry.
-  assert.match(source, /role="group" aria-label="Quick shortcuts"/);
+  // The desktop dock now contains only the theme toggle and assistant.
+  const dockStart = source.indexOf("{desktop && (");
+  const dockEnd = source.indexOf("{/* Main area */}", dockStart);
+  assert.ok(dockStart >= 0 && dockEnd > dockStart, "desktop dock exists");
+  const dock = source.slice(dockStart, dockEnd);
+  assert.match(dock, /aria-label="Display and assistant"/);
+  assert.match(dock, /<ThemeToggle \/>/);
+  assert.match(dock, /<MessageCircle size=\{18\} \/>/);
+  assert.doesNotMatch(dock, /quickActions|Report Lost Item|Report Found Item|LayoutGrid|Quick shortcuts/,
+    "desktop quick-action shortcuts are gone");
   assert.match(source, /const quickActions = quickActionsForRole\(userRole\)/);
   assert.match(source, /function runQuickAction\(action: QuickAction\)/);
-  assert.match(source, /<MessageCircle size=\{18\} \/>/);
 });
 
 test("claim form offers a detailed no-photo verification path", () => {

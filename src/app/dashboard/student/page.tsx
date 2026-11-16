@@ -16,6 +16,7 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { CLAIM_STATUS_COLOR, mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { NOTIFICATION_META, relativeTime } from "@/lib/notification-ui";
 import { resolveNotificationLink } from "@/lib/notification-link";
+import { DashboardQuickActions } from "@/components/student/dashboard-quick-actions";
 import {
   getCachedClaims,
   getCachedNotifications,
@@ -154,6 +155,8 @@ export default function StudentDashboard() {
               </VButton>
             </VCard>
           )}
+
+          <DashboardQuickActions onNavigate={(path) => router.push(path)} />
 
           <div className="grid min-w-0 grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             {/* Latest Found Items */}
