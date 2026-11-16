@@ -183,9 +183,8 @@ export default function StudentDashboard() {
                     ))
                   : latestItems.map((item) => (
                       <VCard key={item.id} className="min-w-0 snap-start p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
-                        <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center cursor-pointer relative overflow-hidden"
-                          style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
-                          onClick={() => viewItemDetails(item.name)}>
+                        <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center relative overflow-hidden"
+                          style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                           {item.imageUrl ? (
                             <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
                           ) : (
@@ -196,7 +195,7 @@ export default function StudentDashboard() {
                           )}
                         </div>
                         <div className="flex items-start justify-between gap-2 mb-2">
-                          <h3 className="min-w-0 flex-1 line-clamp-2 text-sm lg:text-base font-semibold cursor-pointer hover:opacity-80 [overflow-wrap:anywhere]" style={{ color: c.text }} onClick={() => viewItemDetails(item.name)}>{item.name}</h3>
+                          <h3 className="min-w-0 flex-1 line-clamp-2 text-sm lg:text-base font-semibold [overflow-wrap:anywhere]" style={{ color: c.text }}>{item.name}</h3>
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
                         <p className="text-xs lg:text-sm flex items-center gap-1 [overflow-wrap:anywhere]" style={{ color: c.textMuted }}><MapPin size={12} className="shrink-0" /> {item.location || "—"}</p>

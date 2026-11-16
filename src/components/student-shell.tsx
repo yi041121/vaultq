@@ -4,7 +4,7 @@ import { getBrowserSessionKey } from "@/lib/browser-session-store";
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X, Plus, MessageCircle } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X, MessageCircle } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost, { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -64,9 +64,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
-  const [mobileFabOpen, setMobileFabOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const mobileFabRef = useRef<HTMLDivElement>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [studentUnread, setStudentUnread] = useState(() => getCachedUnread());
@@ -123,26 +121,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
       router.push(action.path);
     }
     setShortcutDockOpen(false);
-    setMobileFabOpen(false);
   }
-
-  useEffect(() => {
-    if (!mobileFabOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileFabOpen(false);
-    };
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      if (mobileFabRef.current && !mobileFabRef.current.contains(event.target as Node)) {
-        setMobileFabOpen(false);
-      }
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    document.addEventListener("pointerdown", closeOnOutsidePress, true);
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      document.removeEventListener("pointerdown", closeOnOutsidePress, true);
-    };
-  }, [mobileFabOpen]);
 
   function requestLogout() {
     setConfirmLogout(true);
@@ -178,12 +157,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIndicatorIndex(activeIndex);
   }, [activeIndex]);
-
-  useEffect(() => {
-    // A bottom-nav change should also dismiss the phone quick actions.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMobileFabOpen(false);
-  }, [active]);
 
   useEffect(() => () => {
     if (navTimerRef.current) window.clearTimeout(navTimerRef.current);
@@ -363,7 +336,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
             <span className="text-base font-bold lg:hidden" style={{ color: colors.text }}>VaultQ</span>
           </div>
           <div className="flex items-center gap-3">
-            <button type="button" onClick={() => { setMobileFabOpen(false); setAssistantOpen(true); }}
+            <button type="button" onClick={() => setAssistantOpen(true)}
               aria-label="Open VaultQ assistant" title="VaultQ Assistant" aria-haspopup="dialog"
               className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ backgroundColor: colors.primarySoft, color: colors.primary }}>
@@ -455,60 +428,25 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
         </div>
       </nav>
 
-      {/* Phone quick-action FAB: same actions as the desktop shortcut dock,
-          without the theme toggle. */}
+      {/* Phone assistant shortcut. The old quick-action menu is gone because
+          the dashboard now shows those actions as visible shortcuts. */}
       {!desktop && (
-        <div
-          ref={mobileFabRef}
-          className="fixed right-4 z-40 flex flex-col items-end gap-2.5 lg:hidden"
-          style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
+        <button
+          type="button"
+          onClick={() => setAssistantOpen(true)}
+          aria-label="Open VaultQ assistant"
+          title="VaultQ Assistant"
+          aria-haspopup="dialog"
+          className="fixed right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white cursor-pointer touch-manipulation transition-transform duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
+          style={{
+            bottom: "calc(4.75rem + env(safe-area-inset-bottom))",
+            backgroundColor: colors.primary,
+            boxShadow: "0 8px 20px rgba(47,85,128,0.28)",
+            outlineColor: colors.primary,
+          }}
         >
-          {mobileFabOpen && (
-            <div id="mobile-quick-actions" role="menu" aria-label="Quick actions"
-              className="flex flex-col items-end gap-2.5">
-              {quickActions.map((action, index) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => runQuickAction(action)}
-                  aria-label={action.label}
-                  className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex items-center gap-2.5 rounded-full cursor-pointer touch-manipulation focus-visible:outline-2 focus-visible:outline-offset-2"
-                  style={{ animationDelay: `${index * 35}ms`, outlineColor: colors.primary }}
-                >
-                  <span className="max-w-[10.5rem] truncate rounded-full border bg-white px-3 py-1.5 text-[11px] font-semibold shadow-md"
-                    style={{ borderColor: colors.border, color: colors.text }}>
-                    {action.label}
-                  </span>
-                  <span className="w-12 h-12 shrink-0 rounded-full border bg-white flex items-center justify-center shadow-lg"
-                    style={{ borderColor: colors.border, color: colors.primary }}>
-                    <action.icon size={19} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => setMobileFabOpen((open) => !open)}
-            aria-label={mobileFabOpen ? "Close quick actions" : "Open quick actions"}
-            aria-expanded={mobileFabOpen}
-            aria-haspopup="menu"
-            aria-controls={mobileFabOpen ? "mobile-quick-actions" : undefined}
-            className="w-14 h-14 shrink-0 rounded-full flex items-center justify-center text-white cursor-pointer touch-manipulation transition-transform duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2"
-            style={{
-              backgroundColor: colors.primary,
-              boxShadow: "0 8px 20px rgba(47,85,128,0.28)",
-              outlineColor: colors.primary,
-            }}
-          >
-            <Plus
-              size={24}
-              className="transition-transform duration-200"
-              style={{ transform: mobileFabOpen ? "rotate(45deg)" : "none" }}
-            />
-          </button>
-        </div>
+          <MessageCircle size={24} />
+        </button>
       )}
 
       {assistantOpen && <GuidedAssistant role={userRole} onClose={() => setAssistantOpen(false)} />}

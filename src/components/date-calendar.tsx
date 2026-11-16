@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { vcolors as c } from "@/components/ui/vault";
@@ -131,6 +131,10 @@ export function DateCalendar({ value, onChange, onClose, compact = false }: Date
 }
 
 
+const subscribeMounted = () => () => {};
+const getMountedClientSnapshot = () => true;
+const getMountedServerSnapshot = () => false;
+
 export interface FloatingPanelProps {
   /** Trigger element the panel should sit next to. */
   anchor: HTMLElement | null;
@@ -160,11 +164,9 @@ export function FloatingPanel({
   fallbackHeight = 340,
   closeOnPointerLeave = false,
 }: FloatingPanelProps) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeMounted, getMountedClientSnapshot, getMountedServerSnapshot);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!mounted || !closeOnPointerLeave || !anchor) return;
@@ -250,7 +252,11 @@ export function FloatingPanel({
 
   return createPortal(
     <>
-      <div className={`fixed inset-0 z-[90] ${closeOnPointerLeave ? "[@media(hover:hover)_and_(pointer:fine)]:pointer-events-none" : ""}`} onClick={onClose} />
+      {/* When pointer-leave closing is enabled, the document pointerdown
+          handler is responsible for outside taps. Keeping this backdrop
+          non-interactive prevents a tap from closing on pointerdown and then
+          activating/reopening the trigger under the removed backdrop on click. */}
+      <div className={`fixed inset-0 z-[90] ${closeOnPointerLeave ? "pointer-events-none" : ""}`} onClick={onClose} />
       <div
         ref={boxRef}
         className="fixed z-[95] max-h-[calc(100vh-1.5rem)] overflow-auto overscroll-contain"

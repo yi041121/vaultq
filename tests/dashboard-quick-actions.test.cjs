@@ -20,14 +20,19 @@ const actions = load("src/lib/quick-actions.ts", { "lucide-react": new Proxy({},
 const element = (type, props) => ({ type, props });
 const { DashboardQuickActions } = load("src/components/student/dashboard-quick-actions.tsx", {
   "@/lib/quick-actions": actions,
-  "@/components/ui/vault": { vcolors: { primary: "blue", primarySoft: "soft-blue", border: "grey", text: "black" } },
+  "@/components/ui/vault": { vcolors: { primary: "blue", primarySoft: "soft-blue", border: "grey", text: "black" }, font: { sectionTitle: "section-title" } },
   "react/jsx-runtime": { jsx: element, jsxs: element },
 });
 
-test("dashboard shortcuts render the four real student actions as accessible buttons", () => {
-  const nav = DashboardQuickActions({ onNavigate() {} });
+test("dashboard shortcuts render under a Quick actions heading as accessible buttons", () => {
+  const section = DashboardQuickActions({ onNavigate() {} });
+  assert.equal(section.type, "section");
+  const [heading, nav] = section.props.children;
+  assert.equal(heading.type, "h2");
+  assert.equal(heading.props.id, "dashboard-quick-actions-title");
+  assert.equal(heading.props.children, "Quick actions");
   assert.equal(nav.type, "nav");
-  assert.equal(nav.props["aria-label"], "Dashboard quick actions");
+  assert.equal(nav.props["aria-labelledby"], "dashboard-quick-actions-title");
   const grid = nav.props.children;
   assert.match(grid.props.className, /grid-cols-4/);
   assert.equal(grid.props.children.length, 4);
@@ -41,7 +46,8 @@ test("dashboard shortcuts render the four real student actions as accessible but
 
 test("every dashboard shortcut navigates to the existing shared action URL", () => {
   const visited = [];
-  const nav = DashboardQuickActions({ onNavigate: url => visited.push(url) });
+  const section = DashboardQuickActions({ onNavigate: url => visited.push(url) });
+  const nav = section.props.children[1];
   for (const button of nav.props.children.props.children) button.props.onClick();
   assert.deepEqual(visited, Array.from(actions.studentQuickActions, action => action.path));
   assert.equal(visited[0], "/dashboard/student/report?tab=new&type=lost");
@@ -57,4 +63,5 @@ test("the icon row replaces dashboard statistics on both layouts without adverti
   const component = fs.readFileSync(path.join(root, "src/components/student/dashboard-quick-actions.tsx"), "utf8");
   assert.doesNotMatch(component, /QR Tags|AI Match|Rewards|sm:hidden|lg:hidden/);
   assert.match(component, /studentQuickActions\.map/);
+  assert.match(component, />Quick actions</, "the row is labelled above the shortcuts");
 });

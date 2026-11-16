@@ -869,44 +869,48 @@ function StudentReportContent() {
                     type={reportKind}
                     status={reportStatus}
                     onStatusChange={setReportStatus}
-                  />
-                  <VDropdown open={reportTypeOpen} onOpenChange={setReportTypeOpen} width="w-[150px]" align="right"
-                    trigger={
-                      <VFilterButton
-                        aria-label={`Filter by report type: ${kindLabel}`}
-                        aria-haspopup="listbox" aria-expanded={reportTypeOpen}
-                        className="w-[124px] justify-between"
-                        style={reportKind === "ALL" ? undefined : { borderColor: c.primary, color: c.primary, backgroundColor: c.primarySoft }}
-                        onClick={() => setReportTypeOpen((open) => !open)}>
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          {reportKind === "ALL"
-                            ? <Grid3X3 size={14} className="shrink-0" style={{ color: c.textMuted }} />
-                            : reportKind === "LOST"
-                              ? <PackageSearch size={14} className="shrink-0" style={{ color: c.primary }} />
-                              : <PackageCheck size={14} className="shrink-0" style={{ color: FOUND_COLOR }} />}
-                          <span className="truncate">{kindLabel}</span>
-                        </span>
-                        <ChevronDown size={14} className="shrink-0" />
-                      </VFilterButton>
-                    }>
-                    {(close) => (
+                    trailing={
                       <>
-                        <VDropdownItem active={reportKind === "ALL"}
-                          onSelect={() => { changeReportKind("ALL"); close(); }}>
-                          <Grid3X3 size={14} style={{ color: c.textMuted }} /> All types ({reports.length})
-                        </VDropdownItem>
-                        <VDropdownItem active={reportKind === "LOST"}
-                          onSelect={() => { changeReportKind("LOST"); close(); }}>
-                          <PackageSearch size={14} style={{ color: c.primary }} /> Lost ({lostReportCount})
-                        </VDropdownItem>
-                        <VDropdownItem active={reportKind === "FOUND"}
-                          onSelect={() => { changeReportKind("FOUND"); close(); }}>
-                          <PackageCheck size={14} style={{ color: FOUND_COLOR }} /> Found ({foundReportCount})
-                        </VDropdownItem>
+                        <VDropdown open={reportTypeOpen} onOpenChange={setReportTypeOpen} width="w-[150px]" align="right"
+                          trigger={
+                            <VFilterButton
+                              aria-label={`Filter by report type: ${kindLabel}`}
+                              aria-haspopup="listbox" aria-expanded={reportTypeOpen}
+                              className="w-[108px] justify-between sm:w-[124px]"
+                              style={reportKind === "ALL" ? undefined : { borderColor: c.primary, color: c.primary, backgroundColor: c.primarySoft }}
+                              onClick={() => setReportTypeOpen((open) => !open)}>
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                {reportKind === "ALL"
+                                  ? <Grid3X3 size={14} className="shrink-0" style={{ color: c.textMuted }} />
+                                  : reportKind === "LOST"
+                                    ? <PackageSearch size={14} className="shrink-0" style={{ color: c.primary }} />
+                                    : <PackageCheck size={14} className="shrink-0" style={{ color: FOUND_COLOR }} />}
+                                <span className="truncate">{kindLabel}</span>
+                              </span>
+                              <ChevronDown size={14} className="shrink-0" />
+                            </VFilterButton>
+                          }>
+                          {(close) => (
+                            <>
+                              <VDropdownItem active={reportKind === "ALL"}
+                                onSelect={() => { changeReportKind("ALL"); close(); }}>
+                                <Grid3X3 size={14} style={{ color: c.textMuted }} /> All types ({reports.length})
+                              </VDropdownItem>
+                              <VDropdownItem active={reportKind === "LOST"}
+                                onSelect={() => { changeReportKind("LOST"); close(); }}>
+                                <PackageSearch size={14} style={{ color: c.primary }} /> Lost ({lostReportCount})
+                              </VDropdownItem>
+                              <VDropdownItem active={reportKind === "FOUND"}
+                                onSelect={() => { changeReportKind("FOUND"); close(); }}>
+                                <PackageCheck size={14} style={{ color: FOUND_COLOR }} /> Found ({foundReportCount})
+                              </VDropdownItem>
+                            </>
+                          )}
+                        </VDropdown>
+                        <ResetFiltersButton compact disabled={!reportFiltersActive} onClick={resetReportFilters} />
                       </>
-                    )}
-                  </VDropdown>
-                  <ResetFiltersButton disabled={!reportFiltersActive} onClick={resetReportFilters} />
+                    }
+                  />
                 </div>
               </div>
             )}

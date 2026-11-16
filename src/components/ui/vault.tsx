@@ -167,13 +167,15 @@ export function VSearchInput({ value, onChange, placeholder = "Search items...",
 
 /* --------------------------------- Dropdown -------------------------------- */
 
-export function VDropdown({ trigger, children, open, onOpenChange, align = "left", width = "w-48" }: {
+export function VDropdown({ trigger, children, open, onOpenChange, align = "left", width = "w-48", className = "shrink-0" }: {
   trigger: React.ReactNode;
   children: (close: () => void) => React.ReactNode;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   align?: "left" | "right";
   width?: string;
+  /** Extra layout classes for the positioning container. */
+  className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hoverCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -210,7 +212,7 @@ export function VDropdown({ trigger, children, open, onOpenChange, align = "left
     };
   }, [open, onOpenChange]);
   return (
-    <div ref={containerRef} className="relative shrink-0"
+    <div ref={containerRef} className={`relative ${className}`}
       onPointerEnter={(event) => {
         if (event.pointerType !== "mouse" || !event.currentTarget.closest("[data-filter-panel]")) return;
         cancelHoverClose();

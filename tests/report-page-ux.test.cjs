@@ -235,7 +235,7 @@ test("every search box in the app uses the shared pill style", () => {
   }
 });
 
-test("My Reports puts tabs, search, status and the type dropdown in one hover-expandable row", () => {
+test("My Reports keeps search and its filters in a compact hover-expandable layout", () => {
   const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
   const panel = page.slice(page.indexOf("data-filter-panel"), page.indexOf("<VContentPanel>"));
   assert.match(panel, /border-l/, "divider between New report and My reports");
@@ -268,13 +268,19 @@ test("My Reports puts tabs, search, status and the type dropdown in one hover-ex
   assert.match(toolbar, /width="w-\[180px\]"/);
   assert.match(toolbar, /dense active=\{entry\.value === status\}/);
 
-  // The combined status label fits without truncation; the type stays compact.
-  assert.equal((toolbar.match(/w-\[164px\]/g) ?? []).length, 1, "status trigger fits Matched / Closed");
-  assert.equal((panel.match(/w-\[124px\]/g) ?? []).length, 1, "type trigger stays compact");
-  assert.match(panel, /width="w-\[150px\]"/, "type menu stays compact");
+  // Status, type and reset share one phone row instead of stacking.
+  assert.match(toolbar, /flex min-w-0 flex-col gap-2 sm:flex-row/, "search keeps its own row");
+  assert.match(toolbar, /flex min-w-0 items-center gap-1\.5 sm:gap-2/, "filter controls share one row");
+  assert.match(toolbar, /className="min-w-0 flex-1 sm:flex-none"/, "status takes the remaining phone width");
+  assert.match(toolbar, /\{trailing\}/);
+  assert.match(panel, /trailing=\{/);
+  assert.match(panel, /className="w-\[108px\] justify-between sm:w-\[124px\]"/, "type stays compact");
 
-  // Shared reset control, same as every other filter bar.
-  assert.match(panel, /<ResetFiltersButton disabled=\{!reportFiltersActive\} onClick=\{resetReportFilters\} \/>/);
+  // Shared reset control, icon-sized on phones so it fits beside them.
+  assert.match(panel, /<ResetFiltersButton compact disabled=\{!reportFiltersActive\} onClick=\{resetReportFilters\} \/>/);
+  const filters = fs.readFileSync(path.join(ROOT, "src/components/filter-panel.tsx"), "utf8");
+  assert.match(filters, /compact \? "w-9 px-0 sm:w-auto sm:px-3" : "px-3"/);
+  assert.match(filters, /className=\{compact \? "hidden sm:inline" : undefined\}/);
 
   // Both dropdowns auto-open on hover because they live in a filter panel.
   const vault = fs.readFileSync(path.join(ROOT, "src/components/ui/vault.tsx"), "utf8");

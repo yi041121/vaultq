@@ -826,10 +826,9 @@ export default function StudentSearch() {
                   const ownReport = item.reportedByMe;
                   const unavailable = claimed || ownReport || item.status !== "FOUND";
                   return (
-                    <VCard key={item.id} className="p-3 sm:p-5 grid grid-cols-[96px_minmax(0,1fr)] sm:flex sm:flex-col gap-x-3 transition-all duration-200 hover:shadow-lg cursor-pointer" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }} onClick={() => setViewItem(item)}>
-                      <div className="w-24 h-24 sm:w-full sm:h-40 rounded-xl sm:mb-4 flex items-center justify-center relative overflow-hidden cursor-pointer"
-                        style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
-                        onClick={() => setViewItem(item)}>
+                    <VCard key={item.id} className="p-3 sm:p-5 grid grid-cols-[96px_minmax(0,1fr)] sm:flex sm:flex-col gap-x-3 transition-shadow duration-200" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                      <div className="w-24 h-24 sm:w-full sm:h-40 rounded-xl sm:mb-4 flex items-center justify-center relative overflow-hidden"
+                        style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                         {item.imageUrl ? (
                           <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-contain" />
                         ) : (
@@ -842,7 +841,7 @@ export default function StudentSearch() {
                       </div>
                       <div className="min-w-0 py-0.5 sm:py-0">
                         <div className="flex items-start justify-between gap-2 mb-2">
-                          <h3 className="text-sm font-semibold line-clamp-2 cursor-pointer hover:opacity-80" style={{ color: c.text }} onClick={() => setViewItem(item)}>{item.name}</h3>
+                          <h3 className="text-sm font-semibold line-clamp-2" style={{ color: c.text }}>{item.name}</h3>
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
                         <p className="text-[13px] flex items-center gap-1" style={{ color: c.textMuted }}>
@@ -852,7 +851,7 @@ export default function StudentSearch() {
                           <Clock size={13} style={{ color: c.textLight }} /> <time className="vq-date">{fmtItemDate(item.date)}</time>
                         </p>
                       </div>
-                      <div className="col-span-2 flex items-center gap-2 mt-3 sm:mt-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="col-span-2 flex items-center gap-2 mt-3 sm:mt-4">
                         <button type="button"
                           className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                           style={{ borderColor: c.border, color: c.textMuted }}

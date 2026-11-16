@@ -203,20 +203,24 @@ test("report form uses an always-visible blue custom scroll indicator", () => {
   assert.match(css, /\.vq-form-scroll::-webkit-scrollbar \{\s*display: none/);
 });
 
-test("phone quick-action FAB reuses the role actions without the theme toggle", () => {
+test("phone floating assistant button replaces the removed quick-action menu", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/components/student-shell.tsx"), "utf8");
-  const start = source.indexOf("{/* Phone quick-action FAB");
-  const end = source.indexOf("{/* Logout confirm dialog */}");
-  assert.ok(start >= 0 && end > start, "FAB block exists");
-  const fab = source.slice(start, end);
-  assert.match(fab, /quickActions\.map/);
-  assert.match(fab, /runQuickAction\(action\)/);
-  assert.match(fab, /mobileFabOpen/);
-  assert.doesNotMatch(fab, /ThemeToggle/);
-  assert.match(source, /pointerdown/);
-  assert.match(source, /mobileFabRef/);
-  assert.match(source, /function runQuickAction\(action: QuickAction\)/);
+  const start = source.indexOf("{/* Phone assistant shortcut");
+  const end = source.indexOf("{assistantOpen && <GuidedAssistant");
+  assert.ok(start >= 0 && end > start, "phone assistant shortcut exists");
+  const shortcut = source.slice(start, end);
+  assert.match(shortcut, /setAssistantOpen\(true\)/);
+  assert.match(shortcut, /aria-label="Open VaultQ assistant"/);
+  assert.match(shortcut, /<MessageCircle size=\{24\} \/>/);
+  assert.doesNotMatch(shortcut, /quickActions\.map|role="menu"|mobileFabOpen|ThemeToggle/,
+    "the floating quick-action menu is gone");
+  assert.doesNotMatch(source, /mobileFabOpen|mobileFabRef|mobile-quick-actions/);
+
+  // The desktop shortcut dock keeps the role actions and the assistant entry.
+  assert.match(source, /role="group" aria-label="Quick shortcuts"/);
   assert.match(source, /const quickActions = quickActionsForRole\(userRole\)/);
+  assert.match(source, /function runQuickAction\(action: QuickAction\)/);
+  assert.match(source, /<MessageCircle size=\{18\} \/>/);
 });
 
 test("claim form offers a detailed no-photo verification path", () => {

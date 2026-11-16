@@ -59,17 +59,24 @@ export function FilterPanel({
   );
 }
 
-export function ResetFiltersButton({ onClick, disabled = false, className = "" }: { onClick: () => void; disabled?: boolean; className?: string }) {
+export function ResetFiltersButton({ onClick, disabled = false, className = "", compact = false }: {
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+  /** Icon-sized on phones so it can share a row with the other filters. */
+  compact?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer enabled:hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap shrink-0 ${className}`}
+      aria-label="Reset filters"
+      className={`inline-flex items-center justify-center gap-1.5 h-9 rounded-xl text-xs font-semibold border bg-white transition-colors duration-200 cursor-pointer enabled:hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-50 whitespace-nowrap shrink-0 ${compact ? "w-9 px-0 sm:w-auto sm:px-3" : "px-3"} ${className}`}
       style={{ borderColor: colors.border, color: disabled ? colors.textMuted : colors.primary }}
     >
       <RotateCcw size={13} />
-      <span>Reset filters</span>
+      <span className={compact ? "hidden sm:inline" : undefined}>Reset filters</span>
     </button>
   );
 }
