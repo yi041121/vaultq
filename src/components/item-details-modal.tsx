@@ -79,7 +79,7 @@ export function ItemDetailsModal({
   return (
     <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4`}>
       <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={onClose} />
-      <VCard role="dialog" aria-modal="true" aria-label={title} className={`relative w-full ${maxWidth} max-h-[90vh] overflow-auto`}>
+      <VCard role="dialog" aria-modal="true" aria-label={title} className={`relative w-full min-w-0 ${maxWidth} max-h-[90vh] overflow-y-auto [overflow-wrap:anywhere]`}>
         <div className={`w-full ${hasPhotos ? "h-64 lg:h-80" : "h-32 lg:h-36"} rounded-t-2xl flex items-center justify-center relative overflow-hidden`}
           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
           {hasPhotos ? (
@@ -132,7 +132,7 @@ export function ItemDetailsModal({
 
         <div className="p-6">
           <div className="flex items-start justify-between gap-3 mb-3">
-            <h3 className="text-lg lg:text-xl font-semibold leading-snug" style={{ color: c.text }}>{title}</h3>
+            <h3 className="min-w-0 flex-1 text-lg lg:text-xl font-semibold leading-snug" style={{ color: c.text }}>{title}</h3>
             {statusLabel && <VBadge color={statusColor}>{statusLabel}</VBadge>}
           </div>
 

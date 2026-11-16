@@ -131,7 +131,7 @@ export async function drainNotificationOutbox(options: { limit?: number; budgetM
 }
 
 /** Fast-path only. The authenticated scheduler remains necessary for retries. */
-export async function flushNotifications() {
-  try { await drainNotificationOutbox({ limit: 10, budgetMs: 2000 }); }
+export async function flushNotifications(options: { limit?: number; budgetMs?: number } = {}) {
+  try { await drainNotificationOutbox({ limit: options.limit ?? 10, budgetMs: options.budgetMs ?? 2000 }); }
   catch { console.error("Notification worker unavailable; queued events remain pending"); }
 }

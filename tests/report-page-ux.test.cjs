@@ -450,11 +450,11 @@ test("report cards show a glanceable summary and defer the rest to the popup", (
   assert.match(card, /rounded-xl border px-3 py-2\.5/);
   assert.match(card, /borderColor: c\.border, backgroundColor: c\.fill/);
   // Reviewer label/date on the left; actions stay on the right.
-  const actionRow = card.indexOf("mt-3 flex items-center gap-3");
+  const actionRow = card.indexOf("mt-3 flex min-w-0 flex-wrap items-center gap-3");
   assert.ok(actionRow > 0, "reviewer and action row exists");
   const actions = card.slice(actionRow);
   assert.ok(actions.indexOf("Reviewed by admin") < actions.indexOf("View details"), "reviewer comes first, on the left");
-  assert.match(actions, /ml-auto flex shrink-0 items-center gap-2/);
+  assert.match(actions, /ml-auto flex max-w-full flex-wrap items-center justify-end gap-2/);
   assert.match(actions, /Reviewed by admin<\/p>[\s\S]{0,160}<time className="vq-date">/);
 
   const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
@@ -467,4 +467,21 @@ test("report cards show a glanceable summary and defer the rest to the popup", (
   // Edit and withdraw are now reachable from the details popup.
   assert.match(page, /void openEdit\(report\)/);
   assert.match(page, /setWithdrawTarget\(report\)/);
+});
+
+test("My Reports cards and popups wrap long content instead of overflowing narrow phones", () => {
+  const card = fs.readFileSync(path.join(ROOT, "src/components/student/report-card.tsx"), "utf8");
+  assert.match(card, /w-full min-w-0 p-4/);
+  assert.match(card, /flex min-w-0 flex-wrap items-start/);
+  assert.match(card, /flex-1 basis-40/);
+  assert.match(card, /min-w-0 \[overflow-wrap:anywhere\]/);
+  assert.match(card, /max-w-full flex-wrap items-center justify-end/);
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
+  assert.match(page, /grid min-w-0 grid-cols-1 items-start/);
+  const matches = fs.readFileSync(path.join(ROOT, "src/components/student/report-matches-panel.tsx"), "utf8");
+  assert.match(matches, /\[overflow-wrap:anywhere\]/);
+  assert.match(matches, /flex max-w-full flex-wrap items-center gap-2/);
+  const details = fs.readFileSync(path.join(ROOT, "src/components/item-details-modal.tsx"), "utf8");
+  assert.match(details, /w-full min-w-0/);
+  assert.match(details, /min-w-0 flex-1 text-lg/);
 });

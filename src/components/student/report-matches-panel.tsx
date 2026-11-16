@@ -24,12 +24,12 @@ export function ReportMatchesPanel({
   suggestions, loading, error, onRetry, onStartClaim, onViewDetails, title, onClose, headingRef,
 }: ReportMatchesPanelProps) {
   return (
-    <VCard className="p-5 lg:p-6 text-left">
+    <VCard className="min-w-0 p-5 lg:p-6 text-left [overflow-wrap:anywhere]">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1 basis-40">
           <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined}
             className="text-base font-semibold flex items-center gap-2" style={{ color: c.text }}>
-            <Sparkles size={16} style={{ color: c.primary }} />
+            <Sparkles size={16} className="shrink-0" style={{ color: c.primary }} />
             {title ?? "Possible matches"}
           </h2>
           <p className="text-xs mt-1" style={{ color: c.textMuted }}>
@@ -110,7 +110,7 @@ export function ReportMatchesPanel({
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-2 shrink-0 sm:ml-auto">
+              <div className="flex max-w-full flex-wrap items-center gap-2 sm:ml-auto">
                 <VButton size="sm" onClick={() => onStartClaim(suggestion)}>
                   Start claim
                 </VButton>

@@ -10,8 +10,10 @@ event. It cannot recover notifications already lost before this rollout.
 
 After commit, handlers attempt a small drain for responsive delivery. Delivery
 failure does not undo the committed business action; the job stays in Postgres.
-An authenticated recurring worker is still required, including when nobody is
-using the app. There are no process-local timers or client-side retry jobs.
+The configured Hobby-plan scheduler runs daily at 00:00 UTC as an idle safety
+net. Authenticated notification/bell checks also process up to two due jobs
+within a small time budget, so active use advances retries more frequently.
+There are no process-local timers or client-side retry jobs.
 
 Each job is selected with `FOR UPDATE SKIP LOCKED`. Creating its notification and
 marking it completed share a transaction. A crash rolls back both, permitting a
@@ -41,22 +43,29 @@ This is for notifications displayed inside VaultQ, not email or SMS delivery.
    Production migration history has pre-existing drift: reconcile that history
    deliberately before applying migrations. **Do not reset production or use
    `prisma db push` as a shortcut.** Use a direct connection for migrations.
-2. Apply the reviewed additive migration before deploying code that enqueues
-   jobs. The old application ignores the new table; the new application requires
-   it. Do not deploy the code first: workflows intentionally fail closed when
-   events cannot be persisted.
+2. Vercel's production build now runs
+   `scripts/deploy-notification-migration.cjs` before `npm run build`. It uses
+   the deployed database secret, selects a direct Neon connection, verifies the
+   existing migration history and refuses unrelated/unfinished migrations.
+   Prisma applies only the reviewed pending outbox migration, then the script
+   verifies the required table columns. A failed migration stops deployment;
+   the existing production application remains live. The old app ignores the
+   new table. Local/preview builds do not run this production migration step.
 3. Configure a private, environment-specific **CRON_SECRET** with at least 32
    random characters. Never use a `NEXT_PUBLIC_` variable or put it in a URL.
-4. Schedule `GET /api/internal/notifications/drain` every minute with
-   `Authorization: Bearer <CRON_SECRET>`. The endpoint rejects anonymous/wrong
-   credentials, returns 503 if unconfigured/unavailable, and returns only counts.
+4. `vercel.json` schedules `GET /api/internal/notifications/drain` daily using
+   Vercel's `Authorization: Bearer <CRON_SECRET>` header. The endpoint rejects
+   anonymous/wrong credentials, returns 503 if unconfigured/unavailable, and
+   returns only counts.
 5. Verify a real scheduled invocation, delayed retry and subsequent recovery on
    staging before calling persistent delivery operational in production.
 
 ### Scheduler choices
 
-The repository intentionally does **not** add a minute-level Vercel cron without
-knowing the deployment plan: Hobby cron frequency limits may reject it.
+The project is on Vercel Hobby. The user selected **daily cron plus active-use
+retries** to avoid a paid upgrade or external scheduler. When nobody uses the
+app, retries may wait until the next daily run. Daily invocation timing is also
+subject to Vercel's Hobby scheduling window; it is not a minute-level SLA.
 
 For a Vercel plan supporting minute-level cron, merge this into `vercel.json`
 (preserving existing fields), and configure Vercel's `CRON_SECRET`:
@@ -115,10 +124,13 @@ in a fresh process; stable event keys; bounded dead-letter handling; deleted
 accounts; per-item failure isolation; concurrent match deduplication; stale
 matches; and report/inventory pagination beyond 100 records.
 
-Latest local results: **275 unit/regression tests and 14 real PostgreSQL
+Initial local results: **275 unit/regression tests and 14 real PostgreSQL
 integration tests passed**; production build/TypeScript passed; the queue,
 worker, transition services and new tests pass ESLint. Applying the additive
 migration to the local pre-outbox schema produced an empty Prisma schema diff.
 
-Local verification is not a production rollout. Neither the production schema,
-deployment secrets nor the recurring scheduler were changed in this work.
+The production secret and cron configuration were authorized for rollout.
+Before pushing, the build-time migration runner was also rehearsed against a
+second disposable local database with the pre-outbox schema and existing Prisma
+history; first execution applied the new migration and the second was a no-op.
+Production migration/deployment results must still be verified after the push.

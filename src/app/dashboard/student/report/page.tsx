@@ -840,7 +840,7 @@ function StudentReportContent() {
   return (
     <StudentShell active="Report" userName={user.name} userRole={user.role} pageTitle="Report Items" logout={handleLogout}>
       <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
-        <div className="px-4 sm:px-6 lg:px-8 xl:px-10 pt-5 lg:pt-8 w-full flex flex-col items-stretch">
+        <div className="min-w-0 px-4 sm:px-6 lg:px-8 xl:px-10 pt-5 lg:pt-8 w-full flex flex-col items-stretch">
           <div data-filter-panel className="mb-6 flex shrink-0 flex-col gap-3 lg:mb-8 xl:flex-row xl:items-center">
             {/* Tabs sit in their own bordered container so they read as a
                 separate control from the report search beside them. */}
@@ -984,7 +984,7 @@ function StudentReportContent() {
                       </VButton>
                     </VCard>
                   ) : (
-                  <div className="grid items-start gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-5">
+                  <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-5">
                   {visibleReports.map((report) => (
                     <ReportCard
                       key={report.id}

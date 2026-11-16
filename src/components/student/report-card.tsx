@@ -40,9 +40,9 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
   const pending = report.status === "PENDING";
 
   return (
-    <VCard className="p-4 lg:p-5 flex flex-col">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
+    <VCard className="w-full min-w-0 p-4 lg:p-5 flex flex-col">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 basis-40 items-start gap-3">
           {thumb ? (
             <img src={thumb} alt={`${report.itemName} photo`} loading="lazy" decoding="async"
               className="h-10 w-10 shrink-0 rounded-lg border object-contain"
@@ -60,7 +60,7 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex max-w-full flex-wrap items-center gap-1.5">
           <VBadge color={reportTypeColor(report.type)}
             style={{ backgroundColor: "transparent", border: "1px solid currentColor" }}>
             {report.typeLabel}
@@ -71,7 +71,7 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
 
       <div className="mt-3 rounded-xl border px-3 py-2.5"
         style={{ borderColor: c.border, backgroundColor: c.fill }}>
-        <p className="line-clamp-2 text-xs leading-relaxed" style={{ color: c.textMuted }}>
+        <p className="line-clamp-2 text-xs leading-relaxed [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>
           {report.description}
         </p>
       </div>
@@ -81,12 +81,12 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
         <div role="note" className="mt-3 flex gap-2 rounded-lg border p-2.5 text-[11px] leading-relaxed"
           style={{ backgroundColor: "#fef2f2", borderColor: "#fecaca", color: "#991b1b" }}>
           <CircleAlert size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <span><span className="font-semibold">Admin note: </span>{report.adminNote}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]"><span className="font-semibold">Admin note: </span>{report.adminNote}</span>
         </div>
       )}
 
       {/* Reviewer label/date on the left; actions on the right. */}
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
         {report.reviewedAt && (
           <div className="min-w-0 flex-1">
             <p className="text-[11px] leading-snug" style={{ color: c.textLight }}>Reviewed by admin</p>
@@ -95,7 +95,7 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
             </p>
           </div>
         )}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
           {report.type === "LOST" && pending && !report.item && (
             <VButton size="sm" onClick={() => onCheckMatches(report)}>
               <Sparkles size={13} /> Check matches

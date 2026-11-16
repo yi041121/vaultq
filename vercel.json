@@ -1,5 +1,8 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "regions": ["sin1"]
+  "buildCommand": "node scripts/deploy-notification-migration.cjs && npm run build",
+  "regions": ["sin1"],
+  "crons": [
+    { "path": "/api/internal/notifications/drain", "schedule": "0 0 * * *" }
+  ]
 }

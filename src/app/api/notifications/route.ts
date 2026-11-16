@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
+import { flushNotifications } from "@/lib/notification-service";
 
 // GET /api/notifications?count=1 — own notifications + unread count
 export async function GET(request: NextRequest) {
   const user = await authenticateRequest(request);
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+
+  // Hobby-plan daily cron is the idle safety net. While people are using the
+  // app, authenticated bell/list refreshes also advance due retry jobs.
+  // The worker is bounded and isolates failures from this read endpoint.
+  await flushNotifications({ limit: 2, budgetMs: 500 });
 
   try {
     const { searchParams } = new URL(request.url);
