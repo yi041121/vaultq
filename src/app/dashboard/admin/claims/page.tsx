@@ -1236,7 +1236,7 @@ export default function AdminClaims() {
                             </span>
                           </div>
                           <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
-                            {item.category || "Others"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                            {item.category || "Others"} · {fmtDateValue(item.foundDate)}{item.foundLocation ? ` · ${item.foundLocation}` : ""}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                           </p>
                           <p className="mt-1 text-[10px] leading-relaxed" style={{ color: c.textMuted }}>{reasons.join(" · ")}</p>
                         </div>
@@ -1281,7 +1281,7 @@ export default function AdminClaims() {
                       <div className="flex-1 min-w-[140px]">
                         <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{item.itemName}</p>
                         <p className="text-[11px] truncate" style={{ color: c.textMuted }}>
-                          {item.category || "Others"} · {item.foundLocation || "—"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
+                          {item.category || "Others"} · {item.foundLocation || "—"} · {fmtDateValue(item.foundDate)}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                         </p>
                       </div>
                       <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
@@ -1323,7 +1323,7 @@ export default function AdminClaims() {
           statusColor={c.primary}
           category={matchPreview.item.category || "Others"}
           location={matchPreview.item.foundLocation}
-          date={matchPreview.item.foundDate ? String(matchPreview.item.foundDate).slice(0, 10) : "—"}
+          date={fmtDateValue(matchPreview.item.foundDate)}
           description={matchPreview.item.description}
           photos={matchPreview.images}
           photoIndex={matchPreview.index}

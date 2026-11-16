@@ -13,6 +13,7 @@ import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
 import { formatDisplayDate } from "@/lib/date-format";
+import { categoryIcon } from "@/lib/category-icons";
 import { CLAIM_STATUS_COLOR, mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { NOTIFICATION_META, relativeTime } from "@/lib/notification-ui";
 import { resolveNotificationLink } from "@/lib/notification-link";
@@ -181,7 +182,9 @@ export default function StudentDashboard() {
                         <div className="h-3 w-1/2 rounded" style={{ backgroundColor: c.fill }} />
                       </VCard>
                     ))
-                  : latestItems.map((item) => (
+                  : latestItems.map((item) => {
+                      const CatIcon = categoryIcon(item.category);
+                      return (
                       <VCard key={item.id} className="min-w-0 snap-start p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
                         <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center relative overflow-hidden"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
@@ -190,7 +193,7 @@ export default function StudentDashboard() {
                           ) : (
                             <>
                               <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
-                              <Package size={32} style={{ color: c.primary, opacity: 0.6 }} />
+                              <CatIcon size={32} style={{ color: c.primary, opacity: 0.6 }} />
                             </>
                           )}
                         </div>
@@ -199,7 +202,11 @@ export default function StudentDashboard() {
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
                         <p className="text-xs lg:text-sm flex items-center gap-1 [overflow-wrap:anywhere]" style={{ color: c.textMuted }}><MapPin size={12} className="shrink-0" /> {item.location || "—"}</p>
-                        <p className="text-xs mt-0.5 flex flex-wrap items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} className="shrink-0" /> <time className="vq-date">{formatDisplayDate(item.date)}</time> · {item.category}</p>
+                        <p className="text-xs mt-0.5 flex flex-wrap items-center gap-1" style={{ color: c.textMuted }}>
+                          <Clock size={12} className="shrink-0" /> <time className="vq-date">{formatDisplayDate(item.date)}</time>
+                          <span aria-hidden="true">·</span>
+                          <CatIcon size={12} className="shrink-0" /> {item.category}
+                        </p>
                         <div className="mt-auto pt-3">
                           <button type="button"
                             className="w-full h-9 lg:h-10 rounded-xl text-xs lg:text-sm font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
@@ -209,7 +216,8 @@ export default function StudentDashboard() {
                           </button>
                         </div>
                       </VCard>
-                    ))}
+                      );
+                    })}
                 {!dataLoading && latestItems.length === 0 && (
                   <VCard className="sm:col-span-2 p-8 text-center">
                     <Package size={32} className="mx-auto mb-3" style={{ color: c.textLight }} />

@@ -59,7 +59,16 @@ test("admin Recent Inventory Items uses the phone horizontal slider", () => {
   assert.match(page, /grid-flow-col auto-cols-\[85%\] overflow-x-auto overscroll-x-contain snap-x snap-mandatory/);
   assert.match(page, /sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 sm:overflow-visible sm:snap-none/);
   assert.match(page, /className="min-w-0 snap-start p-4 animate-pulse"/);
-  assert.match(page, /className="min-w-0 snap-start p-5 flex flex-col/);
+  assert.match(page, /className="min-w-0 snap-start p-4 lg:p-5 flex flex-col/);
+  assert.match(page, /import \{ categoryIcon \} from "@\/lib\/category-icons"/);
+  assert.match(page, /const CatIcon = categoryIcon\(item\.category\)/);
+  assert.match(page, /<CatIcon size=\{32\}/, "the photo placeholder uses the category icon");
+  assert.match(page, /<CatIcon size=\{12\} className="shrink-0" \/>/, "the category line shows its icon");
+  assert.match(page, /<MapPin size=\{12\} className="shrink-0" \/>/);
+  assert.match(page, /<Clock size=\{12\} className="shrink-0" \/>/);
+  assert.match(page, /mt-3 rounded-xl border p-2\.5/);
+  assert.match(page, /borderColor: c\.borderLight/);
+  assert.match(page, /<Eye size=\{13\} \/> View Details/);
   assert.match(page, /Swipe left or right to browse/);
   assert.match(page, /recentItems\.length > 1/);
   assert.doesNotMatch(page, /snap-y/);
@@ -86,4 +95,14 @@ test("admin suggested-match actions stay grouped and aligned on phones", () => {
     "Review & approve buttons share the phone row");
   assert.doesNotMatch(claims, /<VButton variant="secondary" size="sm" onClick=\{\(e\) => \{ e\.stopPropagation\(\); void openMatchPreview\(item\); \}\}>\s*View/,
     "View is not left as a separate wrapping flex child");
+});
+
+test("admin match details use the shared readable date format", () => {
+  const claims = read("src/app/dashboard/admin/claims/page.tsx");
+  assert.doesNotMatch(claims, /item\.foundDate \? String\(item\.foundDate\)\.slice\(0, 10\)/,
+    "raw ISO dates are not shown in match rows");
+  assert.equal((claims.match(/fmtDateValue\(item\.foundDate\)/g) ?? []).length, 2,
+    "suggested and searched matches both format the found date");
+  assert.match(claims, /date=\{fmtDateValue\(matchPreview\.item\.foundDate\)\}/,
+    "the match detail dialog formats the found date");
 });

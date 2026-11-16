@@ -7,11 +7,13 @@ import { useRouter } from "next/navigation";
 import {
   Package, FileText, Users, Lock, AlertCircle,
   Grid3X3, ChevronRight, PackageSearch, RefreshCw, ChevronsLeftRight,
+  Clock, Eye, MapPin,
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
 import { fetchAdminData } from "@/lib/admin-data";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
+import { categoryIcon } from "@/lib/category-icons";
 import { shortClaimReference } from "@/lib/claim-mapper";
 import { relativeTime } from "@/lib/notification-ui";
 
@@ -184,9 +186,11 @@ export default function AdminDashboard() {
                         <div className="h-4 w-2/3 rounded" style={{ backgroundColor: c.fill }} />
                       </VCard>
                     ))
-                  : recentItems.map((item) => (
+                  : recentItems.map((item) => {
+                      const CatIcon = categoryIcon(item.category);
+                      return (
                       <VCard key={item.id} role="link" tabIndex={0} aria-label={`View inventory item ${item.name}`}
-                        className="min-w-0 snap-start p-5 flex flex-col cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
+                        className="min-w-0 snap-start p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
                         onClick={() => router.push(`/dashboard/admin/items?open=${encodeURIComponent(item.id)}`)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
@@ -194,21 +198,43 @@ export default function AdminDashboard() {
                             router.push(`/dashboard/admin/items?open=${encodeURIComponent(item.id)}`);
                           }
                         }}>
-                        <div className="w-full h-36 lg:h-40 rounded-xl mb-3 flex items-center justify-center overflow-hidden"
-                          style={{ backgroundColor: c.borderLight }}>
-                          {item.imageUrl
-                            ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                            : <Package size={28} style={{ color: c.textMuted }} />}
+                        <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center relative overflow-hidden"
+                          style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                          ) : (
+                            <>
+                              <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />
+                              <CatIcon size={32} style={{ color: c.primary, opacity: 0.6 }} />
+                            </>
+                          )}
                         </div>
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <h3 className="text-sm font-semibold truncate" style={{ color: c.text }}>{item.name}</h3>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h3 className="min-w-0 flex-1 line-clamp-2 text-sm lg:text-base font-semibold [overflow-wrap:anywhere]" style={{ color: c.text }}>{item.name}</h3>
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
-                        <p className="text-xs" style={{ color: c.textMuted }}>{item.location || "—"}</p>
-                        <p className="text-xs mt-0.5" style={{ color: c.textMuted }}><time className="vq-date">{formatDate(item.date)}</time> · {item.category}</p>
-                        <p className="text-sm mt-3 leading-relaxed line-clamp-3" style={{ color: c.textMuted }}>{item.description || "No description provided."}</p>
+                        <p className="text-xs lg:text-sm flex items-center gap-1 [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>
+                          <MapPin size={12} className="shrink-0" /> {item.location || "—"}
+                        </p>
+                        <p className="text-xs mt-0.5 flex flex-wrap items-center gap-1" style={{ color: c.textMuted }}>
+                          <Clock size={12} className="shrink-0" /> <time className="vq-date">{formatDate(item.date)}</time>
+                          <span aria-hidden="true">·</span>
+                          <CatIcon size={12} className="shrink-0" /> {item.category}
+                        </p>
+                        <div className="mt-3 rounded-xl border p-2.5" style={{ borderColor: c.borderLight }}>
+                          <p className="text-xs leading-relaxed line-clamp-3 [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>{item.description || "No description provided."}</p>
+                        </div>
+                        <div className="mt-auto pt-3">
+                          <button type="button"
+                            className="w-full h-9 lg:h-10 rounded-xl text-xs lg:text-sm font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
+                            style={{ borderColor: c.border, color: c.textMuted }}
+                            onClick={(event) => { event.stopPropagation(); router.push(`/dashboard/admin/items?open=${encodeURIComponent(item.id)}`); }}>
+                            <Eye size={13} /> View Details
+                          </button>
+                        </div>
                       </VCard>
-                    ))}
+                      );
+                    })}
                 {!dataLoading && recentItems.length === 0 && (
                   <VCard className="sm:col-span-2 p-8 text-center">
                     <Package size={30} className="mx-auto mb-2" style={{ color: c.textLight }} />

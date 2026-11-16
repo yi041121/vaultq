@@ -353,6 +353,10 @@ test("phone latest items use a keyboard-accessible horizontal slider while deskt
   assert.match(page, /sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 sm:overflow-visible sm:snap-none/);
   assert.match(page, /key=\{item.id\} className="min-w-0 snap-start/);
   assert.match(page, /Swipe left or right to browse/);
+  assert.match(page, /import \{ categoryIcon \} from "@\/lib\/category-icons"/, "category icons are available");
+  assert.match(page, /const CatIcon = categoryIcon\(item\.category\)/);
+  assert.match(page, /<CatIcon size=\{32\}/, "the photo placeholder uses the category icon");
+  assert.match(page, /<CatIcon size=\{12\} className="shrink-0" \/>/, "the category line shows its icon");
   assert.doesNotMatch(page, /snap-y|max-h-\[min\(60dvh/);
   assert.doesNotMatch(page, /setInterval|autoplay/i, "never move items automatically while reading");
 });
