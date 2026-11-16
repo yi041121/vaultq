@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { flushNotifications } from "@/lib/notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
@@ -130,18 +131,22 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         if (lockerId) {
           await tx.locker.update({ where: { id: lockerId }, data: { status: "OCCUPIED" } });
         }
-        return tx.item.findUnique({ where: { id } });
+        const updated = await tx.item.findUnique({ where: { id } });
+        if (updated) await notifyInventoryMatches({ itemId: updated.id }, tx);
+        return updated;
       });
-      if (updated) await notifyInventoryMatches({ itemId: updated.id });
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
     const item = await prisma.$transaction(async (tx) => {
       const changed = await tx.item.updateMany({ where: { id, status: { notIn: [...READ_ONLY_STATUSES] } }, data });
       if (!changed.count) throw new ItemWriteConflict("The item was claimed and is now view-only");
-      return tx.item.findUnique({ where: { id } });
+      const updated = await tx.item.findUnique({ where: { id } });
+      if (updated) await notifyInventoryMatches({ itemId: updated.id }, tx);
+      return updated;
     });
-    if (item) await notifyInventoryMatches({ itemId: item.id });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: item });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

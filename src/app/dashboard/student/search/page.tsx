@@ -132,11 +132,11 @@ export default function StudentSearch() {
     setLinkSkipConfirmed(false);
   }
 
-  async function loadLostReports(token: string): Promise<LostReportOption[]> {
+  async function loadLostReports(token: string): Promise<LostReportOption[] | null> {
     try {
       const res = await fetchReportPages("/api/reports?type=LOST&status=PENDING", token);
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.success || !Array.isArray(data.data)) return [];
+      if (!res.ok || !data?.success || !Array.isArray(data.data)) return null;
       const list: LostReportOption[] = (data.data as Record<string, unknown>[])
         .filter((report) => report.type === "LOST" && report.status === "PENDING")
         .map((report) => ({
@@ -153,11 +153,11 @@ export default function StudentSearch() {
               : []),
         }));
       setLostReports(list);
+      setLostReportsLoaded(true);
       return list;
     } catch {
-      return [];
-    } finally {
-      setLostReportsLoaded(true);
+      // Failed requests are not an empty report list and must remain retryable.
+      return null;
     }
   }
 
@@ -205,6 +205,11 @@ export default function StudentSearch() {
           if (target && !claimedSet.has(target.id)) {
             if (targetReportId) {
               const reports = lostReportsLoaded ? lostReports : await loadLostReports(token);
+              if (!reports) {
+                showCenteredMessage("error", "Could not load your lost reports. Please try again.");
+                setViewItem(target);
+                return;
+              }
               void startClaim(target, targetReportId, reports);
             } else {
               setViewItem(target);
@@ -358,9 +363,14 @@ export default function StudentSearch() {
 
     // Only offer a lost report that actually looks like this item. An
     // unrelated claim opens straight away without the link form.
-    let reports = lostReports;
+    let reports: LostReportOption[] | null = lostReports;
     const token = getBrowserSessionKey();
     if (!lostReportsLoaded && token) reports = await loadLostReports(token);
+    if (!reports) {
+      showCenteredMessage("error", "Could not load your lost reports. Please try again.");
+      setViewItem(item);
+      return;
+    }
 
     const related = reports.filter((report) => suggestMatches(
       {

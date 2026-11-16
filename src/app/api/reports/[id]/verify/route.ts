@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
 import { createItemRecord, ItemAllocationConflict } from "@/lib/item-service";
-import { notifyUser } from "@/lib/notification-service";
+import { notifyUser, flushNotifications } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
@@ -56,17 +56,16 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         if (!fresh || fresh.status !== "FOUND") throw new VerificationConflict("Item is no longer available");
         const changed = await tx.report.updateMany({ where: expected, data: { status: "VERIFIED", itemId: item.id, reviewedById: user.id, reviewedAt: new Date() } });
         if (changed.count !== 1) throw new VerificationConflict("Report changed or was already reviewed. Refresh before verifying.");
+        await notifyUser(
+          report.userId,
+          "Found Item Verified",
+          `Your found item report for ${report.itemName} was verified and linked to an existing item. Thank you for handing it in.`,
+          { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" }, tx,
+        );
+        await notifyInventoryMatches({ itemId: item.id }, tx);
         return tx.report.findUniqueOrThrow({ where: { id }, include: REPORT_INCLUDE });
       });
-
-      await notifyUser(
-        report.userId,
-        "Found Item Verified",
-        `Your found item report for ${report.itemName} was verified and linked to an existing item. Thank you for handing it in.`,
-        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" },
-      );
-
-      await notifyInventoryMatches({ itemId: item.id });
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -114,17 +113,16 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         include: REPORT_INCLUDE,
       });
 
+      await notifyUser(
+        report.userId,
+        "Found Item Verified",
+        `Your found item report for ${report.itemName} was verified and added to the Lost & Found inventory. Thank you for handing it in.`,
+        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" }, tx,
+      );
+      await notifyInventoryMatches({ itemId: item.id }, tx);
       return { item, report: updated };
     });
-
-    await notifyUser(
-      report.userId,
-      "Found Item Verified",
-      `Your found item report for ${report.itemName} was verified and added to the Lost & Found inventory. Thank you for handing it in.`,
-      { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=FOUND" },
-    );
-
-    await notifyInventoryMatches({ itemId: result.item.id });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: result.report });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

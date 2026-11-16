@@ -7,6 +7,7 @@ const vm = require("node:vm");
 const ts = require("typescript");
 
 function load(file, deps = {}, globals = {}) {
+  deps = require("./helpers/notification-stub.cjs").withNotificationStub(deps);
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

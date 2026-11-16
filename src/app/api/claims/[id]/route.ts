@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
-import { notifyUser, notifyUsers } from "@/lib/notification-service";
+import { notifyUser, notifyUsers, flushNotifications } from "@/lib/notification-service";
 import { cancelPendingClaim, rejectPendingClaim, ClaimTransitionError } from "@/lib/claim-transition-service";
 import { approvePendingClaim, ClaimReviewError, isReviewWriteConflict } from "@/lib/claim-review-service";
 
@@ -140,51 +140,54 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     }
 
     if (action === "reject") {
-      const updated = await rejectPendingClaim(id, adminNote || null);
-      await notifyUser(
-        updated.userId,
-        "Claim Rejected",
-        `Your claim for ${updated.item.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
-        { type: "CLAIM", link: "/dashboard/student/claims" },
-      );
+      const updated = await rejectPendingClaim(id, adminNote || null, async tx => {
+        await notifyUser(
+          claim.userId,
+          "Claim Rejected",
+          `Your claim for ${claim.item.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
+          { type: "CLAIM", link: "/dashboard/student/claims" }, tx,
+        );
+      });
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
     const lockerNum = lockerNumber ? String(lockerNumber).trim().toUpperCase() : null;
-    const { updated, otherPending, matchedReports, itemName, userId, locker } = await approvePendingClaim(id, user.id, { lockerNumber: lockerNum, adminNote });
-
-    // Notify the winning student and everyone whose claim was closed.
-    await notifyUser(
-      userId,
-      "Claim Approved",
-      `Your claim for ${itemName} has been approved.${
-        locker ? ` Locker ${locker} is assigned.` : ""
-      } View your QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
-      { type: "CLAIM", link: "/dashboard/student/claims" },
-    );
-
-    await notifyUsers(
-      otherPending.map((c) => ({
-        userId: c.userId,
-        title: "Claim Rejected",
-        message: `Your claim for ${itemName} was rejected because the item was claimed by another student.`,
-        type: "CLAIM" as const,
-        link: "/dashboard/student/claims",
-      })),
-    );
-
-    await notifyUsers(
-      matchedReports
-        .filter((r) => r.userId !== userId)
-        .map((r) => ({
-          userId: r.userId,
-          title: "Lost Report Closed",
-          message: `The item you reported lost (${itemName}) has been claimed by another student, so your report was closed.`,
-          type: "REPORT" as const,
-          link: "/dashboard/student/report?tab=reports&kind=LOST",
-        })),
-    );
-
+    const { updated } = await approvePendingClaim(id, user.id, {
+      lockerNumber: lockerNum, adminNote,
+      onWrite: async (tx, { otherPending, matchedReports, itemName, userId, locker }) => {
+        // Persist messages for the winner and everyone whose claim was closed.
+        await notifyUser(
+          userId,
+          "Claim Approved",
+          `Your claim for ${itemName} has been approved.${
+            locker ? ` Locker ${locker} is assigned.` : ""
+          } View your QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
+          { type: "CLAIM", link: "/dashboard/student/claims" }, tx,
+        );
+        await notifyUsers(
+          otherPending.map((c) => ({
+            userId: c.userId,
+            title: "Claim Rejected",
+            message: `Your claim for ${itemName} was rejected because the item was claimed by another student.`,
+            type: "CLAIM" as const,
+            link: "/dashboard/student/claims",
+          })), tx,
+        );
+        await notifyUsers(
+          matchedReports
+            .filter((r) => r.userId !== userId)
+            .map((r) => ({
+              userId: r.userId,
+              title: "Lost Report Closed",
+              message: `The item you reported lost (${itemName}) has been claimed by another student, so your report was closed.`,
+              type: "REPORT" as const,
+              link: "/dashboard/student/report?tab=reports&kind=LOST",
+            })), tx,
+        );
+      },
+    });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     if (e instanceof ClaimTransitionError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

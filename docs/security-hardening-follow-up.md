@@ -52,6 +52,11 @@ acknowledgement and idempotent command recovery still require the firmware.
 
 ### Durable notification outbox
 
+Update: implementation and local PostgreSQL verification are now available in
+`docs/notification-outbox.md`. Migration/scheduler rollout still needs staging
+validation and production configuration. The following describes the original
+gap and the deployment requirements, not the current local implementation.
+
 Notification errors are still best-effort and swallowed after workflow commits.
 Matching also still runs in the request. A reliable replacement needs an outbox
 written in the same transaction as each workflow event, stable deduplication

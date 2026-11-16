@@ -9,6 +9,7 @@ const { validation: imageValidation } = require("./helpers/image-validation.cjs"
 
 // Load the existing TypeScript modules with isolated browser/React doubles.
 function load(file, dependencies, globals = {}) {
+  dependencies = require("./helpers/notification-stub.cjs").withNotificationStub(dependencies);
   dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
   const code = ts.transpileModule(source, {

@@ -6,6 +6,7 @@ import { uniquePhotos } from "@/lib/photo-gallery";
 import { ImageValidationError, normalizeImageFile, normalizeImageSources } from "@/lib/image-validation";
 import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
+import { notifyUser, flushNotifications } from "@/lib/notification-service";
 
 /** Thrown when the item stops being available while a claim is submitted. */
 class ClaimConflict extends Error {}
@@ -342,19 +343,11 @@ export async function POST(request: NextRequest) {
         });
         if (!linked.count) throw new ClaimConflict("This lost report was already linked or reviewed. Please refresh and try again.");
       }
+      await notifyUser(user.id, "Claim Submitted", `Your claim for ${item.itemName} is awaiting verification.`,
+        { type: "CLAIM", link: "/dashboard/student/claims" }, tx);
       return created;
     });
-
-    // Notify the student that the claim was received.
-    await prisma.notification.create({
-      data: {
-        userId: user.id,
-        title: "Claim Submitted",
-        message: `Your claim for ${item.itemName} with evidence is awaiting verification.`,
-        type: "CLAIM",
-        link: "/dashboard/student/claims",
-      },
-    }).catch(() => {});
+    await flushNotifications();
 
     return NextResponse.json({ success: true, data: claim }, { status: 201 });
   } catch (e) {

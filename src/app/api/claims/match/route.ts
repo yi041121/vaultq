@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
-import { notifyUser, notifyUsers } from "@/lib/notification-service";
+import { notifyUser, notifyUsers, flushNotifications } from "@/lib/notification-service";
 import { ImageValidationError } from "@/lib/image-validation";
 import { matchLostReport, ClaimReviewError, isReviewWriteConflict } from "@/lib/claim-review-service";
 
@@ -20,38 +20,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "reportId and itemId are required" }, { status: 400 });
     }
 
-    const { created: claim, otherPending: rivals, matchedReports: rivalReports, itemName, reportName, userId, locker } = await matchLostReport(reportId, itemId, user.id);
-    const lockerNote = locker ? ` Locker ${locker} is assigned.` : "";
-
-    await notifyUsers(
-      rivals.map((c) => ({
-        userId: c.userId,
-        title: "Claim Rejected",
-        message: `Your claim for ${itemName} was rejected because the item has been claimed by another student.`,
-        type: "CLAIM" as const,
-        link: "/dashboard/student/claims",
-      })),
-    );
-
-    await notifyUsers(
-      rivalReports
-        .filter((r) => r.userId !== userId)
-        .map((r) => ({
-          userId: r.userId,
-          title: "Lost Report Closed",
-          message: `The item you reported lost (${itemName}) has been claimed by another student, so your report was closed.`,
-          type: "REPORT" as const,
-          link: "/dashboard/student/report?tab=reports&kind=LOST",
-        })),
-    );
-
-    await notifyUser(
-      userId,
-      "Lost Item Matched — Claim Approved",
-      `Your lost report for ${reportName} was matched to a found item and approved.${lockerNote} View your pickup QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
-      { type: "CLAIM", link: "/dashboard/student/claims" },
-    );
-
+    const { created: claim, locker } = await matchLostReport(reportId, itemId, user.id, async (tx, { otherPending: rivals, matchedReports: rivalReports, itemName, reportName, userId, locker }) => {
+      const lockerNote = locker ? ` Locker ${locker} is assigned.` : "";
+      await notifyUsers(
+        rivals.map((c) => ({
+          userId: c.userId,
+          title: "Claim Rejected",
+          message: `Your claim for ${itemName} was rejected because the item has been claimed by another student.`,
+          type: "CLAIM" as const,
+          link: "/dashboard/student/claims",
+        })), tx,
+      );
+      await notifyUsers(
+        rivalReports
+          .filter((r) => r.userId !== userId)
+          .map((r) => ({
+            userId: r.userId,
+            title: "Lost Report Closed",
+            message: `The item you reported lost (${itemName}) has been claimed by another student, so your report was closed.`,
+            type: "REPORT" as const,
+            link: "/dashboard/student/report?tab=reports&kind=LOST",
+          })), tx,
+      );
+      await notifyUser(
+        userId,
+        "Lost Item Matched — Claim Approved",
+        `Your lost report for ${reportName} was matched to a found item and approved.${lockerNote} View your pickup QR code in My Claims. At the locker kiosk, scan your student card barcode (or show the barcode from your Profile), then scan the QR code to open the locker and collect your item.`,
+        { type: "CLAIM", link: "/dashboard/student/claims" }, tx,
+      );
+    });
+    await flushNotifications();
     return NextResponse.json(
       { success: true, data: { ...claim, locker } },
       { status: 201 },

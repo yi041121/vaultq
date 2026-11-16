@@ -51,7 +51,7 @@ async function releaseReport(tx: Prisma.TransactionClient, claim: LinkedClaim) {
 }
 
 /** Caller must authenticate an administrator before rejecting a claim. */
-export async function rejectPendingClaim(id: string, adminNote: string | null) {
+export async function rejectPendingClaim(id: string, adminNote: string | null, onWrite?: (tx: Prisma.TransactionClient) => Promise<void>) {
   return prisma.$transaction(async (tx) => {
     const claim = await lockClaim(tx, id);
     if (claim.status !== "PENDING") throw new ClaimTransitionError(`Claim already ${claim.status.toLowerCase()}`, 409);
@@ -61,6 +61,7 @@ export async function rejectPendingClaim(id: string, adminNote: string | null) {
     });
     if (changed.count !== 1) throw new ClaimTransitionError("Claim changed. Please refresh and try again.", 409);
     await releaseReport(tx, claim);
+    await onWrite?.(tx);
     return tx.claim.findUniqueOrThrow({ where: { id }, select: TRANSITION_SELECT });
   });
 }

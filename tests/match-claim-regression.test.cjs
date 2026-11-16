@@ -8,6 +8,7 @@ const ts = require("typescript");
 const { validation: imageValidation, png } = require("./helpers/image-validation.cjs");
 
 function load(file, dependencies = {}, globals = {}) {
+  dependencies = require("./helpers/notification-stub.cjs").withNotificationStub(dependencies);
   dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
@@ -41,11 +42,10 @@ function notificationHarness(options = {}) {
       createMany: async ({ data }) => { alerts.push(...data); },
     },
   };
-  const service = load("src/lib/match-notification-service.ts", {
-    "./prisma": { prisma: { item: { findMany: async () => [{ id: item.id }] }, $transaction: async (fn) => fn(tx) } },
+  const service = load("src/lib/inventory-match-delivery.ts", {
     "./report-match": load("src/lib/report-match.ts"),
   });
-  return { ...service, alerts, queries, locks: () => locks };
+  return { notifyInventoryMatches: scope => service.deliverInventoryMatchBatch(tx, { itemId: item.id, ...scope }), alerts, queries, locks: () => locks };
 }
 
 test("similar inventory creates a review-only notification linking the exact item and report", async () => {

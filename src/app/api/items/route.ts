@@ -5,6 +5,7 @@ import { isItemCategory } from "@/lib/categories";
 import { createItemRecord, ItemAllocationConflict } from "@/lib/item-service";
 import { signedImageUrl } from "@/lib/image-url";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { flushNotifications } from "@/lib/notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
@@ -92,8 +93,8 @@ export async function POST(request: NextRequest) {
     }
 
     const safeImageUrl = imageUrl == null || imageUrl === "" ? null : await normalizeImageSource(imageUrl);
-    const item = await prisma.$transaction((tx) =>
-      createItemRecord(tx, user.id, {
+    const item = await prisma.$transaction(async (tx) => {
+      const created = await createItemRecord(tx, user.id, {
         itemName,
         category,
         description,
@@ -102,10 +103,11 @@ export async function POST(request: NextRequest) {
         imageUrl: safeImageUrl,
         lockerId,
         status: (status as any) || "FOUND",
-      }),
-    );
-
-    await notifyInventoryMatches({ itemId: item.id });
+      });
+      await notifyInventoryMatches({ itemId: created.id }, tx);
+      return created;
+    });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: item }, { status: 201 });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

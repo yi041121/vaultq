@@ -115,7 +115,8 @@ async function closeRivals(tx: Prisma.TransactionClient, itemId: string, winnerI
 }
 
 /** Route must authenticate an administrator before calling this service. */
-export async function approvePendingClaim(id: string, adminId: string, options: { lockerNumber?: string | null; adminNote?: string | null }) {
+type ApprovalNotice = { otherPending: { id: string; userId: string }[]; matchedReports: { id: string; userId: string }[]; itemName: string; userId: string; locker: string | null };
+export async function approvePendingClaim(id: string, adminId: string, options: { lockerNumber?: string | null; adminNote?: string | null; onWrite?: (tx: Prisma.TransactionClient, notice: ApprovalNotice) => Promise<void> }) {
   return prisma.$transaction(async tx => {
     const reference = await tx.claim.findUnique({ where: { id }, select: { itemId: true } });
     if (!reference) throw new ClaimReviewError("Claim not found", 404);
@@ -140,6 +141,7 @@ export async function approvePendingClaim(id: string, adminId: string, options: 
     if (changed.count !== 1) throw new ClaimReviewError("Claim changed. Please refresh.", 409);
     const rivals = await closeRivals(tx, item.id, id, adminId);
     const updated = await tx.claim.findUniqueOrThrow({ where: { id } });
+    await options.onWrite?.(tx, { ...rivals, itemName: item.itemName, userId: claim.userId, locker: locker.number });
     return { updated, ...rivals, itemName: item.itemName, userId: claim.userId, locker: locker.number };
   });
 }
@@ -149,7 +151,7 @@ function reportRevision(report: { itemName: string; userId: string; description:
 }
 
 /** Admin matching intentionally remains immediate approval, not a suggestion. */
-export async function matchLostReport(reportId: string, itemId: string, adminId: string) {
+export async function matchLostReport(reportId: string, itemId: string, adminId: string, onWrite?: (tx: Prisma.TransactionClient, notice: ApprovalNotice & { reportName: string }) => Promise<void>) {
   const snapshot = await prisma.report.findUnique({ where: { id: reportId } });
   if (!snapshot) throw new ClaimReviewError("Report not found", 404);
   if (snapshot.type !== "LOST") throw new ClaimReviewError("Only lost reports can be matched", 400);
@@ -182,12 +184,13 @@ export async function matchLostReport(reportId: string, itemId: string, adminId:
       evidenceImageUrls: photos, source: "MATCH", matchedReportId: reportId, status: "APPROVED", approvedAt: new Date(),
     } });
     const rivals = await closeRivals(tx, itemId, created.id, adminId, reportId);
+    await onWrite?.(tx, { ...rivals, itemName: item.itemName, reportName: report.itemName, userId: report.userId, locker: locker.number });
     return { created, ...rivals, itemName: item.itemName, reportName: report.itemName, userId: report.userId, locker: locker.number };
   });
 }
 
 /** Legacy report notices/reviews must not overwrite reports used by claims. */
-export async function reviewUnclaimedReport(id: string, expected: { status: ReportStatus; itemId: string | null }, data: Prisma.ReportUncheckedUpdateInput, targetItemId?: string) {
+export async function reviewUnclaimedReport(id: string, expected: { status: ReportStatus; itemId: string | null }, data: Prisma.ReportUncheckedUpdateInput, targetItemId?: string, onWrite?: (tx: Prisma.TransactionClient) => Promise<void>) {
   return prisma.$transaction(async tx => {
     if (targetItemId) await lockItem(tx, targetItemId);
     await lockReport(tx, id);
@@ -197,6 +200,7 @@ export async function reviewUnclaimedReport(id: string, expected: { status: Repo
     if (active) throw new ClaimReviewError("This report belongs to an active claim. Review that claim instead.", 409);
     const changed = await tx.report.updateMany({ where: { id, status: expected.status, itemId: expected.itemId }, data });
     if (changed.count !== 1) throw new ClaimReviewError("Report changed. Please refresh.", 409);
+    await onWrite?.(tx);
     return tx.report.findUniqueOrThrow({ where: { id }, include: REPORT_INCLUDE });
   });
 }

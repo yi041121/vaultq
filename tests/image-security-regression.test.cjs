@@ -15,6 +15,7 @@ const svg = `data:image/svg+xml;base64,${svgBytes.toString("base64")}`;
 const disguisedSvg = `data:image/png;base64,${svgBytes.toString("base64")}`;
 
 function load(file, dependencies = {}) {
+  dependencies = require("./helpers/notification-stub.cjs").withNotificationStub(dependencies);
   dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {
@@ -227,7 +228,7 @@ test("valid report create/edit, inventory create/edit and claim resubmission sto
     const saved = [];
     const save = async ({ data }) => { saved.push(data); return { id: "record", ...data }; };
     const transaction = {
-      claim: { update: save }, report: { updateMany: async args => { await save(args); return { count: 1 }; }, findUniqueOrThrow: async () => ({ id: "report" }) },
+      claim: { update: save }, report: { create: save, updateMany: async args => { await save(args); return { count: 1 }; }, findUniqueOrThrow: async () => ({ id: "report" }) },
       item: { updateMany: async args => { await save(args); return { count: 1 }; }, findUnique: async () => ({ id: "item" }) },
     };
     const files = {

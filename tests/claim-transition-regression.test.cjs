@@ -9,6 +9,7 @@ const crypto = require("node:crypto");
 const { validation, png } = require("./helpers/image-validation.cjs");
 
 function load(file, dependencies = {}) {
+  dependencies = require("./helpers/notification-stub.cjs").withNotificationStub(dependencies);
   dependencies = { "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null }, ...dependencies };
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), {

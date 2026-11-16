@@ -202,3 +202,20 @@ model AuthRateLimitBucket {
   @@index([resetAt])
   @@map("auth_rate_limit_buckets")
 }
+
+// No user FK: account deletion must not prevent processing/retiring old events.
+model NotificationJob {
+  id          String    @id @default(cuid())
+  dedupeKey   String    @unique @map("dedupe_key")
+  kind        String
+  payload     Json
+  attempts    Int       @default(0)
+  availableAt DateTime  @default(now()) @db.Timestamptz(3) @map("available_at")
+  completedAt DateTime? @db.Timestamptz(3) @map("completed_at")
+  failedAt    DateTime? @db.Timestamptz(3) @map("failed_at")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3) @map("created_at")
+
+  @@index([completedAt, failedAt, availableAt])
+  @@map("notification_jobs")
+}

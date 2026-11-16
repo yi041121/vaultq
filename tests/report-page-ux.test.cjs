@@ -362,9 +362,9 @@ test("the lost-report link form only appears for related items", () => {
 
 test("newly added inventory notifies matching pending lost reports", () => {
   const items = fs.readFileSync(path.join(ROOT, "src/app/api/items/route.ts"), "utf8");
-  assert.match(items, /await notifyInventoryMatches\(\{ itemId: item\.id \}\)/);
+  assert.match(items, /await notifyInventoryMatches\(\{ itemId: created\.id \}, tx\)/);
   const reports = fs.readFileSync(path.join(ROOT, "src/app/api/reports/route.ts"), "utf8");
-  assert.match(reports, /if \(type === "LOST"\) await notifyInventoryMatches\(\{ reportId: report\.id \}\)/);
+  assert.match(reports, /if \(type === "LOST"\) await notifyInventoryMatches\(\{ reportId: created\.id \}, tx\)/);
   const verify = fs.readFileSync(path.join(ROOT, "src/app/api/reports/[id]/verify/route.ts"), "utf8");
   assert.match(verify, /notifyInventoryMatches\(\{ itemId:/);
 });
@@ -425,4 +425,3 @@ test("report cards show a glanceable summary and defer the rest to the popup", (
   assert.match(page, /void openEdit\(report\)/);
   assert.match(page, /setWithdrawTarget\(report\)/);
 });
-

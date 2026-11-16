@@ -4,7 +4,7 @@ import { ImageValidationError, normalizeImageFile, normalizeImageSources } from 
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { isItemCategory } from "@/lib/categories";
-import { notifyUser } from "@/lib/notification-service";
+import { notifyUser, flushNotifications } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { VALID_REPORT_TYPES, validateReportDetails } from "@/lib/report-validation";
 import { signedImageUrl } from "@/lib/image-url";
@@ -167,30 +167,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "You already have a pending report for this item" }, { status: 409 });
     }
 
-    const report = await prisma.report.create({
-      data: {
-        userId: user.id,
-        type: type as any,
-        itemName: cleanName,
-        category: cleanCategory,
-        description: cleanDescription,
-        location: cleanLocation,
-        date: cleanDate,
-        imageUrl: imageUrls[0] || null,
-        imageUrls,
-      },
+    const report = await prisma.$transaction(async tx => {
+      const created = await tx.report.create({
+        data: {
+          userId: user.id,
+          type: type as any,
+          itemName: cleanName,
+          category: cleanCategory,
+          description: cleanDescription,
+          location: cleanLocation,
+          date: cleanDate,
+          imageUrl: imageUrls[0] || null,
+          imageUrls,
+        },
+      });
+      await notifyUser(
+        user.id,
+        "Report Received",
+        type === "LOST"
+          ? `Your lost item report for ${cleanName} has been received. We will notify you if a matching item is found.`
+          : `Your found item report for ${cleanName} has been received. Please hand the item to the Lost & Found office so it can be verified.`,
+        { type: "REPORT", link: `/dashboard/student/report?tab=reports&kind=${type}` }, tx,
+      );
+      if (type === "LOST") await notifyInventoryMatches({ reportId: created.id }, tx);
+      return created;
     });
-
-    await notifyUser(
-      user.id,
-      "Report Received",
-      type === "LOST"
-        ? `Your lost item report for ${cleanName} has been received. We will notify you if a matching item is found.`
-        : `Your found item report for ${cleanName} has been received. Please hand the item to the Lost & Found office so it can be verified.`,
-      { type: "REPORT", link: `/dashboard/student/report?tab=reports&kind=${type}` },
-    );
-
-    if (type === "LOST") await notifyInventoryMatches({ reportId: report.id });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: report }, { status: 201 });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

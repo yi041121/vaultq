@@ -35,7 +35,10 @@ export async function PATCH(request: NextRequest) {
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Invalid profile details" }, { status: 400 });
+    }
     const data: Record<string, unknown> = {};
 
     if (body.name !== undefined) {
@@ -96,13 +99,18 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updated = await prisma.user.update({
-      where: { id: user.id },
+      // A concurrent admin assignment or another tab must not be overwritten
+      // by the legacy first-time barcode setup using a stale account snapshot.
+      where: { id: user.id, ...(data.cardBarcode ? { AND: [{ cardBarcode: user.cardBarcode ?? null }] } : {}) },
       data,
       select: { id: true, name: true, email: true, role: true, studentId: true, cardBarcode: true },
     });
 
     return NextResponse.json({ success: true, data: { ...updated, studentId: cleanStudentId(updated.studentId) } });
   } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code === "P2002") return NextResponse.json({ success: false, error: "Barcode or student ID already registered" }, { status: 409 });
+    if (code === "P2025") return NextResponse.json({ success: false, error: "Profile changed. Please refresh before saving." }, { status: 409 });
     console.error("Profile update failed", e);
     return NextResponse.json({ success: false, error: "Failed to update profile" }, { status: 500 });
   }

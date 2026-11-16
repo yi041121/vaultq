@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
-import { notifyUser } from "@/lib/notification-service";
+import { notifyUser, flushNotifications } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { validateReportDetails } from "@/lib/report-validation";
 import { ImageValidationError, normalizeImageSources } from "@/lib/image-validation";
 import { ClaimReviewError, isReviewWriteConflict, reviewUnclaimedReport } from "@/lib/claim-review-service";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
+import { notifyInventoryMatches } from "@/lib/match-notification-service";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -46,7 +47,10 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   }
 
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ success: false, error: "Invalid report details" }, { status: 400 });
+    }
 
     if (user.role === "STUDENT") {
       if ((body.action ?? "update") !== "update") {
@@ -98,9 +102,11 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
           where: { id, userId: user.id, status: "PENDING", itemId: report.itemId }, data: { ...parsed.value, ...(imageUpdate ?? {}) },
         });
         if (changed.count !== 1) throw new ClaimReviewError("Report was linked or reviewed. Please refresh before editing.", 409);
+        if (report.type === "LOST") await notifyInventoryMatches({ reportId: id }, tx);
         return tx.report.findUniqueOrThrow({ where: { id }, include: REPORT_INCLUDE });
       });
 
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -155,15 +161,15 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
           reviewedById: user.id,
           reviewedAt: new Date(),
           adminNote: null,
-      }, item.id);
-
-      await notifyUser(
-        report.userId,
-        "Lost Item Match Found",
-        `A found item matching your report for ${report.itemName} is available. Search for "${item.itemName}" and submit a claim with photo evidence.`,
-        { type: "REPORT", link: `/dashboard/student/search?item=${item.id}` },
-      );
-
+      }, item.id, async tx => {
+        await notifyUser(
+          report.userId,
+          "Lost Item Match Found",
+          `A found item matching your report for ${report.itemName} is available. Search for "${item.itemName}" and submit a claim with photo evidence.`,
+          { type: "REPORT", link: `/dashboard/student/search?item=${item.id}` }, tx,
+        );
+      });
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -178,15 +184,15 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
           reviewedById: user.id,
           reviewedAt: new Date(),
           adminNote: adminNote || null,
+      }, undefined, async tx => {
+        await notifyUser(
+          report.userId,
+          "Report Rejected",
+          `Your ${report.type === "LOST" ? "lost" : "found"} item report for ${report.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
+          { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=" + report.type }, tx,
+        );
       });
-
-      await notifyUser(
-        report.userId,
-        "Report Rejected",
-        `Your ${report.type === "LOST" ? "lost" : "found"} item report for ${report.itemName} was rejected.${adminNote ? ` Reason: ${adminNote}` : " Contact the Lost & Found office for details."}`,
-        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=" + report.type },
-      );
-
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -197,15 +203,15 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       if (!["PENDING", "MATCHED"].includes(report.status)) {
         return NextResponse.json({ success: false, error: `Report is already ${report.status.toLowerCase()}` }, { status: 409 });
       }
-      const updated = await reviewUnclaimedReport(id, report, { status: "CLOSED", reviewedById: user.id, reviewedAt: new Date() });
-
-      await notifyUser(
-        report.userId,
-        "Lost Report Closed",
-        `Your lost item report for ${report.itemName} has been closed. Contact the Lost & Found office if you still need help.`,
-        { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=" + report.type },
-      );
-
+      const updated = await reviewUnclaimedReport(id, report, { status: "CLOSED", reviewedById: user.id, reviewedAt: new Date() }, undefined, async tx => {
+        await notifyUser(
+          report.userId,
+          "Lost Report Closed",
+          `Your lost item report for ${report.itemName} has been closed. Contact the Lost & Found office if you still need help.`,
+          { type: "REPORT", link: "/dashboard/student/report?tab=reports&kind=" + report.type }, tx,
+        );
+      });
+      await flushNotifications();
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -219,7 +225,10 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         reviewedById: null,
         reviewedAt: null,
         adminNote: null,
+    }, undefined, async tx => {
+      if (report.type === "LOST") await notifyInventoryMatches({ reportId: id }, tx);
     });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
@@ -252,20 +261,21 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ success: false, error: `Report is already ${report.status.toLowerCase()}` }, { status: 409 });
     }
 
-    const removed = await prisma.report.deleteMany({ where: { id, userId: user.id, status: "PENDING" } });
-    if (removed.count !== 1) return NextResponse.json({ success: false, error: "Report was linked or reviewed. Please refresh." }, { status: 409 });
-
-    // Keep a receipt in the student's notifications: the report is gone from
-    // their list, so this is the only record that they withdrew it.
-    await notifyUser(
-      user.id,
-      "Report withdrawn",
-      `Your ${report.type === "LOST" ? "lost" : "found"} item report for ${report.itemName} was withdrawn. You can submit a new report any time.`,
-      { type: "REPORT", link: "/dashboard/student/report?tab=reports" },
-    );
-
+    await prisma.$transaction(async tx => {
+      const removed = await tx.report.deleteMany({ where: { id, userId: user.id, status: "PENDING" } });
+      if (removed.count !== 1) throw new ClaimReviewError("Report was linked or reviewed. Please refresh.", 409);
+      // Keep a receipt: the withdrawn report is no longer in the student's list.
+      await notifyUser(
+        user.id,
+        "Report withdrawn",
+        `Your ${report.type === "LOST" ? "lost" : "found"} item report for ${report.itemName} was withdrawn. You can submit a new report any time.`,
+        { type: "REPORT", link: "/dashboard/student/report?tab=reports" }, tx,
+      );
+    });
+    await flushNotifications();
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
+    if (e instanceof ClaimReviewError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Report withdrawal failed", e);
     return NextResponse.json({ success: false, error: "Failed to withdraw report" }, { status: 500 });
   }

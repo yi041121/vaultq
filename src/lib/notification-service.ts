@@ -1,37 +1,16 @@
-import { prisma } from "./prisma";
+import { enqueueNotification, type NotificationMessage, type OutboxDb } from "./notification-outbox";
 import type { NotificationType } from "@/generated/prisma/enums";
+export { flushNotifications } from "./notification-outbox";
 
-interface NotifyOptions {
-  type?: NotificationType;
-  link?: string | null;
+interface NotifyOptions { type?: NotificationType; link?: string | null }
+
+/** Passing the workflow transaction is mandatory at business-write call sites.
+ * Queue failures propagate so the business write rolls back rather than losing
+ * its notification. Delivery failures are retried independently by the worker. */
+export async function notifyUser(userId: string, title: string, message: string, options: NotifyOptions, db: OutboxDb) {
+  await enqueueNotification(db, { userId, title, message, ...options });
 }
 
-/** Fire-and-forget notification so a messaging failure never blocks the action. */
-export async function notifyUser(userId: string, title: string, message: string, options: NotifyOptions = {}) {
-  await prisma.notification
-    .create({
-      data: {
-        userId,
-        title,
-        message,
-        type: options.type || "SYSTEM",
-        link: options.link || null,
-      },
-    })
-    .catch(() => {});
-}
-
-export async function notifyUsers(entries: Array<{ userId: string; title: string; message: string } & NotifyOptions>) {
-  if (!entries.length) return;
-  await prisma.notification
-    .createMany({
-      data: entries.map((entry) => ({
-        userId: entry.userId,
-        title: entry.title,
-        message: entry.message,
-        type: entry.type || "SYSTEM",
-        link: entry.link || null,
-      })),
-    })
-    .catch(() => {});
+export async function notifyUsers(entries: NotificationMessage[], db: OutboxDb) {
+  for (const entry of entries) await enqueueNotification(db, entry);
 }

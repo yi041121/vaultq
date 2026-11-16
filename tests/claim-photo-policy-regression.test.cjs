@@ -43,6 +43,7 @@ function loadClaimsRoute() {
           normalizeImageSources: async () => [],
         },
         "@/lib/claim-validation": { NO_PHOTO_REASON_MIN_LENGTH: 80 },
+        "@/lib/notification-service": { notifyUser: async () => {}, flushNotifications: async () => {} },
       };
       assert.ok(name in dependencies, `Unexpected dependency: ${name}`);
       return dependencies[name];
