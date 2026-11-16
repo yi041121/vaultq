@@ -110,11 +110,11 @@ export function ReportMatchesPanel({
                   </div>
                 )}
               </div>
-              <div className="flex max-w-full flex-wrap items-center gap-2 sm:ml-auto">
-                <VButton size="sm" onClick={() => onStartClaim(suggestion)}>
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+                <VButton size="sm" className="min-w-[5.25rem] flex-1 sm:flex-none" onClick={() => onStartClaim(suggestion)}>
                   Start claim
                 </VButton>
-                <VButton variant="secondary" size="sm" onClick={() => onViewDetails(suggestion)}>
+                <VButton variant="secondary" size="sm" className="min-w-[7.5rem] flex-1 sm:flex-none" onClick={() => onViewDetails(suggestion)}>
                   View item details
                 </VButton>
               </div>

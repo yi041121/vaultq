@@ -907,7 +907,7 @@ function StudentReportContent() {
                             </>
                           )}
                         </VDropdown>
-                        <ResetFiltersButton compact disabled={!reportFiltersActive} onClick={resetReportFilters} />
+                        <ResetFiltersButton disabled={!reportFiltersActive} onClick={resetReportFilters} />
                       </>
                     }
                   />

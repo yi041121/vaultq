@@ -1240,12 +1240,14 @@ export default function AdminClaims() {
                           </p>
                           <p className="mt-1 text-[10px] leading-relaxed" style={{ color: c.textMuted }}>{reasons.join(" · ")}</p>
                         </div>
-                        <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
-                          View
-                        </VButton>
-                        <VButton size="sm" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
-                          Review &amp; approve
-                        </VButton>
+                        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+                          <VButton variant="secondary" size="sm" className="min-w-[4.5rem] flex-1 sm:flex-none" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
+                            View
+                          </VButton>
+                          <VButton size="sm" className="min-w-[8.5rem] flex-1 sm:flex-none" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
+                            Review &amp; approve
+                          </VButton>
+                        </div>
                       </div>
                     );
                   })}
@@ -1282,12 +1284,14 @@ export default function AdminClaims() {
                           {item.category || "Others"} · {item.foundLocation || "—"} · {item.foundDate ? String(item.foundDate).slice(0, 10) : "—"}{item.locker ? ` · Locker ${item.locker.lockerNumber}` : ""}
                         </p>
                       </div>
-                      <VButton variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
-                        View
-                      </VButton>
-                      <VButton size="sm" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
+                      <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+                        <VButton variant="secondary" size="sm" className="min-w-[4.5rem] flex-1 sm:flex-none" onClick={(e) => { e.stopPropagation(); void openMatchPreview(item); }}>
+                          View
+                        </VButton>
+                        <VButton size="sm" className="min-w-[8.5rem] flex-1 sm:flex-none" disabled={matching} onClick={(e) => { e.stopPropagation(); setConfirmMatchItem(item); }}>
                           Review &amp; approve
-                      </VButton>
+                        </VButton>
+                      </div>
                     </div>
                   ))}
                 </div>

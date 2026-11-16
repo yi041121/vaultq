@@ -4,7 +4,7 @@ import { getBrowserSessionKey } from "@/lib/browser-session-store";
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, X, MessageCircle } from "lucide-react";
+import { Home, Search, PlusCircle, FileText, BellRing, User, LogOut, PanelLeftClose, PanelLeftOpen, LayoutGrid, Menu, MessageCircle, X } from "lucide-react";
 import { colors, iconSize } from "@/lib/design";
 import CenteredMessageHost, { showCenteredMessage } from "@/components/centered-message";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -16,7 +16,7 @@ import { useIdleSession } from "@/lib/use-idle-session";
 import { clearClientSession } from "@/lib/idle-session";
 import { endServerSession } from "@/lib/browser-session";
 import { prefetchAdminData, prefetchAdminPage } from "@/lib/admin-data";
-import { QUICK_ACTION_EVENT, quickActionsForRole, type QuickAction } from "@/lib/quick-actions";
+import { QUICK_ACTION_EVENT, adminPageQuickAction, quickActionsForRole, type QuickAction } from "@/lib/quick-actions";
 import { GuidedAssistant } from "@/components/guided-assistant";
 
 interface NavItem {
@@ -64,7 +64,9 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   useIdleSession(router);
   const [sidebarOpen, setSidebarOpen] = useState(sidebarPreference);
   const [shortcutDockOpen, setShortcutDockOpen] = useState(false);
+  const [adminQuickOpen, setAdminQuickOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const adminFabRef = useRef<HTMLDivElement>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [studentUnread, setStudentUnread] = useState(() => getCachedUnread());
@@ -121,7 +123,26 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
       router.push(action.path);
     }
     setShortcutDockOpen(false);
+    setAdminQuickOpen(false);
   }
+
+  useEffect(() => {
+    if (!adminQuickOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAdminQuickOpen(false);
+    };
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (adminFabRef.current && !adminFabRef.current.contains(event.target as Node)) {
+        setAdminQuickOpen(false);
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePress, true);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePress, true);
+    };
+  }, [adminQuickOpen]);
 
   function requestLogout() {
     setConfirmLogout(true);
@@ -146,6 +167,8 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
   const navItems = bottomNav.map((item) => ({ ...item, active: item.label === active }));
   const desktopNavItems = navItems;
   const quickActions = quickActionsForRole(userRole);
+  const isAdmin = userRole === "ADMIN";
+  const adminPageAction = isAdmin ? adminPageQuickAction(active) : null;
   const activeIndex = navItems.findIndex((item) => item.active);
   const navCount = navItems.length;
   const [indicatorIndex, setIndicatorIndex] = useState(activeIndex);
@@ -336,12 +359,6 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
             <span className="text-base font-bold lg:hidden" style={{ color: colors.text }}>VaultQ</span>
           </div>
           <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setAssistantOpen(true)}
-              aria-label="Open VaultQ assistant" title="VaultQ Assistant" aria-haspopup="dialog"
-              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
-              style={{ backgroundColor: colors.primarySoft, color: colors.primary }}>
-              <MessageCircle size={18} />
-            </button>
             {!desktop && <ThemeToggle />}
             {!desktop && (bell ?? <NotificationBell role={userRole} />)}
             {/* Phone: sign out lives beside the notification bell, no drawer. */}
@@ -428,9 +445,66 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
         </div>
       </nav>
 
-      {/* Phone assistant shortcut. The old quick-action menu is gone because
-          the dashboard now shows those actions as visible shortcuts. */}
-      {!desktop && (
+      {/* Phone floating action. Students get the assistant; admins get a
+          four-action menu on the dashboard and one page-specific action on
+          pages whose create/edit button would otherwise duplicate it. */}
+      {!desktop && (isAdmin ? (
+        active === "Dashboard" ? (
+          <div ref={adminFabRef}
+            className="fixed right-4 z-40 flex flex-col items-end gap-2.5 lg:hidden"
+            style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}>
+            {adminQuickOpen && (
+              <div id="admin-quick-actions" role="menu" aria-label="Admin quick actions"
+                className="flex flex-col items-end gap-2.5">
+                {quickActions.map((action, index) => (
+                  <button key={action.label} type="button" role="menuitem"
+                    onClick={() => runQuickAction(action)}
+                    aria-label={action.label}
+                    className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex items-center gap-2.5 rounded-full cursor-pointer touch-manipulation focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{ animationDelay: `${index * 35}ms`, outlineColor: colors.primary }}>
+                    <span className="max-w-[10.5rem] truncate rounded-full border bg-white px-3 py-1.5 text-[11px] font-semibold shadow-md"
+                      style={{ borderColor: colors.border, color: colors.text }}>
+                      {action.label}
+                    </span>
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-white shadow-lg"
+                      style={{ borderColor: colors.border, color: colors.primary }}>
+                      <action.icon size={19} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button type="button"
+              onClick={() => setAdminQuickOpen((open) => !open)}
+              aria-label={adminQuickOpen ? "Close admin quick actions" : "Open admin quick actions"}
+              aria-expanded={adminQuickOpen}
+              aria-haspopup="menu"
+              aria-controls={adminQuickOpen ? "admin-quick-actions" : undefined}
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white cursor-pointer touch-manipulation transition-transform duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{
+                backgroundColor: colors.primary,
+                boxShadow: "0 8px 20px rgba(47,85,128,0.28)",
+                outlineColor: colors.primary,
+              }}>
+              {adminQuickOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
+        ) : adminPageAction ? (
+          <button type="button"
+            onClick={() => runQuickAction(adminPageAction)}
+            aria-label={adminPageAction.label}
+            title={adminPageAction.desc}
+            className="fixed right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full text-white cursor-pointer touch-manipulation transition-transform duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
+            style={{
+              bottom: "calc(4.75rem + env(safe-area-inset-bottom))",
+              backgroundColor: colors.primary,
+              boxShadow: "0 8px 20px rgba(47,85,128,0.28)",
+              outlineColor: colors.primary,
+            }}>
+            <adminPageAction.icon size={24} />
+          </button>
+        ) : null
+      ) : (
         <button
           type="button"
           onClick={() => setAssistantOpen(true)}
@@ -447,7 +521,7 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
         >
           <MessageCircle size={24} />
         </button>
-      )}
+      ))}
 
       {assistantOpen && <GuidedAssistant role={userRole} onClose={() => setAssistantOpen(false)} />}
 

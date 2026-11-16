@@ -6,7 +6,7 @@ import { useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Package, FileText, Users, Lock, AlertCircle,
-  Grid3X3, ChevronRight, PackageSearch, RefreshCw,
+  Grid3X3, ChevronRight, PackageSearch, RefreshCw, ChevronsLeftRight,
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
@@ -166,24 +166,27 @@ export default function AdminDashboard() {
             <div className="lg:col-span-2">
               {/* Recent items */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className={f.sectionTitle} style={{ color: c.text }}>Recent Inventory Items</h2>
+                <h2 id="recent-inventory-title" className={f.sectionTitle} style={{ color: c.text }}>Recent Inventory Items</h2>
                 <button className="text-sm font-medium flex items-center gap-1 hover:opacity-70 cursor-pointer"
                   style={{ color: c.primary }}
                   onClick={() => router.push("/dashboard/admin/items")}>
                   View all <ChevronRight size={14} />
                 </button>
               </div>
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div role="region" aria-labelledby="recent-inventory-title" tabIndex={0}
+                aria-describedby={recentItems.length > 1 ? "recent-inventory-hint" : undefined}
+                className={`grid min-w-0 gap-4 rounded-xl px-1 py-1 -mx-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355C8A] ${!dataLoading && recentItems.length === 0 ? "grid-cols-1" : "grid-flow-col auto-cols-[85%] overflow-x-auto overscroll-x-contain snap-x snap-mandatory"} sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 sm:overflow-visible sm:snap-none`}
+                style={{ scrollbarWidth: "thin", scrollbarColor: `${c.primary} ${c.fill}` }}>
                 {dataLoading && recentItems.length === 0
                   ? Array.from({ length: 3 }).map((_, index) => (
-                      <VCard key={`recent-skeleton-${index}`} className="p-4 animate-pulse">
+                      <VCard key={`recent-skeleton-${index}`} className="min-w-0 snap-start p-4 animate-pulse">
                         <div className="w-full h-28 rounded-xl mb-3" style={{ backgroundColor: c.fill }} />
                         <div className="h-4 w-2/3 rounded" style={{ backgroundColor: c.fill }} />
                       </VCard>
                     ))
                   : recentItems.map((item) => (
                       <VCard key={item.id} role="link" tabIndex={0} aria-label={`View inventory item ${item.name}`}
-                        className="p-5 flex flex-col cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
+                        className="min-w-0 snap-start p-5 flex flex-col cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
                         onClick={() => router.push(`/dashboard/admin/items?open=${encodeURIComponent(item.id)}`)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
@@ -213,6 +216,11 @@ export default function AdminDashboard() {
                   </VCard>
                 )}
               </div>
+              {recentItems.length > 1 && (
+                <p id="recent-inventory-hint" className="mt-2 flex items-center justify-center gap-1.5 text-[11px] sm:hidden" style={{ color: c.textMuted }}>
+                  <ChevronsLeftRight size={13} aria-hidden="true" /> Swipe left or right to browse
+                </p>
+              )}
             </div>
 
             {/* Right column */}

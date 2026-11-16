@@ -1,6 +1,6 @@
 import type { ComponentType, CSSProperties } from "react";
 import {
-  AlertCircle, ClipboardList, FileText, Lock, PlusCircle, Shield, Users,
+  AlertCircle, ClipboardList, FileText, Lock, Pencil, Plus, PlusCircle, Shield, Users,
 } from "lucide-react";
 
 export interface QuickAction {
@@ -25,6 +25,20 @@ export const adminQuickActions: QuickAction[] = [
   { label: "Edit Lockers", icon: Lock, desc: "Open locker editor", path: "/dashboard/admin/lockers?edit=1" },
   { label: "Add Student", icon: Users, desc: "Add a student account", path: "/dashboard/admin/accounts?add=1" },
 ];
+
+/**
+ * Primary create/edit action for an admin phone page. The floating button
+ * replaces the duplicate top action on these pages.
+ */
+const adminPageActions: Record<string, QuickAction> = {
+  Items: { label: "Add Item", icon: Plus, desc: "Add a found item", path: "/dashboard/admin/items?add=1" },
+  Lockers: { label: "Edit Lockers", icon: Pencil, desc: "Open locker editor", path: "/dashboard/admin/lockers?edit=1" },
+  Accounts: { label: "Add Student", icon: Plus, desc: "Add a student account", path: "/dashboard/admin/accounts?add=1" },
+};
+
+export function adminPageQuickAction(active: string): QuickAction | null {
+  return adminPageActions[active] ?? null;
+}
 
 export function quickActionsForRole(role: string): QuickAction[] {
   return role === "ADMIN" ? adminQuickActions : studentQuickActions;

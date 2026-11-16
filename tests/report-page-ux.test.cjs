@@ -268,19 +268,20 @@ test("My Reports keeps search and its filters in a compact hover-expandable layo
   assert.match(toolbar, /width="w-\[180px\]"/);
   assert.match(toolbar, /dense active=\{entry\.value === status\}/);
 
-  // Status, type and reset share one phone row instead of stacking.
+  // Status, type and reset share the phone row when space allows; short
+  // screens wrap the reset control instead of crushing the status label.
   assert.match(toolbar, /flex min-w-0 flex-col gap-2 sm:flex-row/, "search keeps its own row");
-  assert.match(toolbar, /flex min-w-0 items-center gap-1\.5 sm:gap-2/, "filter controls share one row");
-  assert.match(toolbar, /className="min-w-0 flex-1 sm:flex-none"/, "status takes the remaining phone width");
+  assert.match(toolbar, /flex min-w-0 flex-wrap items-center gap-1 sm:gap-2/, "filter controls share a wrapping row");
+  assert.match(toolbar, /className="min-w-\[6\.5rem\] flex-1 sm:flex-none"/, "status keeps a usable phone width");
   assert.match(toolbar, /\{trailing\}/);
   assert.match(panel, /trailing=\{/);
   assert.match(panel, /className="w-\[108px\] justify-between sm:w-\[124px\]"/, "type stays compact");
 
-  // Shared reset control, icon-sized on phones so it fits beside them.
-  assert.match(panel, /<ResetFiltersButton compact disabled=\{!reportFiltersActive\} onClick=\{resetReportFilters\} \/>/);
+  // Reset uses the same labeled style as every other page.
+  assert.match(panel, /<ResetFiltersButton disabled=\{!reportFiltersActive\} onClick=\{resetReportFilters\} \/>/);
   const filters = fs.readFileSync(path.join(ROOT, "src/components/filter-panel.tsx"), "utf8");
-  assert.match(filters, /compact \? "w-9 px-0 sm:w-auto sm:px-3" : "px-3"/);
-  assert.match(filters, /className=\{compact \? "hidden sm:inline" : undefined\}/);
+  assert.match(filters, /h-9 px-3 rounded-xl text-xs font-semibold/);
+  assert.match(filters, /<span>Reset filters<\/span>/);
 
   // Both dropdowns auto-open on hover because they live in a filter panel.
   const vault = fs.readFileSync(path.join(ROOT, "src/components/ui/vault.tsx"), "utf8");
@@ -486,7 +487,9 @@ test("My Reports cards and popups wrap long content instead of overflowing narro
   assert.match(page, /grid min-w-0 grid-cols-1 items-start/);
   const matches = fs.readFileSync(path.join(ROOT, "src/components/student/report-matches-panel.tsx"), "utf8");
   assert.match(matches, /\[overflow-wrap:anywhere\]/);
-  assert.match(matches, /flex max-w-full flex-wrap items-center gap-2/);
+  assert.match(matches, /flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto/);
+  assert.match(matches, /min-w-\[5\.25rem\] flex-1 sm:flex-none/);
+  assert.match(matches, /min-w-\[7\.5rem\] flex-1 sm:flex-none/);
   const details = fs.readFileSync(path.join(ROOT, "src/components/item-details-modal.tsx"), "utf8");
   assert.match(details, /w-full min-w-0/);
   assert.match(details, /min-w-0 flex-1 text-lg/);

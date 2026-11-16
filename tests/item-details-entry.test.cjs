@@ -34,6 +34,12 @@ test("search results open details only from the explicit View Details action", (
   assert.doesNotMatch(card, /<h3[^>]*onClick=/, "the photo and title are not part of the navigation target");
 });
 
+test("the student dashboard no longer duplicates the shell quick actions", () => {
+  const page = read("src/app/dashboard/student/page.tsx");
+  assert.doesNotMatch(page, /DashboardQuickActions|studentQuickActions|Quick actions/);
+  assert.equal(fs.existsSync(path.join(root, "src/components/student/dashboard-quick-actions.tsx")), false);
+});
+
 test("the date range popup closes on a second tap without the backdrop swallowing the trigger", () => {
   const calendar = read("src/components/date-calendar.tsx");
   // A pointerdown-close followed by a click on the re-exposed trigger used to

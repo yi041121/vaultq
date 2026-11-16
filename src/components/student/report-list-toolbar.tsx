@@ -32,9 +32,9 @@ export function ReportListToolbar({ query, onQueryChange, type, status, onStatus
       <PillSearchInput value={query} onChange={onQueryChange} clearable
         className="w-full min-w-0 sm:w-[300px] lg:w-[360px] xl:w-[420px]"
         placeholder="Search your reports..." aria-label="Search your reports" />
-      <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-2">
         <VDropdown open={statusOpen} onOpenChange={setStatusOpen} width="w-[180px]"
-          className="min-w-0 flex-1 sm:flex-none"
+          className="min-w-[6.5rem] flex-1 sm:flex-none"
           trigger={
             <VFilterButton aria-label={`Filter by status: ${statusLabel}`}
               aria-haspopup="listbox" aria-expanded={statusOpen}

@@ -203,18 +203,30 @@ test("report form uses an always-visible blue custom scroll indicator", () => {
   assert.match(css, /\.vq-form-scroll::-webkit-scrollbar \{\s*display: none/);
 });
 
-test("phone floating assistant button replaces the removed quick-action menu", () => {
+test("phone floating actions are role and page aware", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/components/student-shell.tsx"), "utf8");
-  const start = source.indexOf("{/* Phone assistant shortcut");
+  const start = source.indexOf("{/* Phone floating action");
   const end = source.indexOf("{assistantOpen && <GuidedAssistant");
-  assert.ok(start >= 0 && end > start, "phone assistant shortcut exists");
-  const shortcut = source.slice(start, end);
-  assert.match(shortcut, /setAssistantOpen\(true\)/);
-  assert.match(shortcut, /aria-label="Open VaultQ assistant"/);
-  assert.match(shortcut, /<MessageCircle size=\{24\} \/>/);
-  assert.doesNotMatch(shortcut, /quickActions\.map|role="menu"|mobileFabOpen|ThemeToggle/,
-    "the floating quick-action menu is gone");
+  assert.ok(start >= 0 && end > start, "phone floating action exists");
+  const floating = source.slice(start, end);
+  assert.match(floating, /isAdmin \?/, "admins and students get different actions");
+  assert.match(floating, /active === "Dashboard"/, "the menu is only on the admin home page");
+  assert.match(floating, /quickActions\.map/, "home shows the four admin functions");
+  assert.match(floating, /aria-label=\{adminQuickOpen \? "Close admin quick actions" : "Open admin quick actions"\}/);
+  assert.match(floating, /<Menu size=\{24\} \/>/, "home uses a line-menu icon");
+  assert.match(floating, /adminPageAction/, "other admin pages use their page action");
+  assert.match(floating, /runQuickAction\(adminPageAction\)/);
+  assert.match(floating, /<MessageCircle size=\{24\} \/>/, "students keep the assistant");
   assert.doesNotMatch(source, /mobileFabOpen|mobileFabRef|mobile-quick-actions/);
+
+  // The phone header no longer duplicates the floating assistant button.
+  const headerStart = source.indexOf("<header className=\"sticky top-0 z-30 flex lg:hidden");
+  const headerEnd = source.indexOf("</header>", headerStart);
+  assert.ok(headerStart >= 0 && headerEnd > headerStart, "phone header exists");
+  assert.doesNotMatch(source.slice(headerStart, headerEnd), /Open VaultQ assistant/,
+    "only the floating assistant remains on phones");
+  assert.equal((source.match(/aria-label="Open VaultQ assistant"/g) ?? []).length, 2,
+    "desktop dock and floating student button keep the assistant entry");
 
   // The desktop shortcut dock keeps the role actions and the assistant entry.
   assert.match(source, /role="group" aria-label="Quick shortcuts"/);

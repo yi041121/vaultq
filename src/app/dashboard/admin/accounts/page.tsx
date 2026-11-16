@@ -416,7 +416,7 @@ export default function AdminAccounts() {
       <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6 flex flex-col">
         <div className="px-4 sm:px-6 lg:px-12 pt-5 lg:pt-6 w-full flex flex-col">
           <FilterPanel
-            actions={<VButton size="md" onClick={openAdd}><Plus size={15} /> Add Student</VButton>}
+            actions={<span className="hidden lg:inline-flex"><VButton size="md" onClick={openAdd}><Plus size={15} /> Add Student</VButton></span>}
             search={
               <VSearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); }} className="w-full"
                 size="lg" clearable placeholder="Search name, email, ID, barcode" />

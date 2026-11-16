@@ -355,7 +355,7 @@ export default function AdminLockers() {
       <main className="bg-white min-h-[calc(100vh-52px)] pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full h-full flex flex-col bg-white">
           <FilterPanel
-            actions={<VButton size="md" onClick={() => setManageOpen(true)}><Pencil size={14} /> Edit Lockers</VButton>}
+            actions={<span className="hidden lg:inline-flex"><VButton size="md" onClick={() => setManageOpen(true)}><Pencil size={14} /> Edit Lockers</VButton></span>}
             search={
               <VSearchInput value={query} onChange={setQuery} className="w-full"
                 size="lg" clearable placeholder="Search locker or item..." />
