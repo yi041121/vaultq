@@ -339,14 +339,14 @@ test("switching report type clears incompatible statuses to All, not Pending", (
   assert.equal(normalizer.normalize("LOST", "ALL"), "ALL");
 });
 
-test("phone latest items use a keyboard-accessible vertical snap panel while desktop retains its grid", () => {
+test("phone latest items use a keyboard-accessible horizontal slider while desktop retains its grid", () => {
   const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/page.tsx"), "utf8");
   assert.match(page, /role="region" aria-labelledby="latest-found-items-title" tabIndex=\{0\}/);
-  assert.match(page, /max-h-\[min\(60dvh,360px\)\]/);
-  assert.match(page, /overflow-y-auto overscroll-y-contain snap-y snap-mandatory/);
-  assert.match(page, /sm:max-h-none sm:grid-cols-2 sm:overflow-visible sm:snap-none/);
-  assert.match(page, /key=\{item.id\} className="snap-start/);
-  assert.match(page, /Swipe up or down to browse/);
+  assert.match(page, /grid-flow-col auto-cols-\[85%\] overflow-x-auto overscroll-x-contain snap-x snap-mandatory/);
+  assert.match(page, /sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 sm:overflow-visible sm:snap-none/);
+  assert.match(page, /key=\{item.id\} className="min-w-0 snap-start/);
+  assert.match(page, /Swipe left or right to browse/);
+  assert.doesNotMatch(page, /snap-y|max-h-\[min\(60dvh/);
   assert.doesNotMatch(page, /setInterval|autoplay/i, "never move items automatically while reading");
 });
 

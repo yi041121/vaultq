@@ -4,10 +4,10 @@ import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-s
 import { useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FileText, Clock,
+  Clock,
   Package, ChevronRight,
   RefreshCw, AlertCircle,
-   Eye, MapPin, ChevronsUpDown
+  Eye, MapPin, ChevronsLeftRight
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
@@ -16,6 +16,7 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { CLAIM_STATUS_COLOR, mapUserClaim, type UserClaim } from "@/lib/claim-mapper";
 import { NOTIFICATION_META, relativeTime } from "@/lib/notification-ui";
 import { resolveNotificationLink } from "@/lib/notification-link";
+import { DashboardQuickActions } from "@/components/student/dashboard-quick-actions";
 import {
   getCachedClaims,
   getCachedNotifications,
@@ -37,7 +38,6 @@ export default function StudentDashboard() {
   const [notifications, setNotifications] = useState<CachedNotification[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [now] = useState(() => Date.now());
 
   function viewItemDetails(name: string) {
     router.push(`/dashboard/student/search?view=${encodeURIComponent(name)}`);
@@ -121,23 +121,6 @@ export default function StudentDashboard() {
 
   if (!user || !mounted) return null;
 
-  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const activeClaims = claims.filter(
-    (claim) => claim.displayStatus === "Pending" || claim.displayStatus === "QR Ready",
-  ).length;
-  const returnedThisWeek = claims.filter(
-    (claim) =>
-      claim.displayStatus === "Collected" &&
-      !!claim.approvedAt &&
-      new Date(claim.approvedAt).getTime() >= weekAgo,
-  ).length;
-
-  const stats = [
-    { label: "Total Found Items", value: dataLoading ? "—" : String(items.length), icon: Package, color: "#355C8A" },
-    { label: "Active Claims", value: dataLoading ? "—" : String(activeClaims), icon: FileText, color: "#7FB8B5" },
-    { label: "Returned This Week", value: dataLoading ? "—" : String(returnedThisWeek), icon: RefreshCw, color: "#29486A" },
-  ];
-
   const latestItems = items.filter((item) => !item.reportedByMe).slice(0, 4);
   const latestClaims = claims.slice(0, 4);
   const announcements = notifications.slice(0, 3).map((notification) => {
@@ -160,8 +143,8 @@ export default function StudentDashboard() {
 
   return (
     <StudentShell active="Home" userName={user.name} userRole={user.role} pageTitle="Dashboard" logout={handleLogout}>
-      <main className="bg-white pb-28 lg:pb-6">
-        <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
+      <main className="min-w-0 bg-white pb-28 lg:pb-6">
+        <div className="min-w-0 px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
           <VContentPanel>
           {dataError && (
             <VCard className="mb-4 flex flex-wrap items-center gap-3 p-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
@@ -173,25 +156,11 @@ export default function StudentDashboard() {
             </VCard>
           )}
 
-          {/* Stats row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            {stats.map((s) => (
-              <VCard key={s.label} className="p-5 flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: `color-mix(in srgb, ${s.color} 8%, transparent)` }}>
-                  <s.icon size={20} style={{ color: s.color }} />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold tabular-nums" style={{ color: c.text }}>{s.value}</p>
-                  <p className="text-sm" style={{ color: c.textMuted }}>{s.label}</p>
-                </div>
-              </VCard>
-            ))}
-          </div>
+          <DashboardQuickActions onNavigate={(path) => router.push(path)} />
 
-          <div className="grid lg:grid-cols-3 gap-6 mb-6">
+          <div className="grid min-w-0 grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             {/* Latest Found Items */}
-            <div className="lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
                 <h2 id="latest-found-items-title" className={f.sectionTitle} style={{ color: c.text }}>Latest Found Items</h2>
                 <button className="text-sm font-medium flex items-center gap-1 transition-opacity duration-200 hover:opacity-70 cursor-pointer"
@@ -202,18 +171,18 @@ export default function StudentDashboard() {
               </div>
               <div role="region" aria-labelledby="latest-found-items-title" tabIndex={0}
                 aria-describedby={latestItems.length > 1 ? "latest-found-items-hint" : undefined}
-                className="grid max-h-[min(60dvh,360px)] grid-cols-1 gap-4 overflow-y-auto overscroll-y-contain snap-y snap-mandatory rounded-xl px-1 py-1 -mx-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355C8A] sm:max-h-none sm:grid-cols-2 sm:overflow-visible sm:snap-none"
+                className={`grid min-w-0 gap-4 rounded-xl px-1 py-1 -mx-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355C8A] ${!dataLoading && latestItems.length === 0 ? "grid-cols-1" : "grid-flow-col auto-cols-[85%] overflow-x-auto overscroll-x-contain snap-x snap-mandatory"} sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-2 sm:overflow-visible sm:snap-none`}
                 style={{ scrollbarWidth: "thin", scrollbarColor: `${c.primary} ${c.fill}` }}>
                 {dataLoading && latestItems.length === 0
                   ? Array.from({ length: 4 }).map((_, index) => (
-                      <VCard key={`item-skeleton-${index}`} className="snap-start p-4 lg:p-5 animate-pulse">
+                      <VCard key={`item-skeleton-${index}`} className="min-w-0 snap-start p-4 lg:p-5 animate-pulse">
                         <div className="w-full h-32 lg:h-40 rounded-xl mb-3" style={{ backgroundColor: c.fill }} />
                         <div className="h-4 w-2/3 rounded mb-2" style={{ backgroundColor: c.fill }} />
                         <div className="h-3 w-1/2 rounded" style={{ backgroundColor: c.fill }} />
                       </VCard>
                     ))
                   : latestItems.map((item) => (
-                      <VCard key={item.id} className="snap-start p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
+                      <VCard key={item.id} className="min-w-0 snap-start p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
                         <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center cursor-pointer relative overflow-hidden"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                           onClick={() => viewItemDetails(item.name)}>
@@ -227,12 +196,12 @@ export default function StudentDashboard() {
                           )}
                         </div>
                         <div className="flex items-start justify-between gap-2 mb-2">
-                          <h3 className="text-sm lg:text-base font-semibold cursor-pointer hover:opacity-80" style={{ color: c.text }} onClick={() => viewItemDetails(item.name)}>{item.name}</h3>
+                          <h3 className="min-w-0 flex-1 line-clamp-2 text-sm lg:text-base font-semibold cursor-pointer hover:opacity-80 [overflow-wrap:anywhere]" style={{ color: c.text }} onClick={() => viewItemDetails(item.name)}>{item.name}</h3>
                           <VBadge color={item.color}>{item.statusLabel}</VBadge>
                         </div>
-                        <p className="text-xs lg:text-sm flex items-center gap-1" style={{ color: c.textMuted }}><MapPin size={12} /> {item.location || "—"}</p>
-                        <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} /> <time className="vq-date">{formatDisplayDate(item.date)}</time> · {item.category}</p>
-                        <div className="mt-3">
+                        <p className="text-xs lg:text-sm flex items-center gap-1 [overflow-wrap:anywhere]" style={{ color: c.textMuted }}><MapPin size={12} className="shrink-0" /> {item.location || "—"}</p>
+                        <p className="text-xs mt-0.5 flex flex-wrap items-center gap-1" style={{ color: c.textMuted }}><Clock size={12} className="shrink-0" /> <time className="vq-date">{formatDisplayDate(item.date)}</time> · {item.category}</p>
+                        <div className="mt-auto pt-3">
                           <button type="button"
                             className="w-full h-9 lg:h-10 rounded-xl text-xs lg:text-sm font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
                             style={{ borderColor: c.border, color: c.textMuted }}
@@ -252,7 +221,7 @@ export default function StudentDashboard() {
               </div>
               {latestItems.length > 1 && (
                 <p id="latest-found-items-hint" className="mt-2 flex items-center justify-center gap-1.5 text-[11px] sm:hidden" style={{ color: c.textMuted }}>
-                  <ChevronsUpDown size={13} aria-hidden="true" /> Swipe up or down to browse
+                  <ChevronsLeftRight size={13} aria-hidden="true" /> Swipe left or right to browse
                 </p>
               )}
             </div>
