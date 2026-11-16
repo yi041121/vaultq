@@ -4,6 +4,7 @@ import { CircleAlert, Eye, FileText, Sparkles } from "lucide-react";
 import { formatDisplayDate, formatDisplayTimestamp } from "@/lib/date-format";
 import { CATEGORY_ICONS } from "@/lib/category-icons";
 import type { UserReport } from "@/lib/report-mapper";
+import { DescriptionBox } from "@/components/description-box";
 import { VBadge, VButton, VCard, vcolors as c } from "@/components/ui/vault";
 
 const FOUND_COLOR = "#4a9d6b";
@@ -69,12 +70,9 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
         </div>
       </div>
 
-      <div className="mt-3 rounded-xl border px-3 py-2.5"
-        style={{ borderColor: c.border, backgroundColor: c.fill }}>
-        <p className="line-clamp-2 text-xs leading-relaxed [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>
-          {report.description}
-        </p>
-      </div>
+      <DescriptionBox className="mt-3" contentClassName="line-clamp-2">
+        {report.description}
+      </DescriptionBox>
 
       {/* An admin note is the one extra block that stays on the card. */}
       {report.adminNote && (

@@ -20,6 +20,7 @@ import { EvidenceSlider } from "@/components/evidence-slider";
 import { PhotoEvidenceField, type EvidencePhoto } from "@/components/photo-evidence-field";
 import { VCard, VContentPanel, VBadge, VPaginationFooter, VButton, VTextarea, VSearchInput, VFilterButton, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
+import { DescriptionBox } from "@/components/description-box";
 import { matchesSearch } from "@/lib/search";
 import {
   mapUserClaim, CLAIM_STATUS_COLOR,
@@ -423,12 +424,9 @@ export default function StudentClaims() {
                         </div>
                       </div>
 
-                      <div className="mt-4 rounded-xl border p-3" style={{ backgroundColor: c.primarySoft, borderColor: c.borderLight }}>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: c.primary }}>Description</p>
-                        <p className="text-[13px] leading-relaxed line-clamp-2 min-h-[42px]" style={{ color: "#475569" }}>
-                          {cl.description || "No description provided."}
-                        </p>
-                      </div>
+                      <DescriptionBox className="mt-4" contentClassName="line-clamp-2 min-h-[42px]">
+                        {cl.description || "No description provided."}
+                      </DescriptionBox>
 
                       <p className="mt-3 text-xs leading-relaxed" style={{ color: c.textMuted }}>
                         {claimNextStep(cl.displayStatus)}
@@ -539,12 +537,9 @@ export default function StudentClaims() {
             </div>
 
             {(detailsClaim.lostReportDescription || detailsClaim.reason) && (
-              <div className="rounded-xl border p-4 mb-4" style={{ backgroundColor: c.fill, borderColor: c.border }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Claim reason</p>
-                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
-                  {detailsClaim.lostReportDescription || detailsClaim.reason}
-                </p>
-              </div>
+              <DescriptionBox title="Claim reason" className="mb-4" contentClassName="">
+                {detailsClaim.lostReportDescription || detailsClaim.reason}
+              </DescriptionBox>
             )}
 
             {(detailsClaim.displayStatus === "QR Ready" || detailsClaim.displayStatus === "Collected") && detailsClaim.adminNote && (

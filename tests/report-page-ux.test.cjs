@@ -455,11 +455,10 @@ test("report cards show a glanceable summary and defer the rest to the popup", (
   assert.ok((card.match(/<VButton/g) ?? []).length <= 3, "cards keep only the contextual action and View details");
   assert.match(card, /Check matches/);
 
-  // The reviewer line and a bordered description live on the card now.
+  // The reviewer line and the shared description block live on the card now.
   assert.match(card, /Reviewed by admin/);
   assert.match(card, /report\.reviewedAt/);
-  assert.match(card, /rounded-xl border px-3 py-2\.5/);
-  assert.match(card, /borderColor: c\.border, backgroundColor: c\.fill/);
+  assert.match(card, /<DescriptionBox className="mt-3" contentClassName="line-clamp-2">/);
   // Reviewer label/date on the left; actions stay on the right.
   const actionRow = card.indexOf("mt-3 flex min-w-0 flex-wrap items-center gap-3");
   assert.ok(actionRow > 0, "reviewer and action row exists");

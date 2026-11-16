@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
+import { DescriptionBox } from "@/components/description-box";
 import { fetchAdminData } from "@/lib/admin-data";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
 import { categoryIcon } from "@/lib/category-icons";
@@ -221,9 +222,9 @@ export default function AdminDashboard() {
                           <span aria-hidden="true">·</span>
                           <CatIcon size={12} className="shrink-0" /> {item.category}
                         </p>
-                        <div className="mt-3 rounded-xl border p-2.5" style={{ borderColor: c.borderLight }}>
-                          <p className="text-xs leading-relaxed line-clamp-3 [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>{item.description || "No description provided."}</p>
-                        </div>
+                        <DescriptionBox className="mt-3" contentClassName="line-clamp-3">
+                          {item.description || "No description provided."}
+                        </DescriptionBox>
                         <div className="mt-auto pt-3">
                           <button type="button"
                             className="w-full h-9 lg:h-10 rounded-xl text-xs lg:text-sm font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"

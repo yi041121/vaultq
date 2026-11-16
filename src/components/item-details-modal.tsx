@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Clock, MapPin, Package, X, Eye } from "lucide-react";
 import { VCard, VBadge, vcolors as c } from "@/components/ui/vault";
 import { categoryIcon } from "@/lib/category-icons";
+import { DescriptionBox } from "@/components/description-box";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import { useEscapeKey } from "@/lib/use-escape-key";
 
@@ -147,10 +148,9 @@ export function ItemDetailsModal({
             {extra}
           </div>
 
-          <div className="min-w-0 rounded-xl border p-4 mb-5" style={{ backgroundColor: c.fill, borderColor: c.border }}>
-            <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>Description</p>
-            <p className="text-sm leading-relaxed [overflow-wrap:anywhere]" style={{ color: c.textMuted }}>{description || "No description provided."}</p>
-          </div>
+          <DescriptionBox className="mb-5" contentClassName="">
+            {description || "No description provided."}
+          </DescriptionBox>
 
           {notice && <div className="mb-5">{notice}</div>}
 

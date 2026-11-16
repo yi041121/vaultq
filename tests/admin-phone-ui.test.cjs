@@ -66,8 +66,7 @@ test("admin Recent Inventory Items uses the phone horizontal slider", () => {
   assert.match(page, /<CatIcon size=\{12\} className="shrink-0" \/>/, "the category line shows its icon");
   assert.match(page, /<MapPin size=\{12\} className="shrink-0" \/>/);
   assert.match(page, /<Clock size=\{12\} className="shrink-0" \/>/);
-  assert.match(page, /mt-3 rounded-xl border p-2\.5/);
-  assert.match(page, /borderColor: c\.borderLight/);
+  assert.match(page, /<DescriptionBox className="mt-3" contentClassName="line-clamp-3">/);
   assert.match(page, /<Eye size=\{13\} \/> View Details/);
   assert.match(page, /Swipe left or right to browse/);
   assert.match(page, /recentItems\.length > 1/);

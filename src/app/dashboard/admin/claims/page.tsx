@@ -1407,13 +1407,12 @@ export default function AdminClaims() {
               </div>
             </div>
             {(compareClaim.matchedReportDescription || compareClaim.reason) && (
-              <div className="rounded-xl border p-4 mb-4" style={{ backgroundColor: c.fill, borderColor: c.border }}>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: c.text }}>
-                  {compareClaim.matchedReportDescription ? "Lost report description" : "Claim reason"}
-                </p>
-                <p className="text-sm leading-relaxed break-words max-h-32 overflow-y-auto" style={{ color: c.textMuted }}>
+              <div className="mb-4">
+                <DescriptionBox
+                  title={compareClaim.matchedReportDescription ? "Lost report description" : "Claim reason"}
+                  contentClassName="break-words max-h-32 overflow-y-auto">
                   {compareClaim.matchedReportDescription || compareClaim.reason}
-                </p>
+                </DescriptionBox>
                 {compareClaim.matchedReportDescription && (
                   <p className="text-[11px] mt-1.5" style={{ color: c.textLight }}>
                     Auto-linked from the student&apos;s lost report.

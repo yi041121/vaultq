@@ -754,11 +754,9 @@ export default function AdminReports() {
                     </span>
                   </div>
 
-                  <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: c.border, backgroundColor: c.fill }}>
-                  <p className="text-xs leading-relaxed line-clamp-2" style={{ color: c.textMuted }}>
+                  <DescriptionBox className="mt-2" contentClassName="line-clamp-2">
                     {report.description || "No description provided."}
-                  </p>
-                  </div>
+                  </DescriptionBox>
                   </div>
 
                   <div className="mt-auto border-t px-4 py-3" style={{ backgroundColor: c.fill, borderColor: c.borderLight }}>
