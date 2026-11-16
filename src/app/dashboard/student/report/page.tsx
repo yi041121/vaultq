@@ -127,12 +127,11 @@ type ItemDetail = {
 const FOUND_COLOR = "#4a9d6b";
 
 /**
- * Keeps the status filter valid when the Lost/Found tab changes. "Matched"
- * only exists for lost reports and "Verified" only for found reports, so an
- * impossible leftover status falls back to the pending default.
+ * Type-specific filters must not linger after switching Lost/Found/All types.
+ * Fall back to All statuses rather than silently narrowing to Pending.
  */
 function statusForKind(kind: ReportTypeFilter, current: ReportStatusFilter): ReportStatusFilter {
-  return statusIsAvailableFor(kind, current) ? current : "PENDING";
+  return statusIsAvailableFor(kind, current) ? current : "ALL";
 }
 
 function StudentReportContent() {

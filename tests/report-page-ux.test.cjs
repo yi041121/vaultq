@@ -265,13 +265,13 @@ test("My Reports puts tabs, search, status and the type dropdown in one hover-ex
   assert.match(panel, /sm:justify-end/);
   assert.match(panel, /sm:w-\[360px\]/, "tabs use the standard field width");
   assert.match(toolbar, /lg:w-\[360px\] xl:w-\[420px\]/, "search matches the shared filter bar width");
-  assert.match(toolbar, /width="w-\[150px\]"/);
+  assert.match(toolbar, /width="w-\[180px\]"/);
   assert.match(toolbar, /dense active=\{entry\.value === status\}/);
 
-  // Both dropdowns share one compact width so the pair lines up.
-  assert.equal((toolbar.match(/w-\[124px\]/g) ?? []).length, 1, "status trigger is compact");
-  assert.equal((panel.match(/w-\[124px\]/g) ?? []).length, 1, "type trigger is the same compact width");
-  assert.match(panel, /width="w-\[150px\]"/, "type menu matches the status menu width");
+  // The combined status label fits without truncation; the type stays compact.
+  assert.equal((toolbar.match(/w-\[164px\]/g) ?? []).length, 1, "status trigger fits Matched / Closed");
+  assert.equal((panel.match(/w-\[124px\]/g) ?? []).length, 1, "type trigger stays compact");
+  assert.match(panel, /width="w-\[150px\]"/, "type menu stays compact");
 
   // Shared reset control, same as every other filter bar.
   assert.match(panel, /<ResetFiltersButton disabled=\{!reportFiltersActive\} onClick=\{resetReportFilters\} \/>/);
@@ -283,17 +283,18 @@ test("My Reports puts tabs, search, status and the type dropdown in one hover-ex
 });
 
 test("My Reports only offers statuses the type can reach", () => {
-  // Lost reports move Pending -> Matched -> Closed/Rejected; found reports
-  // move Pending -> Verified/Rejected. All types shows the union.
+  // All types shows shared statuses, not a union of type-specific options.
   const values = (type) => [...filter.reportStatusFilters(type)].map((entry) => entry.value);
-  assert.deepEqual(values("ALL"), ["ALL", "PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"]);
-  assert.deepEqual(values("LOST"), ["ALL", "PENDING", "MATCHED", "REJECTED", "CLOSED"]);
+  assert.deepEqual(values("ALL"), ["ALL", "PENDING", "REJECTED"]);
+  assert.deepEqual(values("LOST"), ["ALL", "PENDING", "MATCHED_CLOSED", "REJECTED"]);
   assert.deepEqual(values("FOUND"), ["ALL", "PENDING", "VERIFIED", "REJECTED"]);
   assert.equal(filter.statusIsAvailableFor("FOUND", "MATCHED"), false);
   assert.equal(filter.statusIsAvailableFor("FOUND", "CLOSED"), false);
   assert.equal(filter.statusIsAvailableFor("LOST", "VERIFIED"), false);
   assert.equal(filter.statusIsAvailableFor("LOST", "PENDING"), true);
-  assert.equal(filter.statusIsAvailableFor("ALL", "MATCHED"), true);
+  assert.equal(filter.statusIsAvailableFor("ALL", "MATCHED_CLOSED"), false);
+  assert.equal(filter.statusIsAvailableFor("FOUND", "MATCHED_CLOSED"), false);
+  assert.equal(filter.statusIsAvailableFor("LOST", "MATCHED_CLOSED"), true);
 
   const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
   assert.match(page, /useState<ReportStatusFilter>\("ALL"\)/, "all statuses is the default");
@@ -305,6 +306,48 @@ test("My Reports only offers statuses the type can reach", () => {
   const toolbar = fs.readFileSync(path.join(ROOT, "src/components/student/report-list-toolbar.tsx"), "utf8");
   assert.match(toolbar, /reportStatusFilters\(type\)/);
   assert.doesNotMatch(toolbar, /REPORT_STATUS_FILTERS\.map/);
+});
+
+test("the combined lost-report filter includes both Matched and Closed without changing their statuses", () => {
+  const reports = [
+    report({ id: "matched", status: "MATCHED" }),
+    report({ id: "closed", status: "CLOSED" }),
+    report({ id: "pending", status: "PENDING" }),
+    report({ id: "rejected", status: "REJECTED" }),
+    report({ id: "verified", type: "FOUND", status: "VERIFIED" }),
+  ];
+  const filtered = filter.filterReports(reports, { type: "LOST", status: "MATCHED_CLOSED", query: "backpack" });
+  assert.deepEqual(filtered.map(r => r.id), ["matched", "closed"]);
+  assert.equal(reports[0].status, "MATCHED", "filtering must not rewrite workflow state");
+  assert.equal(reports[1].status, "CLOSED");
+  assert.deepEqual(filter.filterReports(reports, { type: "FOUND", status: "MATCHED_CLOSED", query: "" }), []);
+});
+
+test("switching report type clears incompatible statuses to All, not Pending", () => {
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/report/page.tsx"), "utf8");
+  const start = page.indexOf("function statusForKind(");
+  const end = page.indexOf("\n}", start) + 2;
+  const normalizer = {};
+  vm.runInNewContext(ts.transpileModule(page.slice(start, end) + "\nexports.normalize = statusForKind;", {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, { exports: normalizer, statusIsAvailableFor: filter.statusIsAvailableFor });
+  assert.equal(normalizer.normalize("FOUND", "MATCHED_CLOSED"), "ALL");
+  assert.equal(normalizer.normalize("LOST", "VERIFIED"), "ALL");
+  assert.equal(normalizer.normalize("ALL", "VERIFIED"), "ALL");
+  assert.equal(normalizer.normalize("ALL", "MATCHED_CLOSED"), "ALL");
+  assert.equal(normalizer.normalize("FOUND", "REJECTED"), "REJECTED");
+  assert.equal(normalizer.normalize("LOST", "ALL"), "ALL");
+});
+
+test("phone latest items use a keyboard-accessible vertical snap panel while desktop retains its grid", () => {
+  const page = fs.readFileSync(path.join(ROOT, "src/app/dashboard/student/page.tsx"), "utf8");
+  assert.match(page, /role="region" aria-labelledby="latest-found-items-title" tabIndex=\{0\}/);
+  assert.match(page, /max-h-\[min\(60dvh,360px\)\]/);
+  assert.match(page, /overflow-y-auto overscroll-y-contain snap-y snap-mandatory/);
+  assert.match(page, /sm:max-h-none sm:grid-cols-2 sm:overflow-visible sm:snap-none/);
+  assert.match(page, /key=\{item.id\} className="snap-start/);
+  assert.match(page, /Swipe up or down to browse/);
+  assert.doesNotMatch(page, /setInterval|autoplay/i, "never move items automatically while reading");
 });
 
 test("the status field stays white for Pending and turns blue only when narrowed", () => {

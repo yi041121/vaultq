@@ -7,7 +7,7 @@ import {
   FileText, Clock,
   Package, ChevronRight,
   RefreshCw, AlertCircle,
-  Eye, MapPin
+   Eye, MapPin, ChevronsUpDown
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
@@ -193,24 +193,27 @@ export default function StudentDashboard() {
             {/* Latest Found Items */}
             <div className="lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
-                <h2 className={f.sectionTitle} style={{ color: c.text }}>Latest Found Items</h2>
+                <h2 id="latest-found-items-title" className={f.sectionTitle} style={{ color: c.text }}>Latest Found Items</h2>
                 <button className="text-sm font-medium flex items-center gap-1 transition-opacity duration-200 hover:opacity-70 cursor-pointer"
                   style={{ color: c.primary }}
                   onClick={() => router.push("/dashboard/student/search")}>
                   View all <ChevronRight size={14} />
                 </button>
               </div>
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div role="region" aria-labelledby="latest-found-items-title" tabIndex={0}
+                aria-describedby={latestItems.length > 1 ? "latest-found-items-hint" : undefined}
+                className="grid max-h-[min(60dvh,360px)] grid-cols-1 gap-4 overflow-y-auto overscroll-y-contain snap-y snap-mandatory rounded-xl px-1 py-1 -mx-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355C8A] sm:max-h-none sm:grid-cols-2 sm:overflow-visible sm:snap-none"
+                style={{ scrollbarWidth: "thin", scrollbarColor: `${c.primary} ${c.fill}` }}>
                 {dataLoading && latestItems.length === 0
                   ? Array.from({ length: 4 }).map((_, index) => (
-                      <VCard key={`item-skeleton-${index}`} className="p-4 lg:p-5 animate-pulse">
+                      <VCard key={`item-skeleton-${index}`} className="snap-start p-4 lg:p-5 animate-pulse">
                         <div className="w-full h-32 lg:h-40 rounded-xl mb-3" style={{ backgroundColor: c.fill }} />
                         <div className="h-4 w-2/3 rounded mb-2" style={{ backgroundColor: c.fill }} />
                         <div className="h-3 w-1/2 rounded" style={{ backgroundColor: c.fill }} />
                       </VCard>
                     ))
                   : latestItems.map((item) => (
-                      <VCard key={item.id} className="p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
+                      <VCard key={item.id} className="snap-start p-4 lg:p-5 flex flex-col transition-all duration-200 hover:shadow-md">
                         <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center cursor-pointer relative overflow-hidden"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}
                           onClick={() => viewItemDetails(item.name)}>
@@ -247,6 +250,11 @@ export default function StudentDashboard() {
                   </VCard>
                 )}
               </div>
+              {latestItems.length > 1 && (
+                <p id="latest-found-items-hint" className="mt-2 flex items-center justify-center gap-1.5 text-[11px] sm:hidden" style={{ color: c.textMuted }}>
+                  <ChevronsUpDown size={13} aria-hidden="true" /> Swipe up or down to browse
+                </p>
+              )}
             </div>
 
             {/* Right column */}

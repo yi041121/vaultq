@@ -1,15 +1,14 @@
 import type { UserReport } from "./report-mapper";
 
-export type ReportStatusFilter = "ALL" | UserReport["status"];
+export type ReportStatusFilter = "ALL" | "PENDING" | "MATCHED_CLOSED" | "VERIFIED" | "REJECTED";
 export type ReportTypeFilter = "ALL" | UserReport["type"];
 
 export const REPORT_STATUS_FILTERS: { value: ReportStatusFilter; label: string }[] = [
   { value: "ALL", label: "All statuses" },
   { value: "PENDING", label: "Pending" },
-  { value: "MATCHED", label: "Matched" },
+  { value: "MATCHED_CLOSED", label: "Matched / Closed" },
   { value: "VERIFIED", label: "Verified" },
   { value: "REJECTED", label: "Rejected" },
-  { value: "CLOSED", label: "Closed" },
 ];
 
 /**
@@ -17,11 +16,12 @@ export const REPORT_STATUS_FILTERS: { value: ReportStatusFilter; label: string }
  * Lost reports are matched to inventory and closed when a claim is approved
  * (or rejected/withdrawn); they are never "verified". Found reports are
  * verified into inventory or rejected; they are never matched or closed.
- * "All types" shows the union so either kind can be filtered for.
+ * "All types" offers only shared statuses; choosing Lost or Found reveals
+ * its specific options. Matched/Closed share a filter, not a database status.
  */
 const STATUS_FILTERS_BY_TYPE: Record<ReportTypeFilter, ReportStatusFilter[]> = {
-  ALL: ["ALL", "PENDING", "MATCHED", "VERIFIED", "REJECTED", "CLOSED"],
-  LOST: ["ALL", "PENDING", "MATCHED", "CLOSED", "REJECTED"],
+  ALL: ["ALL", "PENDING", "REJECTED"],
+  LOST: ["ALL", "PENDING", "MATCHED_CLOSED", "REJECTED"],
   FOUND: ["ALL", "PENDING", "VERIFIED", "REJECTED"],
 };
 
@@ -64,7 +64,9 @@ export function filterReports(reports: UserReport[], filters: ReportListFilters)
   const tokens = filters.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return reports.filter((report) => {
     if (filters.type !== "ALL" && report.type !== filters.type) return false;
-    if (filters.status !== "ALL" && report.status !== filters.status) return false;
+    if (filters.status === "MATCHED_CLOSED") {
+      if (report.type !== "LOST" || (report.status !== "MATCHED" && report.status !== "CLOSED")) return false;
+    } else if (filters.status !== "ALL" && report.status !== filters.status) return false;
     if (!tokens.length) return true;
     const text = searchText(report);
     return tokens.every((token) => text.includes(token));

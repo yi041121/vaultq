@@ -16,8 +16,8 @@ export interface ReportListToolbarProps {
 
 /**
  * Search + status filter for the student's own reports. The status trigger
- * reuses VFilterButton so it matches the type dropdown beside it. Pending is
- * the default view and stays neutral; the field only turns blue once a
+ * reuses VFilterButton so it matches the type dropdown beside it. All statuses
+ * and Pending stay neutral; the field only turns blue once a
  * narrower status is chosen.
  */
 export function ReportListToolbar({ query, onQueryChange, type, status, onStatusChange }: ReportListToolbarProps) {
@@ -31,11 +31,11 @@ export function ReportListToolbar({ query, onQueryChange, type, status, onStatus
       <PillSearchInput value={query} onChange={onQueryChange} clearable
         className="w-full min-w-0 sm:w-[300px] lg:w-[360px] xl:w-[420px]"
         placeholder="Search your reports..." aria-label="Search your reports" />
-      <VDropdown open={statusOpen} onOpenChange={setStatusOpen} width="w-[150px]"
+      <VDropdown open={statusOpen} onOpenChange={setStatusOpen} width="w-[180px]"
         trigger={
           <VFilterButton aria-label={`Filter by status: ${statusLabel}`}
             aria-haspopup="listbox" aria-expanded={statusOpen}
-            className="w-[124px] justify-between"
+            className="w-[164px] justify-between"
             style={narrowed ? { borderColor: c.primary, color: c.primary, backgroundColor: c.primarySoft } : undefined}
             onClick={() => setStatusOpen((open) => !open)}>
             <span className="min-w-0 truncate">{statusLabel}</span>
