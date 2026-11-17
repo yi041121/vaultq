@@ -5,6 +5,8 @@ export const VALID_REPORT_TYPES = ["LOST", "FOUND"] as const;
 export type ReportTypeValue = (typeof VALID_REPORT_TYPES)[number];
 
 export interface ReportDetailsInput {
+  /** LOST reports may omit the last seen location. */
+  type?: unknown;
   itemName?: unknown;
   category?: unknown;
   description?: unknown;
@@ -42,8 +44,12 @@ export function validateReportDetails(input: ReportDetailsInput): ReportDetailsR
   }
 
   const location = typeof input.location === "string" ? input.location.trim() : "";
-  if (location.length < 2 || location.length > 200) {
-    return { ok: false, error: "Location must be 2-200 characters" };
+  const locationOptional = input.type === "LOST";
+  if (location.length > 200 || (!locationOptional && location.length < 2)) {
+    return {
+      ok: false,
+      error: locationOptional ? "Location must be at most 200 characters" : "Found location must be 2-200 characters",
+    };
   }
 
   const rawCategory = typeof input.category === "string" ? input.category.trim() : "";

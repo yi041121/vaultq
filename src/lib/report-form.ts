@@ -39,8 +39,13 @@ export function validateReportForm(values: ReportFormValues, now = new Date()): 
   if (description.length < REPORT_DESCRIPTION_MIN || description.length > REPORT_DESCRIPTION_MAX) {
     errors.description = `Describe the item (${REPORT_DESCRIPTION_MIN}–${REPORT_DESCRIPTION_MAX} characters).`;
   }
-  if (location.length < 2 || location.length > REPORT_LOCATION_MAX) {
-    errors.location = `Enter the location (2–${REPORT_LOCATION_MAX} characters).`;
+  // "Last seen location" is optional for lost reports; a found report still
+  // needs where the item was found.
+  const locationOptional = values.type !== "FOUND";
+  if (location.length > REPORT_LOCATION_MAX || (!locationOptional && location.length < 2)) {
+    errors.location = locationOptional
+      ? `Location must be at most ${REPORT_LOCATION_MAX} characters.`
+      : `Enter the found location (2–${REPORT_LOCATION_MAX} characters).`;
   }
 
   const date = values.date.trim();

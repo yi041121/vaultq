@@ -1,10 +1,19 @@
-// Text-only report draft kept in tab-scoped sessionStorage. Photos are never
-// serialised: File objects cannot be restored safely, so users are told that
-// attachments are not saved. Drafts are bound to the current session so a
-// different signed-in account never sees someone else's text.
+// Report drafts are kept in tab-scoped sessionStorage and bound to the current
+// session so a different signed-in account never sees someone else's draft.
+// Photos are stored as compressed JPEG data URLs so "Continue draft" can
+// restore the exact images the student had attached. Raw File objects are
+// never serialised.
 import type { ReportFormType } from "./report-form";
 
 export const REPORT_DRAFT_KEY = "vaultq:report-draft";
+const MAX_DRAFT_PHOTOS = 3;
+
+export interface ReportDraftPhoto {
+  /** Compressed JPEG data URL used for the preview and to rebuild the File. */
+  preview: string;
+  name: string;
+  type: string;
+}
 
 export interface ReportDraft {
   owner: string;
@@ -14,10 +23,16 @@ export interface ReportDraft {
   description: string;
   location: string;
   date: string;
+  photos: ReportDraftPhoto[];
   savedAt: number;
 }
 
 type DraftFields = Pick<ReportDraft, "itemName" | "category" | "description" | "location" | "date">;
+type DraftContent = DraftFields & { photos?: readonly unknown[] };
+type SaveDraftInput = Omit<ReportDraft, "savedAt" | "photos"> & {
+  savedAt?: number;
+  photos?: readonly unknown[];
+};
 
 function storage(): Storage | null {
   if (typeof window === "undefined") return null;
@@ -29,19 +44,45 @@ function storage(): Storage | null {
   }
 }
 
-export function hasDraftContent(draft: DraftFields): boolean {
+function isDraftPhoto(value: unknown): value is ReportDraftPhoto {
+  if (!value || typeof value !== "object") return false;
+  const photo = value as Record<string, unknown>;
+  return (
+    typeof photo.preview === "string" &&
+    photo.preview.startsWith("data:image/") &&
+    typeof photo.name === "string" &&
+    typeof photo.type === "string"
+  );
+}
+
+function cleanPhotos(photos: readonly unknown[] | undefined): ReportDraftPhoto[] {
+  if (!Array.isArray(photos)) return [];
+  return photos
+    .filter(isDraftPhoto)
+    .slice(0, MAX_DRAFT_PHOTOS)
+    .map((photo) => ({
+      preview: photo.preview,
+      name: photo.name.slice(0, 200),
+      type: photo.type.slice(0, 100),
+    }));
+}
+
+export function hasDraftContent(draft: DraftContent): boolean {
   return Boolean(
     draft.itemName.trim() ||
     draft.category ||
     draft.description.trim() ||
     draft.location.trim() ||
-    draft.date,
+    draft.date ||
+    (draft.photos?.length ?? 0) > 0,
   );
 }
 
-export function saveReportDraft(draft: Omit<ReportDraft, "savedAt"> & { savedAt?: number }) {
+/** Returns false when storage is unavailable or the draft could not be saved. */
+export function saveReportDraft(draft: SaveDraftInput): boolean {
   const store = storage();
-  if (!store || !draft.owner || !hasDraftContent(draft)) return;
+  const photos = cleanPhotos(draft.photos);
+  if (!store || !draft.owner || !hasDraftContent({ ...draft, photos })) return false;
   // Persist an explicit allowlist so a File, token or other accidental field
   // can never be serialised into web storage.
   const record: ReportDraft = {
@@ -52,12 +93,15 @@ export function saveReportDraft(draft: Omit<ReportDraft, "savedAt"> & { savedAt?
     description: draft.description,
     location: draft.location,
     date: draft.date,
+    photos,
     savedAt: draft.savedAt ?? Date.now(),
   };
   try {
     store.setItem(REPORT_DRAFT_KEY, JSON.stringify(record));
+    return true;
   } catch {
     // Quota/storage failures must never interrupt typing.
+    return false;
   }
 }
 
@@ -87,6 +131,7 @@ export function loadReportDraft(owner: string | null): ReportDraft | null {
       description: parsed.description,
       location: parsed.location,
       date: parsed.date,
+      photos: cleanPhotos(parsed.photos),
       savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0,
     };
   } catch {

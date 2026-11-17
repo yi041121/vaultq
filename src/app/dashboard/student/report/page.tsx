@@ -44,6 +44,7 @@ import {
   loadReportDraft,
   saveReportDraft,
   type ReportDraft,
+  type ReportDraftPhoto,
 } from "@/lib/report-draft";
 import { ReportCard } from "@/components/student/report-card";
 import { ReportTypeChooser } from "@/components/student/report-type-chooser";
@@ -61,7 +62,7 @@ function ReportingSteps({ type, size = "sm" }: { type: ReportType; size?: "sm" |
   return (
     <ol className={large ? "space-y-4" : "space-y-3"}>
       {[
-        { title: "Describe the item", text: "Include its name, category, date and location. Add distinguishing details to help identify it." },
+        { title: "Describe the item", text: "Include its name, category and date. Add the location if you know it. Distinguishing details help identify it." },
         { title: "Add clear photos", text: "You can attach up to 3 photos. For lost items, show identifying features without sharing sensitive information." },
         { title: type === "FOUND" ? "Hand it in for verification" : "Track your report", text: type === "FOUND" ? "Bring the item to the Lost & Found office. Staff will verify the report and arrange storage." : "Check My reports for updates. Lost reports may show possible matches; found reports are verified by staff." },
       ].map((step, index) => (
@@ -103,6 +104,18 @@ function ReportingHelpDialog({ type, onClose, returnFocus }: { type: ReportType;
 }
 type ReportPhoto = { file: File; preview: string; originalFile: File; originalPreview: string };
 type EditPhoto = { preview: string; originalPreview: string };
+
+/** Rebuilds an attachable File from a draft's compressed data URL. */
+async function restoreDraftPhoto(photo: ReportDraftPhoto): Promise<ReportPhoto> {
+  const response = await fetch(photo.preview);
+  if (!response.ok) throw new Error("Could not restore a draft photo");
+  const blob = await response.blob();
+  const file = new File([blob], photo.name, {
+    type: photo.type || blob.type || "image/jpeg",
+    lastModified: Date.now(),
+  });
+  return { file, preview: photo.preview, originalFile: file, originalPreview: photo.preview };
+}
 type ItemDetail = {
   id: string;
   name: string;
@@ -167,6 +180,7 @@ function StudentReportContent() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<ReportType | null>(null);
   const [submittedReportId, setSubmittedReportId] = useState<string | null>(null);
+  const [saveDraftPromptOpen, setSaveDraftPromptOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<ReportSuggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
@@ -183,16 +197,8 @@ function StudentReportContent() {
     scrollPageToTop();
   }, [matchesReport, submitted]);
 
-  // Draft autosave: text fields only, debounced. Photos cannot be restored.
-  useEffect(() => {
-    if (!type) return;
-    const owner = getBrowserSessionKey();
-    if (!owner) return;
-    const draft = { owner, type, itemName, category, description, location, date };
-    if (!hasDraftContent(draft)) return;
-    const timer = window.setTimeout(() => saveReportDraft(draft), 500);
-    return () => window.clearTimeout(timer);
-  }, [type, itemName, category, description, location, date]);
+  // Drafts are saved only when the student closes a non-empty form and
+  // confirms "Save draft". Nothing is written while they are still typing.
 
   // Lock background scrolling and move focus into the report dialog.
   useEffect(() => {
@@ -206,11 +212,12 @@ function StudentReportContent() {
     };
   }, [type]);
 
-  // Escape closes the form (the draft is kept) unless a nested dialog is open.
+  // Escape closes the form (asking to save a non-empty draft) unless a
+  // nested dialog is already open.
   useEffect(() => {
     if (!type) return;
     function onEscape(event: KeyboardEvent) {
-      if (event.key !== "Escape" || submitting || reportHelpOpen || photoSourceTarget || cameraTarget || editingPhoto !== null) return;
+      if (event.key !== "Escape" || submitting || reportHelpOpen || photoSourceTarget || cameraTarget || editingPhoto !== null || saveDraftPromptOpen) return;
       if (dateOpen) { setDateOpen(false); return; }
       if (categoryOpen) { setCategoryOpen(false); return; }
       event.preventDefault();
@@ -221,7 +228,7 @@ function StudentReportContent() {
     // closeReportForm is a stable component-scoped handler; state values below
     // decide whether a nested surface should receive Escape first.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, submitting, reportHelpOpen, photoSourceTarget, cameraTarget, editingPhoto, dateOpen, categoryOpen]);
+  }, [type, submitting, reportHelpOpen, photoSourceTarget, cameraTarget, editingPhoto, dateOpen, categoryOpen, saveDraftPromptOpen]);
 
 
   const [reports, setReports] = useState<UserReport[]>(() => getCachedReports() ?? []);
@@ -405,19 +412,64 @@ function StudentReportContent() {
     setCategoryOpen(false);
     setDateOpen(false);
     setSubmitAttempted(false);
+    setSaveDraftPromptOpen(false);
   }
 
+  function formHasContent() {
+    return hasDraftContent({ itemName, category, description, location, date, photos });
+  }
+
+  /**
+   * X, Cancel and Escape only offer the draft prompt when something was
+   * entered. An untouched form closes immediately.
+   */
   function closeReportForm() {
     if (submitting) return;
-    const closingType = type;
-    // Keep the latest keystrokes in the on-device draft before clearing the UI.
-    const owner = getBrowserSessionKey();
-    if (owner && closingType) {
-      saveReportDraft({ owner, type: closingType, itemName, category, description, location, date });
+    if (formHasContent()) {
+      setSaveDraftPromptOpen(true);
+      return;
     }
+    dismissReportForm();
+  }
+
+  function dismissReportForm() {
+    const closingType = type;
     resetForm();
     // Return keyboard focus to the Lost/Found choice that opened the form.
     if (closingType) window.requestAnimationFrame(() => choiceRefs.current[closingType]?.focus());
+  }
+
+  function saveDraftAndClose() {
+    const closingType = type;
+    const owner = getBrowserSessionKey();
+    const saved = Boolean(owner && closingType && saveReportDraft({
+      owner,
+      type: closingType,
+      itemName,
+      category,
+      description,
+      location,
+      date,
+      photos: photos.map((photo) => ({
+        preview: photo.preview,
+        name: photo.file.name,
+        type: photo.file.type,
+      })),
+    }));
+    setSaveDraftPromptOpen(false);
+    if (!saved) {
+      // Keep the form open so the student can remove a photo and retry
+      // instead of silently losing everything.
+      showCenteredMessage("error", "Could not save the draft on this device. Try removing a photo and saving again.");
+      return;
+    }
+    dismissReportForm();
+  }
+
+  function discardAndClose() {
+    clearReportDraft();
+    setSaveDraftPromptOpen(false);
+    dismissReportForm();
   }
 
   function selectType(next: ReportType, options: { skipDraft?: boolean } = {}) {
@@ -435,7 +487,7 @@ function StudentReportContent() {
     clearSubmission();
   }
 
-  function resumeDraft() {
+  async function resumeDraft() {
     const draft = draftPrompt;
     if (!draft) return;
     setDraftPrompt(null);
@@ -446,9 +498,20 @@ function StudentReportContent() {
     setDescription(draft.description);
     setLocation(draft.location);
     setDate(draft.date);
-    setPhotos([]);
     setSubmitAttempted(false);
     clearSubmission();
+    const draftPhotos = draft.photos ?? [];
+    if (draftPhotos.length === 0) {
+      setPhotos([]);
+      return;
+    }
+    try {
+      const restored = await Promise.all(draftPhotos.map(restoreDraftPhoto));
+      setPhotos(restored.slice(0, 3));
+    } catch {
+      setPhotos([]);
+      showCenteredMessage("error", "Draft restored, but the photos could not be opened.");
+    }
   }
 
   function discardDraft() {
@@ -734,8 +797,13 @@ function StudentReportContent() {
       showCenteredMessage("error", "Description must be at least 5 characters");
       return;
     }
-    if (editForm.location.trim().length < 2) {
-      showCenteredMessage("error", "Location must be at least 2 characters");
+    const editLocation = editForm.location.trim();
+    if (editTarget?.type === "FOUND" && editLocation.length < 2) {
+      showCenteredMessage("error", "Found location must be at least 2 characters");
+      return;
+    }
+    if (editLocation.length > 200) {
+      showCenteredMessage("error", "Location must be at most 200 characters");
       return;
     }
     if (!editForm.date) {
@@ -1164,11 +1232,14 @@ function StudentReportContent() {
                     <div className="space-y-3">
                       <div>
                         <label htmlFor="report-location" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
-                          {type === "LOST" ? "Last seen location" : "Found location"} <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                          {type === "LOST" ? "Last seen location" : "Found location"}{" "}
+                          {type === "LOST"
+                            ? <span className="font-normal" style={{ color: c.textLight }}>(optional)</span>
+                            : <span style={{ color: c.danger }} aria-hidden="true">*</span>}
                         </label>
                         <VInput id="report-location" value={location} maxLength={200}
                           onChange={(e) => setLocation(e.target.value)}
-                          aria-required="true" aria-invalid={!!formErrors.location}
+                          aria-required={type === "FOUND"} aria-invalid={!!formErrors.location}
                           aria-describedby={formErrors.location ? "report-location-error" : undefined}
                           placeholder="e.g. Library 3rd Floor" />
                         {formErrors.location && (
@@ -1519,7 +1590,12 @@ function StudentReportContent() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Location</label>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+                  Location{" "}
+                  {editTarget?.type === "LOST"
+                    ? <span className="font-normal" style={{ color: c.textLight }}>(optional)</span>
+                    : <span style={{ color: c.danger }} aria-hidden="true">*</span>}
+                </label>
                 <VInput value={editForm.location} maxLength={200}
                   onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
               </div>
@@ -1664,12 +1740,24 @@ function StudentReportContent() {
       <ConfirmDialog
         open={!!draftPrompt}
         title="Continue your saved draft?"
-        subtitle="We kept the text you typed on this device. Photos are not saved in drafts."
+        subtitle="We kept the details and photos you added on this device."
         tone="primary"
         cancelLabel="Start new"
         confirmLabel="Continue draft"
         onCancel={discardDraft}
-        onConfirm={resumeDraft}
+        onConfirm={() => { void resumeDraft(); }}
+      />
+
+      <ConfirmDialog
+        open={saveDraftPromptOpen}
+        title="Save this draft?"
+        subtitle="Keep the details and photos you entered so you can continue on this device."
+        tone="primary"
+        cancelLabel="Discard"
+        confirmLabel="Save draft"
+        onCancel={discardAndClose}
+        onDismiss={() => setSaveDraftPromptOpen(false)}
+        onConfirm={saveDraftAndClose}
       />
 
       <ConfirmDialog
@@ -1685,7 +1773,7 @@ function StudentReportContent() {
           if (!duplicate) return;
           setDuplicateReport(null);
           clearReportDraft();
-          closeReportForm();
+          dismissReportForm();
           setReportKind(duplicate.type);
           setReportStatus("PENDING");
           setReportQuery(duplicate.itemName);

@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         );
       }
 
-      const parsed = validateReportDetails(body);
+      const parsed = validateReportDetails({ ...body, type: report.type });
       if (!parsed.ok) {
         return NextResponse.json({ success: false, error: parsed.error }, { status: 400 });
       }

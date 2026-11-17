@@ -282,6 +282,9 @@ test("report validation allows numeric names/locations but rejects impossible da
   const validation = load("src/lib/report-validation.ts", { "./categories": { isItemCategory: () => true } });
   const details = { itemName: "3M headphones", description: "2 silver stickers on the case", location: "101 Block A", date: "2024-02-29" };
   assert.equal(validation.validateReportDetails(details).ok, true);
+  assert.equal(validation.validateReportDetails({ ...details, type: "LOST", location: "" }).ok, true, "lost location is optional");
+  assert.equal(validation.validateReportDetails({ ...details, type: "FOUND", location: "" }).ok, false);
+  assert.equal(validation.validateReportDetails({ ...details, location: "x".repeat(201) }).ok, false);
   for (const date of ["2026-02-30", "2025-02-29", "2026-13-01"]) assert.equal(validation.validateReportDetails({ ...details, date }).ok, false);
 });
 

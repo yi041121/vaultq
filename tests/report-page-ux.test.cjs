@@ -51,11 +51,20 @@ test("report form validation mirrors the API rules and blocks future dates", () 
     [{ itemName: "A" }, "itemName"],
     [{ category: null }, "category"],
     [{ description: "tiny" }, "description"],
-    [{ location: "" }, "location"],
     [{ date: "" }, "date"],
   ]) {
     assert.ok(form.validateReportForm({ ...base, ...patch })[field], `expected ${field} error`);
   }
+  assert.equal(
+    Object.keys(form.validateReportForm({ ...base, location: "" })).length,
+    0,
+    "the lost report's last seen location is optional",
+  );
+  assert.ok(
+    form.validateReportForm({ ...base, type: "FOUND", location: "" }).location,
+    "a found report still needs where the item was found",
+  );
+  assert.ok(form.validateReportForm({ ...base, location: "x".repeat(201) }).location, "over-long locations still fail");
   const future = form.validateReportForm({ ...base, date: "2999-01-01" });
   assert.match(future.date, /future/);
 });
@@ -70,36 +79,59 @@ test("impossible calendar dates are rejected but valid past dates pass", () => {
 test("drafts round-trip in tab storage and ignore another account", () => {
   const sessionStorage = memoryStorage();
   const drafts = load("src/lib/report-draft.ts", {}, { window: { sessionStorage } });
-  const draft = { owner: "session-a", ...base, type: "LOST", savedAt: 1 };
-  drafts.saveReportDraft(draft);
+  const photo = { preview: "data:image/jpeg;base64,AAAA", name: "card.jpg", type: "image/jpeg" };
+  const draft = { owner: "session-a", ...base, type: "LOST", photos: [photo], savedAt: 1 };
+  assert.equal(drafts.saveReportDraft(draft), true);
   const loaded = drafts.loadReportDraft("session-a");
   assert.equal(loaded.itemName, base.itemName);
   assert.equal(loaded.type, "LOST");
+  assert.equal(loaded.photos.length, 1, "draft photos survive the round-trip");
+  assert.equal(loaded.photos[0].preview, photo.preview);
+  assert.equal(loaded.photos[0].name, photo.name);
+  assert.equal(loaded.photos[0].type, photo.type);
   assert.equal(drafts.loadReportDraft("session-b"), null, "another session must not see the draft");
 
   drafts.clearReportDraft();
   assert.equal(drafts.loadReportDraft("session-a"), null);
 });
 
-test("empty, malformed and photo-less drafts are handled safely", () => {
+test("empty, malformed and photo-only drafts are handled safely", () => {
   const sessionStorage = memoryStorage();
   const drafts = load("src/lib/report-draft.ts", {}, { window: { sessionStorage } });
-  assert.equal(drafts.hasDraftContent({ itemName: " ", category: null, description: " ", location: "", date: "" }), false);
-  drafts.saveReportDraft({ owner: "s", type: "LOST", itemName: "   ", category: null, description: "", location: "", date: "" });
+  assert.equal(drafts.hasDraftContent({ itemName: " ", category: null, description: " ", location: "", date: "", photos: [] }), false);
+  assert.equal(
+    drafts.hasDraftContent({ itemName: "", category: null, description: "", location: "", date: "", photos: [{ preview: "data:image/jpeg;base64,AA" }] }),
+    true,
+    "a photo alone counts as draft content",
+  );
+  drafts.saveReportDraft({ owner: "s", type: "LOST", itemName: "   ", category: null, description: "", location: "", date: "", photos: [] });
   assert.equal(drafts.loadReportDraft("s"), null, "blank drafts are not stored");
   sessionStorage.setItem("vaultq:report-draft", "{not json");
   assert.equal(drafts.loadReportDraft("s"), null);
   sessionStorage.setItem("vaultq:report-draft", JSON.stringify({ owner: "s", type: "LOST", itemName: 5 }));
   assert.equal(drafts.loadReportDraft("s"), null);
+  sessionStorage.setItem("vaultq:report-draft", JSON.stringify({
+    owner: "s", type: "LOST", itemName: "Phone", category: null, description: "Black", location: "", date: "",
+    photos: [{ preview: "javascript:alert(1)", name: "x", type: "text/html" }],
+  }));
+  assert.equal(drafts.loadReportDraft("s").photos.length, 0, "only image data URLs are restored");
 });
 
-test("drafts never serialise photos or credentials", () => {
+test("drafts serialise only safe photo metadata and never credentials", () => {
   const sessionStorage = memoryStorage();
   const drafts = load("src/lib/report-draft.ts", {}, { window: { sessionStorage } });
-  drafts.saveReportDraft({ owner: "s", ...base, type: "LOST", photos: [{ file: {} }], token: "secret" });
+  const photo = { preview: "data:image/jpeg;base64,AAAA", name: "card.jpg", type: "image/jpeg" };
+  drafts.saveReportDraft({ owner: "s", ...base, type: "LOST", photos: [{ ...photo, file: {}, token: "secret" }], token: "secret" });
   const raw = sessionStorage.getItem("vaultq:report-draft");
   assert.ok(raw);
-  assert.doesNotMatch(raw, /photos|token|secret/);
+  assert.match(raw, /data:image\/jpeg/);
+  assert.doesNotMatch(raw, /token|secret/);
+  assert.doesNotMatch(raw, /"file"/);
+  const restored = drafts.loadReportDraft("s").photos;
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].preview, photo.preview);
+  assert.equal(restored[0].name, photo.name);
+  assert.equal(restored[0].type, photo.type);
 });
 
 test("report page implements dialog semantics, inline errors and draft recovery", () => {
@@ -130,6 +162,13 @@ test("report page implements dialog semantics, inline errors and draft recovery"
   assert.match(source, /saveReportDraft/);
   assert.match(source, /Continue your saved draft\?/);
   assert.match(source, /clearReportDraft\(\)/);
+  // The save prompt appears only for a non-empty form, and photos are kept.
+  assert.match(source, /Save this draft\?/);
+  assert.match(source, /formHasContent\(\)/);
+  assert.match(source, /photos: photos\.map/);
+  assert.match(source, /draft\.photos/);
+  assert.match(source, /\(optional\)/, "the last seen / found location is optional");
+  assert.doesNotMatch(source, /setTimeout\(\(\) => saveReportDraft/, "drafts are not autosaved while typing");
   // Reports list improvements: the card keeps a glanceable summary and the
   // popup carries the reference, gallery, admin note and guidance.
   assert.match(card, /line-clamp-2/);

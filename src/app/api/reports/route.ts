@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "type must be LOST or FOUND" }, { status: 400 });
     }
 
-    const parsed = validateReportDetails({ itemName, category, description, location, date });
+    const parsed = validateReportDetails({ type, itemName, category, description, location, date });
     if (!parsed.ok) {
       return NextResponse.json({ success: false, error: parsed.error }, { status: 400 });
     }
