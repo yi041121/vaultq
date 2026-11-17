@@ -2,7 +2,7 @@
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { claimNextStep } from "@/lib/student-workflow";
 import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
-import { formatDisplayDate as fmtDay, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
+import { formatDisplayDate as fmtDay, formatDisplayTime, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -18,7 +18,7 @@ import { StudentShell } from "@/components/student-shell";
 import { useEscapeKey } from "@/lib/use-escape-key";
 import { EvidenceSlider } from "@/components/evidence-slider";
 import { PhotoEvidenceField, type EvidencePhoto } from "@/components/photo-evidence-field";
-import { VCard, VContentPanel, VBadge, VPaginationFooter, VButton, VTextarea, VSearchInput, VFilterButton, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VPaginationFooter, VButton, VTextarea, VSearchInput, VFilterButton, VEmptyState, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
 import { DescriptionBox } from "@/components/description-box";
 import { matchesSearch } from "@/lib/search";
@@ -48,14 +48,6 @@ const statusPriority: Record<ClaimDisplayStatus, number> = {
   Collected: 2,
   Rejected: 3,
 };
-
-
-function fmtClock(value: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
-}
 
 
 type QrModal = {
@@ -340,42 +332,31 @@ export default function StudentClaims() {
               ))}
             </div>
           ) : loadError ? (
-            <VCard className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ backgroundColor: "#fef2f2" }}>
-                <FileText size={28} style={{ color: c.danger }} />
-              </div>
-              <p className="text-lg font-semibold" style={{ color: c.text }}>Could not load claims</p>
-              <p className="text-sm mt-2 max-w-md leading-relaxed" style={{ color: c.textMuted }}>{loadError}</p>
-              <VButton variant="primary" className="mt-6" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadClaims(t); }}>
-                <RefreshCw size={14} /> Try again
-              </VButton>
+            <VCard className="flex-1 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+              <VEmptyState icon={FileText} tone="danger" role="alert" title="Could not load claims" description={loadError}
+                action={<VButton variant="primary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadClaims(t); }}>
+                  <RefreshCw size={14} /> Try again
+                </VButton>} />
             </VCard>
           ) : sorted.length === 0 ? (
-            <VCard className="flex-1 flex flex-col items-center justify-center text-center px-6 py-16" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ backgroundColor: c.primarySoft }}>
-                <FileText size={28} style={{ color: c.primary }} />
-              </div>
-              <p className="text-lg font-semibold" style={{ color: c.text }}>
-                {claims.length === 0 ? "No claims yet" : "No claims found"}
-              </p>
-              <p className="text-sm mt-2 max-w-md leading-relaxed" style={{ color: c.textMuted }}>
-                {claims.length === 0
+            <VCard className="flex-1 flex flex-col" style={{ borderRadius: 22, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+              <VEmptyState icon={FileText}
+                title={claims.length === 0 ? "No claims yet" : "No claims found"}
+                description={claims.length === 0
                   ? "Found something that belongs to you? Search the item inventory and submit a claim with photo evidence."
                   : `You don't have any claims with status "${filter}". Try a different filter to see your other claims.`}
-              </p>
-              <VButton
-                variant={claims.length === 0 ? "primary" : "outline"}
-                className="mt-6"
-                onClick={() => {
-                  if (claims.length === 0) {
-                    router.push("/dashboard/student/search");
-                  } else {
-                    setFilter("All");
-                    setPage(1);
-                  }
-                }}>
-                {claims.length === 0 ? "Browse found items" : "Show all claims"}
-              </VButton>
+                action={<VButton
+                  variant={claims.length === 0 ? "primary" : "outline"}
+                  onClick={() => {
+                    if (claims.length === 0) {
+                      router.push("/dashboard/student/search");
+                    } else {
+                      setFilter("All");
+                      setPage(1);
+                    }
+                  }}>
+                  {claims.length === 0 ? "Browse found items" : "Show all claims"}
+                </VButton>} />
             </VCard>
           ) : (
             <>
@@ -390,7 +371,7 @@ export default function StudentClaims() {
                         <div className="w-24 h-24 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                           {cl.itemImageUrl ? (
-                            <img src={cl.itemImageUrl} alt={cl.itemName} className="w-full h-full object-contain" />
+                            <img src={cl.itemImageUrl} alt={cl.itemName} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                           ) : (
                             <Icon size={34} style={{ color: c.primary, opacity: 0.75 }} />
                           )}
@@ -491,7 +472,7 @@ export default function StudentClaims() {
               <div>
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Details</h3>
               </div>
-              <button type="button" onClick={() => setDetailsClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setDetailsClaim(null)} aria-label="Close claim details" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
 
 
@@ -503,7 +484,7 @@ export default function StudentClaims() {
                   <EvidenceSlider
                     photos={detailsClaim.itemImageUrls}
                     alt="Found item"
-                    caption={`${fmtDay(detailsClaim.foundDate)}${detailsClaim.itemCreatedAt ? ` · ${fmtClock(detailsClaim.itemCreatedAt)}` : ""}`}
+                    caption={`${fmtDay(detailsClaim.foundDate)}${detailsClaim.itemCreatedAt ? ` · ${formatDisplayTime(detailsClaim.itemCreatedAt)}` : ""}`}
                     label="found item"
                   />
                 ) : (
@@ -513,7 +494,7 @@ export default function StudentClaims() {
                     </div>
                     <p className="text-[11px] text-center py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
                       <time className="vq-date">{fmtDay(detailsClaim.foundDate)}</time>
-                      {detailsClaim.itemCreatedAt && ` · ${fmtClock(detailsClaim.itemCreatedAt)}`}
+                      {detailsClaim.itemCreatedAt && ` · ${formatDisplayTime(detailsClaim.itemCreatedAt)}`}
                     </p>
                   </div>
                 )}
@@ -557,6 +538,11 @@ export default function StudentClaims() {
                 </p>
               </div>
             )}
+
+            <p className="mb-4 rounded-xl border px-3.5 py-3 text-xs leading-relaxed"
+              style={{ borderColor: c.borderLight, backgroundColor: c.fill, color: c.textMuted }}>
+              {claimNextStep(detailsClaim.displayStatus)}
+            </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               {detailsClaim.approvedAt && detailsClaim.displayStatus !== "Rejected" && (
@@ -646,7 +632,7 @@ export default function StudentClaims() {
           <VCard className="relative w-full max-w-sm p-6 text-center">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Pickup QR Code</h3>
-              <button type="button" onClick={() => setQrModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setQrModal(null)} aria-label="Close pickup QR" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="w-full aspect-square rounded-2xl border-2 flex items-center justify-center p-4 mb-4" style={{ borderColor: c.border, backgroundColor: c.card }}>
               {qrModal.qrDataUrl ? <img src={qrModal.qrDataUrl} alt="QR Code" className="w-full h-full object-contain" /> : <QrCode size={48} style={{ color: c.textMuted }} />}

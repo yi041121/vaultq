@@ -17,7 +17,7 @@ import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
 import { PhotoViewerModal } from "@/components/photo-viewer-modal";
 import {
-  VCard, VContentPanel, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, VPaginationFooter, vcolors as c,
+  VCard, VContentPanel, VBadge, VButton, VSearchInput, VTextarea, VInput, VDropdown, VDropdownItem, VFilterButton, VPaginationFooter, VEmptyState, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { mapReport, type UserReport, type ReportStatus } from "@/lib/report-mapper";
@@ -634,25 +634,20 @@ export default function AdminReports() {
 
           <VContentPanel>
           {loading ? <AdminListSkeleton /> : loadError ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <PackageSearch size={40} className="mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
-              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => void fetchReports()}><RefreshCw size={14} /> Try again</VButton>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={PackageSearch} tone="danger" role="alert" title="Could not load reports" description={loadError}
+                action={<VButton variant="secondary" onClick={() => void fetchReports()}><RefreshCw size={14} /> Try again</VButton>} />
             </VCard>
           ) : filtered.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <PackageSearch size={40} className="mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No reports found</p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>
-                {reports.length === 0
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={PackageSearch} title="No reports found"
+                description={reports.length === 0
                   ? "Students have not submitted any reports yet."
                   : query
                     ? "No reports match your search."
                     : filterStatus === "PENDING"
                       ? "No reports are waiting for review."
-                      : "Try another status filter."}
-              </p>
+                      : "Try another status filter."} />
             </VCard>
           ) : (
             <>
@@ -804,7 +799,7 @@ export default function AdminReports() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Match a found item</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{matchTarget.itemName} · {matchTarget.studentName}</p>
               </div>
-              <button type="button" onClick={() => setMatchTarget(null)}
+              <button type="button" onClick={() => setMatchTarget(null)} aria-label="Close match dialog"
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>
@@ -835,7 +830,7 @@ export default function AdminReports() {
                         style={{ borderColor: c.borderLight, backgroundColor: c.card }}
                         onClick={() => void openMatchPreview(item)}>
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                          <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
                         ) : (
                           <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
                             <Package size={16} style={{ color: c.primary }} />
@@ -883,7 +878,7 @@ export default function AdminReports() {
                     <div key={item.id} className="flex flex-wrap items-center gap-3 p-2.5 rounded-xl border cursor-pointer hover:bg-[#f8fafc] transition-colors duration-150" style={{ borderColor: c.borderLight }}
                       onClick={() => void openMatchPreview(item)}>
                       {item.imageUrl ? (
-                        <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 rounded-lg object-cover" />
+                        <img src={item.imageUrl} alt={item.itemName} loading="lazy" decoding="async" className="w-10 h-10 rounded-lg object-cover" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: c.fill }}>
                           <Package size={16} style={{ color: c.primary }} />
@@ -964,7 +959,7 @@ export default function AdminReports() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Approve found report</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{verifyReport.itemName} · {verifyReport.studentName}</p>
               </div>
-              <button type="button" onClick={() => { if (!verifying) setVerifyReport(null); }}
+              <button type="button" onClick={() => { if (!verifying) setVerifyReport(null); }} aria-label="Close approve found report dialog"
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>
@@ -1181,7 +1176,7 @@ export default function AdminReports() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Assign a locker</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{verifyReport.itemName} · {verifyReport.studentName}</p>
               </div>
-              <button type="button" onClick={() => { if (!verifying) setApproveStage("form"); }}
+              <button type="button" onClick={() => { if (!verifying) setApproveStage("form"); }} aria-label="Close locker assignment dialog"
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>
@@ -1255,7 +1250,7 @@ export default function AdminReports() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Assign a locker</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{assignLockerReport.item?.name || assignLockerReport.itemName}</p>
               </div>
-              <button type="button" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }}
+              <button type="button" onClick={() => { if (!assigningLocker) setAssignLockerReport(null); }} aria-label="Close assign locker dialog"
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] cursor-pointer shrink-0" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>

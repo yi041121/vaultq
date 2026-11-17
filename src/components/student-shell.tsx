@@ -232,6 +232,11 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: colors.bg }}>
+      <a href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:shadow-lg"
+        style={{ color: colors.primary }}>
+        Skip to content
+      </a>
       <CenteredMessageHost />
       <div data-workspace-frame
         className="lg:flex lg:min-h-dvh"
@@ -329,7 +334,8 @@ export function StudentShell({ active, children, userName, userRole, bell, botto
       )}
 
       {/* Main area */}
-      <div data-workspace-content className="min-w-0 flex-1 flex flex-col"
+      <div data-workspace-content id="main-content" tabIndex={-1}
+        className="min-w-0 flex-1 flex flex-col overflow-x-clip outline-none"
         style={{ backgroundColor: colors.bg }}>
         {/* Top nav */}
         <header className="sticky top-0 z-30 flex lg:hidden items-center justify-between px-4 py-3 border-b bg-white"

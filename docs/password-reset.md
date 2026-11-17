@@ -33,6 +33,17 @@ silently accepting a reset that cannot be delivered.
 When `RESEND_API_KEY` is absent in development, the reset URL is printed in the
 terminal prefixed with `[password-reset]`. It is never logged in production.
 
+## Admin-generated reset link
+
+Email delivery is optional. An admin can open **Accounts → Reset password** for
+an active student, generate a one-time link, and send it through an official
+channel. The same 30-minute, single-use, hashed-token rules apply, and generating
+a new link invalidates the previous one.
+
+The raw link is returned only to that authenticated admin request with
+`Cache-Control: no-store`; it is never stored or emailed by the app. This keeps
+password reset usable before a Resend sender is configured.
+
 ## Deployment
 
 The additive migration `20261117000000_password_reset_tokens` runs through the

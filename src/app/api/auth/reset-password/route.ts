@@ -4,7 +4,7 @@ import { hashPassword } from "@/lib/auth";
 import { withDbRetry } from "@/lib/db-retry";
 import { clearSessionCookies, isSameOriginAuthRequest } from "@/lib/session-cookie";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
-import { hashPasswordResetToken, isPlausibleResetToken } from "@/lib/password-reset";
+import { hashPasswordResetToken, isPlausibleResetToken, PASSWORD_RESET_UNAVAILABLE_MESSAGE } from "@/lib/password-reset";
 
 class InvalidResetTokenError extends Error {}
 
@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
   if (!isPlausibleResetToken(token)) {
     return NextResponse.json({ success: true, data: { valid: false } }, { headers: { "Cache-Control": "no-store" } });
   }
-  const limited = await enforceAuthRateLimit(request, "lookup", hashPasswordResetToken(token));
+  const limited = await enforceAuthRateLimit(request, "lookup", hashPasswordResetToken(token), {
+    unavailableMessage: PASSWORD_RESET_UNAVAILABLE_MESSAGE,
+  });
   if (limited) return limited;
 
   const record = await withDbRetry(() => prisma.passwordResetToken.findUnique({
@@ -54,7 +56,9 @@ export async function POST(request: NextRequest) {
   }
 
   const tokenHash = hashPasswordResetToken(token);
-  const limited = await enforceAuthRateLimit(request, "passwordReset", tokenHash);
+  const limited = await enforceAuthRateLimit(request, "passwordReset", tokenHash, {
+    unavailableMessage: PASSWORD_RESET_UNAVAILABLE_MESSAGE,
+  });
   if (limited) return limited;
 
   try {

@@ -124,7 +124,8 @@ test("Resend delivery sends the reset link without exposing the token locally", 
 test("forgot-password never reveals whether an account exists", () => {
   const route = read("src/app/api/auth/forgot-password/route.ts");
   assert.match(route, /If an account exists for that email/);
-  assert.match(route, /enforceAuthRateLimit\(request, "passwordReset", email\)/);
+  assert.match(route, /enforceAuthRateLimit\(request, "passwordReset", email, \{/);
+  assert.match(route, /PASSWORD_RESET_UNAVAILABLE_MESSAGE/);
   assert.match(route, /passwordResetEmailConfigured\(\)/);
   assert.match(route, /deleteMany\(\{ where: \{ userId: user\.id \} \}\)/);
   assert.match(route, /hashPasswordResetToken\(token\)/);
@@ -140,6 +141,8 @@ test("reset-password consumes the token once, updates the hash and revokes sessi
   assert.match(route, /tx\.authSession\.deleteMany\(\{ where: \{ userId: record\.userId \} \}\)/);
   assert.match(route, /clearSessionCookies\(response\)/);
   assert.match(route, /Cache-Control": "no-store/);
+  assert.equal((route.match(/PASSWORD_RESET_UNAVAILABLE_MESSAGE/g) ?? []).length, 3,
+    "both reset checks use the reset-specific unavailable message");
 });
 
 test("forgot and reset pages are wired to the auth APIs", () => {
@@ -152,4 +155,25 @@ test("forgot and reset pages are wired to the auth APIs", () => {
   assert.match(resetPage, /\/api\/auth\/reset-password\?token=/);
   assert.match(resetPage, /Passwords do not match/);
   assert.match(resetPage, /Password updated/);
+  assert.match(resetPage, /response\.status === 503/);
+  assert.match(resetPage, /Password reset is temporarily unavailable/);
+  assert.match(resetPage, /setCheckAttempt/);
+});
+
+test("admins can generate a one-time reset link without email delivery", () => {
+  const route = read("src/app/api/accounts/[id]/password-reset/route.ts");
+  assert.match(route, /authenticateRequest/);
+  assert.match(route, /user\.role !== "ADMIN"/);
+  assert.match(route, /isSameOriginAuthRequest/);
+  assert.match(route, /createPasswordResetToken/);
+  assert.match(route, /hashPasswordResetToken/);
+  assert.match(route, /deleteMany\(\{ where: \{ userId: target\.id \} \}\)/);
+  assert.match(route, /Cache-Control": "no-store/);
+  assert.doesNotMatch(route, /tokenHash:\s*token\b/, "the raw token is never stored");
+
+  const page = read("src/app/dashboard/admin/accounts/page.tsx");
+  assert.match(page, /Reset password/);
+  assert.match(page, /Generate reset link/);
+  assert.match(page, /Copy link/);
+  assert.match(page, /\/password-reset/);
 });

@@ -23,7 +23,7 @@ import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
 import { PhotoSourceDialog } from "@/components/photo-source-dialog";
 import {
-  VCard, VContentPanel, VBadge, VFilterButton, VPaginationFooter, VDropdown, VDropdownItem, VButton, VTextarea,
+  VCard, VContentPanel, VBadge, VFilterButton, VPaginationFooter, VDropdown, VDropdownItem, VButton, VTextarea, VEmptyState,
   vcolors as c,
 } from "@/components/ui/vault";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
@@ -680,6 +680,7 @@ export default function StudentSearch() {
                         className="w-[300px] max-w-[calc(100vw-3rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
                         <div className="flex items-center justify-between mb-3">
                           <button type="button"
+                            aria-label="Previous month"
                             className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
                             style={{ backgroundColor: c.fill, color: c.textMuted }}
                             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
@@ -691,6 +692,7 @@ export default function StudentSearch() {
                             {months[0].toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
                           </span>
                           <button type="button"
+                            aria-label="Next month"
                             disabled={calOffset >= 0}
                             className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 ${calOffset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
                             style={{ backgroundColor: c.fill, color: c.textMuted }}
@@ -803,19 +805,15 @@ export default function StudentSearch() {
               ))}
             </div>
           ) : loadError ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
-              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadData(t); }}>
-                <RefreshCw size={14} /> Try again
-              </VButton>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Search} tone="danger" role="alert" title="Could not load items" description={loadError}
+                action={<VButton variant="secondary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadData(t); }}>
+                  <RefreshCw size={14} /> Try again
+                </VButton>} />
             </VCard>
           ) : filtered.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No items found</p>
-              <p className="text-sm mt-1" style={{ color: c.textMuted }}>Try adjusting your filters or search term.</p>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Search} title="No items found" description="Try adjusting your filters or search term." />
             </VCard>
           ) : (
             <>
@@ -830,7 +828,7 @@ export default function StudentSearch() {
                       <div className="w-24 h-24 sm:w-full sm:h-40 rounded-xl sm:mb-4 flex items-center justify-center relative overflow-hidden"
                         style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                         {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-contain" />
+                          <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-contain" />
                         ) : (
                           <>
                             <div className="absolute inset-0 opacity-40"
@@ -1019,7 +1017,7 @@ export default function StudentSearch() {
                 <h3 className="text-base font-semibold" style={{ color: c.text }}>Claim Item</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{claimItem.name} · {claimItem.category} · {claimItem.location || "—"}</p>
               </div>
-              <button type="button" onClick={closeClaim} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ backgroundColor: c.primarySoft, color: c.primary }}><X size={16} /></button>
+              <button type="button" onClick={closeClaim} aria-label="Close claim dialog" className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200 cursor-pointer shrink-0 ml-3" style={{ backgroundColor: c.primarySoft, color: c.primary }}><X size={16} /></button>
             </div>
 
             {claimPrefilling && <p role="status" className="text-xs mb-3" style={{ color: c.primary }}>Loading photos from your lost report…</p>}

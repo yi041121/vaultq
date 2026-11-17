@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound, ShieldAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound, RefreshCw, ShieldAlert } from "lucide-react";
 import { VButton, VInput, vcolors as c } from "@/components/ui/vault";
 
-type PageState = "checking" | "form" | "invalid" | "done";
+type PageState = "checking" | "form" | "invalid" | "done" | "unavailable";
 
 export default function ResetPasswordPage() {
   const [state, setState] = useState<PageState>("checking");
@@ -15,6 +15,7 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkAttempt, setCheckAttempt] = useState(0);
 
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("token") || "";
@@ -26,16 +27,28 @@ export default function ResetPasswordPage() {
       return;
     }
     let cancelled = false;
-    void fetch(`/api/auth/reset-password?token=${encodeURIComponent(value)}`, {
-      headers: { "X-VaultQ-Request": "1" }, cache: "no-store",
-    })
-      .then((response) => response.json().catch(() => null))
-      .then((data) => {
-        if (!cancelled) setState(data?.success && data?.data?.valid ? "form" : "invalid");
-      })
-      .catch(() => { if (!cancelled) setState("invalid"); });
+    async function check() {
+      if (cancelled) return;
+      setState("checking");
+      try {
+        const response = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(value)}`, {
+          headers: { "X-VaultQ-Request": "1" }, cache: "no-store",
+        });
+        const data = await response.json().catch(() => null);
+        if (cancelled) return;
+        // A temporary service failure must not be shown as an expired link.
+        if (response.status === 503 || !response.ok) {
+          setState("unavailable");
+          return;
+        }
+        setState(data?.success && data?.data?.valid ? "form" : "invalid");
+      } catch {
+        if (!cancelled) setState("unavailable");
+      }
+    }
+    void check();
     return () => { cancelled = true; };
-  }, []);
+  }, [checkAttempt]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -56,6 +69,10 @@ export default function ResetPasswordPage() {
         body: JSON.stringify({ token, password }),
       });
       const data = await response.json().catch(() => null);
+      if (response.status === 503) {
+        setState("unavailable");
+        return;
+      }
       if (!response.ok) {
         setError(data?.error || "Could not reset your password. Please try again.");
         return;
@@ -97,6 +114,21 @@ export default function ResetPasswordPage() {
             <Link href="/forgot-password" className="mt-4 inline-flex text-sm font-semibold hover:opacity-80" style={{ color: c.primary }}>
               Request a new link
             </Link>
+          </div>
+        )}
+
+        {state === "unavailable" && (
+          <div className="text-center" role="alert">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: "#fffbeb" }}>
+              <ShieldAlert size={24} style={{ color: "#b45309" }} />
+            </div>
+            <p className="text-sm font-medium" style={{ color: c.text }}>Password reset is temporarily unavailable</p>
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: c.textMuted }}>
+              This is not a problem with your reset link. Please wait a moment and try again.
+            </p>
+            <VButton type="button" className="mt-4" onClick={() => setCheckAttempt((attempt) => attempt + 1)}>
+              <RefreshCw size={14} /> Try again
+            </VButton>
           </div>
         )}
 

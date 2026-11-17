@@ -75,7 +75,7 @@ export function ReportMatchesPanel({
               className="rounded-xl border p-3.5 flex flex-col sm:flex-row sm:items-center gap-3"
               style={{ borderColor: c.borderLight, backgroundColor: c.card }}>
               {suggestion.imageUrl ? (
-                <img src={suggestion.imageUrl} alt={suggestion.itemName}
+                <img src={suggestion.imageUrl} alt={suggestion.itemName} loading="lazy" decoding="async"
                   className="w-full sm:w-14 h-32 sm:h-14 rounded-lg object-contain shrink-0" />
               ) : (
                 <div className="w-full sm:w-14 h-20 sm:h-14 rounded-lg flex items-center justify-center shrink-0"

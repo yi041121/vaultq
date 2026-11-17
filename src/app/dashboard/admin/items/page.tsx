@@ -24,7 +24,7 @@ import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/
 import { ItemDetailsModal } from "@/components/item-details-modal";
 import { dedupePhotos, itemPhotoSources } from "@/lib/photo-dedupe";
 import {
-  VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPaginationFooter, VFilterButton,
+  VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPaginationFooter, VFilterButton, VEmptyState,
   vcolors as c,
 } from "@/components/ui/vault";
 
@@ -444,19 +444,16 @@ export default function AdminItems() {
           {/* Grid */}
           <VContentPanel>
           {loading ? <AdminListSkeleton /> : loadError ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Package size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load items</p>
-              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => void fetchItems()}>
-                <RotateCcw size={14} /> Try again
-              </VButton>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Package} tone="danger" role="alert" title="Could not load items" description={loadError}
+                action={<VButton variant="secondary" onClick={() => void fetchItems()}>
+                  <RotateCcw size={14} /> Try again
+                </VButton>} />
             </VCard>
           ) : filtered.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No items found</p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>Try adjusting filters or add a new item.</p>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Search} title="No items found" description="Try adjusting filters or add a new item."
+                action={<VButton onClick={openAdd}><Plus size={14} /> Add item</VButton>} />
             </VCard>
           ) : (
             <>
@@ -471,7 +468,7 @@ export default function AdminItems() {
                           <button type="button" aria-label={`View ${it.name} photo`}
                             className="absolute inset-0 group cursor-pointer"
                             onClick={() => void openItemPhotos(it)}>
-                            <img src={it.imageUrl} alt={it.name} className="w-full h-full object-contain" />
+                            <img src={it.imageUrl} alt={it.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                                 <Eye size={13} /> View photo
@@ -507,16 +504,12 @@ export default function AdminItems() {
                         {it.status === "CLAIMED" || it.status === "RETRIEVED" ? (
                           <VButton variant="secondary" className="w-full" onClick={() => setViewItem(it)}><Eye size={13} /> View</VButton>
                         ) : <>
-                        <button type="button" onClick={() => openEdit(it)}
-                          className="flex-1 h-9 rounded-xl text-xs font-medium border bg-white flex items-center justify-center gap-1.5 transition-colors duration-200 cursor-pointer"
-                          style={{ borderColor: c.border, color: c.textMuted }}>
+                        <VButton variant="outline" size="md" className="flex-1" onClick={() => openEdit(it)}>
                           <Pencil size={13} /> Edit
-                        </button>
-                        <button type="button" aria-label={`Delete ${it.name}`} onClick={() => openDelete(it)}
-                          className="w-9 h-9 rounded-xl border bg-white flex items-center justify-center transition-colors duration-200 cursor-pointer"
-                          style={{ borderColor: c.border, color: c.danger }}>
+                        </VButton>
+                        <VButton variant="danger" size="md" className="w-9 !px-0" aria-label={`Delete ${it.name}`} title="Delete item" onClick={() => openDelete(it)}>
                           <Trash2 size={14} />
-                        </button>
+                        </VButton>
                         </>}
                       </div>
                     </VCard>

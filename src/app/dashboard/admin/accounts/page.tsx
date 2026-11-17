@@ -1,15 +1,16 @@
 "use client";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
+import { formatDisplayTimestamp } from "@/lib/date-format";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch, Upload, Loader2 } from "lucide-react";
+import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch, Upload, Loader2, KeyRound, Copy, Check } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { StudentShell } from "@/components/student-shell";
 import { AdminStatusFilters, FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
-import { VCard, VContentPanel, VBadge, VButton, VInput, VSearchInput, VPaginationFooter, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VSearchInput, VPaginationFooter, VEmptyState, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
 import { matchesSearch } from "@/lib/search";
@@ -73,11 +74,18 @@ export default function AdminAccounts() {
   const [deleteTarget, setDeleteTarget] = useState<Student | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [resetTarget, setResetTarget] = useState<Student | null>(null);
+  const [resetLink, setResetLink] = useState<{ url: string; expiresAt: string; name: string; email: string } | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetCopied, setResetCopied] = useState(false);
+
   const [editTarget, setEditTarget] = useState<Student | null>(null);
 
   useEscapeKey(showModal, () => setShowModal(false));
   useEscapeKey(!!deleteTarget, () => setDeleteTarget(null));
   useEscapeKey(!!editTarget, () => setEditTarget(null));
+  useEscapeKey(!!resetTarget, () => { if (!resetBusy) closeReset(); });
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editStudentId, setEditStudentId] = useState("");
@@ -181,6 +189,51 @@ export default function AdminAccounts() {
   function openAdd() {
     setFormName(""); setFormEmail(""); setFormStudentId(""); setFormBarcode(""); setFormPassword(""); setFormError(null);
     setShowModal(true);
+  }
+
+  function openReset(st: Student) {
+    setResetTarget(st);
+    setResetLink(null);
+    setResetError(null);
+    setResetCopied(false);
+  }
+
+  function closeReset() {
+    if (resetBusy) return;
+    setResetTarget(null);
+    setResetLink(null);
+    setResetError(null);
+    setResetCopied(false);
+  }
+
+  async function handleGenerateReset() {
+    if (!resetTarget || resetBusy) return;
+    setResetBusy(true);
+    setResetError(null);
+    try {
+      const res = await fetch(`/api/accounts/${encodeURIComponent(resetTarget.id)}/password-reset`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Could not generate a reset link");
+      setResetLink(data.data);
+    } catch (e) {
+      setResetError(e instanceof Error ? e.message : "Could not generate a reset link");
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function copyResetLink() {
+    if (!resetLink?.url) return;
+    try {
+      await navigator.clipboard.writeText(resetLink.url);
+      setResetCopied(true);
+      showCenteredMessage("success", "Reset link copied");
+    } catch {
+      showCenteredMessage("error", "Could not copy automatically. Select the link and copy it manually.");
+    }
   }
 
   async function handleBarcodeImage(event: React.ChangeEvent<HTMLInputElement>, mode: "add" | "edit") {
@@ -433,15 +486,14 @@ export default function AdminAccounts() {
 
           <VContentPanel>
           {loading ? <AdminListSkeleton /> : loadError ? (
-            <VCard className="p-8 text-center flex-1 flex flex-col items-center justify-center">
-              <p className="text-sm mb-3" style={{ color: c.textMuted }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => void fetchAccounts(true)}>Try again</VButton>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Users} tone="danger" role="alert" title="Could not load accounts" description={loadError}
+                action={<VButton variant="secondary" onClick={() => void fetchAccounts(true)}>Try again</VButton>} />
             </VCard>
           ) : filtered.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No accounts found</p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>Try adjusting filters or add a student.</p>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Search} title="No accounts found" description="Try adjusting filters or add a student."
+                action={<VButton onClick={openAdd}><Plus size={14} /> Add student</VButton>} />
             </VCard>
           ) : (
             <>
@@ -469,9 +521,12 @@ export default function AdminAccounts() {
                       </div>
                       <p className="text-xs flex items-center gap-1" style={{ color: c.textMuted }}><Mail size={12} /> {st.email}</p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:shrink-0">
                       {st.role !== "ADMIN" && (
                         <>
+                          <VButton variant="secondary" size="md" onClick={() => openReset(st)}>
+                            <KeyRound size={14} /> Reset password
+                          </VButton>
                           <VButton variant="secondary" size="md" onClick={() => openEdit(st)}><SquarePen size={14} /> Edit</VButton>
                           <VButton variant="secondary" size="md" onClick={() => setDeleteTarget(st)}><Trash2 size={14} /> Delete</VButton>
                         </>
@@ -494,7 +549,7 @@ export default function AdminAccounts() {
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Add Student Account</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setShowModal(false)} aria-label="Close add student dialog" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="space-y-4">
               <div>
@@ -580,7 +635,7 @@ export default function AdminAccounts() {
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Edit Student Account</h3>
-              <button type="button" onClick={() => setEditTarget(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setEditTarget(null)} aria-label="Close edit student dialog" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="space-y-4">
               <div>
@@ -629,6 +684,66 @@ export default function AdminAccounts() {
                 <VButton onClick={handleEdit} disabled={editSaving || barcodeReading}><SquarePen size={14} /> {editSaving ? "Saving..." : "Save Changes"}</VButton>
               </div>
             </div>
+          </VCard>
+        </div>
+      )}
+      {/* Password reset link modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeReset} />
+          <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Reset password</h3>
+                <p className="text-xs mt-1" style={{ color: c.textMuted }}>{resetTarget.name} · {resetTarget.email}</p>
+              </div>
+              <button type="button" onClick={closeReset} aria-label="Close reset password dialog"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {resetLink ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border p-3.5" style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
+                  <p className="text-xs font-semibold" style={{ color: c.primary }}>Send this one-time link privately</p>
+                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: c.textMuted }}>
+                    It expires in 30 minutes and can only be used once. Anyone with this link can set a new password, so do not post it publicly.
+                  </p>
+                </div>
+                <VTextarea readOnly value={resetLink.url} rows={3} className="font-mono text-xs"
+                  aria-label="One-time password reset link"
+                  onFocus={(event) => event.currentTarget.select()} />
+                <p className="text-[11px]" style={{ color: c.textLight }}>
+                  Expires {formatDisplayTimestamp(resetLink.expiresAt)}
+                </p>
+                {resetError && <p role="alert" className="text-xs" style={{ color: c.danger }}>{resetError}</p>}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <VButton variant="secondary" onClick={closeReset}>Done</VButton>
+                  <VButton onClick={copyResetLink}>
+                    {resetCopied ? <Check size={14} /> : <Copy size={14} />}
+                    {resetCopied ? "Copied" : "Copy link"}
+                  </VButton>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
+                  Generate a one-time reset link for this student. This invalidates any previous reset link for the account.
+                </p>
+                <p className="rounded-xl border p-3 text-[11px] leading-relaxed" style={{ borderColor: c.borderLight, backgroundColor: c.fill, color: c.textMuted }}>
+                  Email delivery is not required. Send the link through your official channel, such as the Lost &amp; Found office or the student&apos;s registered email.
+                </p>
+                {resetError && <p role="alert" className="text-xs" style={{ color: c.danger }}>{resetError}</p>}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <VButton variant="secondary" onClick={closeReset} disabled={resetBusy}>Cancel</VButton>
+                  <VButton onClick={handleGenerateReset} disabled={resetBusy}>
+                    {resetBusy ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
+                    {resetBusy ? "Generating..." : "Generate reset link"}
+                  </VButton>
+                </div>
+              </div>
+            )}
           </VCard>
         </div>
       )}

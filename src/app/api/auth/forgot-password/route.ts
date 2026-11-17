@@ -10,6 +10,7 @@ import {
   passwordResetEmailConfigured,
   passwordResetExpiry,
   sendPasswordResetEmail,
+  PASSWORD_RESET_UNAVAILABLE_MESSAGE,
 } from "@/lib/password-reset";
 
 const GENERIC_RESPONSE = {
@@ -40,7 +41,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Enter a valid email address" }, { status: 400 });
   }
 
-  const limited = await enforceAuthRateLimit(request, "passwordReset", email);
+  const limited = await enforceAuthRateLimit(request, "passwordReset", email, {
+    unavailableMessage: PASSWORD_RESET_UNAVAILABLE_MESSAGE,
+  });
   if (limited) return limited;
 
   // Fail closed in production when delivery is not configured. Checking this

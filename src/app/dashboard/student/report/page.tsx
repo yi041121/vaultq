@@ -23,7 +23,7 @@ import { PhotoPicker } from "@/components/photo-picker";
 import { CustomScrollbar } from "@/components/custom-scrollbar";
 import { StudentShell } from "@/components/student-shell";
 import {
-  VCard, VContentPanel, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
+  VCard, VContentPanel, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VFilterButton, VEmptyState, vcolors as c,
 } from "@/components/ui/vault";
 import { ITEM_CATEGORIES } from "@/lib/categories";
 import { CATEGORY_ICONS as categoryIcons } from "@/lib/category-icons";
@@ -935,57 +935,44 @@ function StudentReportContent() {
                   ))}
                 </div>
               ) : reportsError ? (
-                <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                  <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
-                  <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load reports</p>
-                  <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{reportsError}</p>
-                  <VButton variant="secondary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadReports(t); }}>
-                    <RefreshCw size={14} /> Try again
-                  </VButton>
+                <VCard className="flex flex-1 flex-col">
+                  <VEmptyState icon={FileText} tone="danger" role="alert" title="Could not load reports" description={reportsError}
+                    action={<VButton variant="secondary" onClick={() => { const t = getBrowserSessionKey(); if (t) void loadReports(t); }}>
+                      <RefreshCw size={14} /> Try again
+                    </VButton>} />
                 </VCard>
               ) : reports.length === 0 ? (
-                <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                  <FileText size={40} className="mb-4" style={{ color: c.textLight }} />
-                  <p className="text-base font-medium" style={{ color: c.textMuted }}>No reports yet</p>
-                  <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>
-                    Report a lost item or hand in something you found.
-                  </p>
-                  <VButton onClick={() => switchTab("new")}><Plus size={14} /> New report</VButton>
+                <VCard className="flex flex-1 flex-col">
+                  <VEmptyState icon={FileText} title="No reports yet"
+                    description="Report a lost item or hand in something you found."
+                    action={<VButton onClick={() => switchTab("new")}><Plus size={14} /> New report</VButton>} />
                 </VCard>
               ) : (
                 <div className="flex flex-1 flex-col gap-6 lg:gap-8">
                   {visibleReports.length === 0 && hasReportsOfType ? (
-                    <VCard className="py-16 text-center flex-1 flex flex-col items-center justify-center">
-                      <PackageSearch size={36} className="mb-4" style={{ color: c.textLight }} />
-                      <p className="text-base font-medium" style={{ color: c.textMuted }}>No reports match your filters</p>
-                      <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>Try a different search or show all statuses.</p>
-                      <VButton variant="secondary" onClick={resetReportFilters}>
-                        <RotateCcw size={14} /> Clear filters
-                      </VButton>
+                    <VCard className="flex flex-1 flex-col">
+                      <VEmptyState icon={PackageSearch} title="No reports match your filters"
+                        description="Try a different search or show all statuses."
+                        action={<VButton variant="secondary" onClick={resetReportFilters}>
+                          <RotateCcw size={14} /> Clear filters
+                        </VButton>} />
                     </VCard>
                   ) : visibleReports.length === 0 ? (
-                    <VCard className="py-16 text-center flex-1 flex flex-col items-center justify-center">
-                      {reportKind === "LOST"
-                        ? <PackageSearch size={36} className="mb-4" style={{ color: c.textLight }} />
-                        : reportKind === "FOUND"
-                          ? <PackageCheck size={36} className="mb-4" style={{ color: c.textLight }} />
-                          : <FileText size={36} className="mb-4" style={{ color: c.textLight }} />}
-                      <p className="text-base font-medium" style={{ color: c.textMuted }}>
-                        {reportKind === "ALL" ? "No reports yet" : `No ${reportKind === "LOST" ? "lost" : "found"} reports`}
-                      </p>
-                      <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>
-                        {reportKind === "LOST"
+                    <VCard className="flex flex-1 flex-col">
+                      <VEmptyState
+                        icon={reportKind === "LOST" ? PackageSearch : reportKind === "FOUND" ? PackageCheck : FileText}
+                        title={reportKind === "ALL" ? "No reports yet" : `No ${reportKind === "LOST" ? "lost" : "found"} reports`}
+                        description={reportKind === "LOST"
                           ? "Report a lost item to start tracking it."
                           : reportKind === "FOUND"
                             ? "Report something you found so it can be returned."
                             : "Report a lost item or hand in something you found."}
-                      </p>
-                      <VButton onClick={() => {
-                        switchTab("new");
-                        if (reportKind !== "ALL") selectType(reportKind);
-                      }}>
-                        <Plus size={14} /> {reportKind === "ALL" ? "New report" : `Report ${reportKind === "LOST" ? "lost item" : "found item"}`}
-                      </VButton>
+                        action={<VButton onClick={() => {
+                          switchTab("new");
+                          if (reportKind !== "ALL") selectType(reportKind);
+                        }}>
+                          <Plus size={14} /> {reportKind === "ALL" ? "New report" : `Report ${reportKind === "LOST" ? "lost item" : "found item"}`}
+                        </VButton>} />
                     </VCard>
                   ) : (
                   <div className="grid min-w-0 grid-cols-1 items-start gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-5">

@@ -6,6 +6,9 @@ import { colors, radius, size, font, iconSize } from "@/lib/design";
 import { scrollPageToTop } from "@/lib/scroll-to-top";
 import { PillSearchInput } from "@/components/pill-search-input";
 
+/** One focus treatment for every interactive control in the shared UI kit. */
+const focusRing = "focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2";
+
 /* ---------------------------------- Button --------------------------------- */
 
 interface VButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -14,7 +17,7 @@ interface VButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function VButton({ variant = "primary", size: btnSize = "md", className = "", style, ...props }: VButtonProps) {
-  const base = `inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap ${radius.button} transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed`;
+  const base = `inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap ${radius.button} transition-colors duration-150 motion-reduce:transition-none touch-manipulation cursor-pointer disabled:cursor-not-allowed ${focusRing}`;
   const heights = { sm: "h-8 px-3 text-xs", md: "h-10 px-4 text-sm", lg: "h-11 px-6 text-sm" };
   const variants: Record<string, React.CSSProperties> = {
     primary: { backgroundColor: colors.primary, color: "#fff", boxShadow: "0 2px 6px rgba(53,92,138,0.25)" },
@@ -37,7 +40,7 @@ export function VButton({ variant = "primary", size: btnSize = "md", className =
     <button
       {...props}
       className={`${base} ${heights[btnSize]} ${className}`}
-      style={{ ...variants[variant], ...(disabled ? { opacity: 0.5, cursor: "not-allowed", boxShadow: "none" } : {}), ...style }}
+      style={{ ...variants[variant], ...(disabled ? { opacity: 0.5, cursor: "not-allowed", boxShadow: "none" } : {}), outlineColor: colors.primary, ...style }}
       onMouseEnter={(e) => { if (!disabled) Object.assign(e.currentTarget.style, hovers[variant]); }}
       onMouseLeave={(e) => { if (!disabled) Object.assign(e.currentTarget.style, variants[variant]); }}
     />
@@ -50,13 +53,14 @@ type VInputProps = React.InputHTMLAttributes<HTMLInputElement>;
 
 export function VInput({ className = "", style, ...props }: VInputProps) {
   const [focused, setFocused] = useState(false);
+  const invalid = props["aria-invalid"] === true || props["aria-invalid"] === "true";
   return (
     <input
       {...props}
-      className={`w-full ${size.input} px-3.5 text-sm border bg-white ${radius.input} transition-colors duration-150 ${className}`}
+      className={`w-full ${size.input} px-3.5 text-sm border bg-white ${radius.input} transition-colors duration-150 motion-reduce:transition-none ${className}`}
       style={{
         ...style,
-        borderColor: focused ? colors.primary : style?.borderColor ?? colors.border,
+        borderColor: invalid ? colors.danger : focused ? colors.primary : style?.borderColor ?? colors.border,
         color: style?.color ?? colors.text,
         boxShadow: focused ? "0 0 0 3px rgba(53,92,138,0.08)" : style?.boxShadow ?? "0 1px 3px rgba(0,0,0,0.02)",
       }}
@@ -68,13 +72,14 @@ export function VInput({ className = "", style, ...props }: VInputProps) {
 
 export function VTextarea({ className = "", style, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const [focused, setFocused] = useState(false);
+  const invalid = props["aria-invalid"] === true || props["aria-invalid"] === "true";
   return (
     <textarea
       {...props}
-      className={`w-full px-3.5 py-2.5 text-sm border bg-white ${radius.input} transition-colors duration-150 resize-none ${className}`}
+      className={`w-full px-3.5 py-2.5 text-sm border bg-white ${radius.input} transition-colors duration-150 motion-reduce:transition-none resize-none ${className}`}
       style={{
         ...style,
-        borderColor: focused ? colors.primary : style?.borderColor ?? colors.border,
+        borderColor: invalid ? colors.danger : focused ? colors.primary : style?.borderColor ?? colors.border,
         color: style?.color ?? colors.text,
         boxShadow: focused ? "0 0 0 3px rgba(53,92,138,0.08)" : style?.boxShadow ?? "0 1px 3px rgba(0,0,0,0.02)",
       }}
@@ -123,6 +128,49 @@ export function VBadge({ color, children, className = "", style }: { color: stri
   );
 }
 
+/* ------------------------------- Empty state ------------------------------- */
+
+type EmptyStateIcon = React.ComponentType<{
+  size?: number;
+  style?: React.CSSProperties;
+  "aria-hidden"?: boolean | "true" | "false";
+}>;
+
+/**
+ * One layout for empty, filtered-empty and load-failure states across the app.
+ * Keeps the icon circle, title, supporting copy and single action aligned.
+ */
+export function VEmptyState({ icon: Icon, title, description, action, tone = "primary", className = "", role = "status" }: {
+  icon: EmptyStateIcon;
+  title: string;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  tone?: "primary" | "danger" | "muted";
+  className?: string;
+  role?: "status" | "alert";
+}) {
+  const palette = {
+    primary: { background: colors.primarySoft, color: colors.primary },
+    danger: { background: `color-mix(in srgb, ${colors.danger} 10%, transparent)`, color: colors.danger },
+    muted: { background: colors.fill, color: colors.textLight },
+  }[tone];
+  return (
+    <div role={role} data-empty-state
+      className={`flex min-w-0 flex-1 flex-col items-center justify-center px-6 py-16 text-center ${className}`}>
+      <div className="mb-5 flex h-16 w-16 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: palette.background }}>
+        <Icon size={28} style={{ color: palette.color }} aria-hidden="true" />
+      </div>
+      <p className="text-lg font-semibold [overflow-wrap:anywhere]" style={{ color: colors.text }}>{title}</p>
+      {description && (
+        <p className="mt-2 max-w-md text-sm leading-relaxed [overflow-wrap:anywhere]" style={{ color: colors.textMuted }}>
+          {description}
+        </p>
+      )}
+      {action && <div className="mt-6 flex flex-wrap items-center justify-center gap-2">{action}</div>}
+    </div>
+  );
+}
+
 /* ------------------------------- Filter button ------------------------------ */
 
 export function VFilterButton({ children, style, active, onClick, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -133,8 +181,8 @@ export function VFilterButton({ children, style, active, onClick, className = ""
       {...props}
       type="button"
       aria-pressed={active}
-      className={`flex shrink-0 items-center gap-1 sm:gap-1.5 whitespace-nowrap ${size.filter} ${radius.button} text-xs sm:text-sm font-medium border bg-white transition-colors duration-200 cursor-pointer ${className}`}
-      style={{ borderColor: active ? colors.primary : colors.border, color: active ? colors.primary : colors.text, backgroundColor: active ? colors.primarySoft : undefined, ...style }}
+      className={`flex shrink-0 items-center gap-1 sm:gap-1.5 whitespace-nowrap ${size.filter} ${radius.button} text-xs sm:text-sm font-medium border bg-white transition-colors duration-200 motion-reduce:transition-none touch-manipulation cursor-pointer ${focusRing} ${className}`}
+      style={{ borderColor: active ? colors.primary : colors.border, color: active ? colors.primary : colors.text, backgroundColor: active ? colors.primarySoft : undefined, outlineColor: colors.primary, ...style }}
       onClick={onClick}
     >
       {children}
@@ -250,8 +298,8 @@ export function VDropdownItem({ children, active, onSelect, style, dense }: {
   return (
     <button
       type="button"
-      className={`vq-dropdown-item w-full flex items-center gap-2.5 px-3 text-sm text-left cursor-pointer ${dense ? "py-1.5" : "py-2"}`}
-      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: active ? colors.primarySoft : "transparent", fontWeight: active ? 600 : 400, ...style }}
+      className={`vq-dropdown-item w-full flex items-center gap-2.5 px-3 text-sm text-left cursor-pointer ${focusRing} focus-visible:-outline-offset-2 ${dense ? "py-1.5" : "py-2"}`}
+      style={{ color: active ? colors.primary : colors.textMuted, backgroundColor: active ? colors.primarySoft : "transparent", fontWeight: active ? 600 : 400, outlineColor: colors.primary, ...style }}
       onClick={onSelect}
     >
       {children}

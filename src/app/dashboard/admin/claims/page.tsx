@@ -1,6 +1,6 @@
 "use client";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
-import { formatDisplayDate as fmtDateValue } from "@/lib/date-format";
+import { formatDisplayDate as fmtDateValue, formatDisplayDateTime, formatDisplayTime } from "@/lib/date-format";
 import { activeLinkedReportIds } from "@/lib/claim-report-link";
 
 import { useState, useEffect, useRef } from "react";
@@ -30,7 +30,7 @@ import { categoryIcon } from "@/lib/category-icons";
 import { clearClientSession } from "@/lib/idle-session";
 import {
   VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VSearchInput, VPaginationFooter,
-  VDropdown, VDropdownItem, VFilterButton, vcolors as c,
+  VDropdown, VDropdownItem, VFilterButton, VEmptyState, vcolors as c,
 } from "@/components/ui/vault";
 
 const adminNav = [
@@ -89,13 +89,6 @@ type LostReport = {
 };
 
 
-function fmtClockValue(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
-}
-
 function VerificationCardFooter({ submittedAt, reviewLabel, reviewedAt, children }: {
   submittedAt?: string;
   reviewLabel?: string;
@@ -103,7 +96,7 @@ function VerificationCardFooter({ submittedAt, reviewLabel, reviewedAt, children
   children?: ReactNode;
 }) {
   const timestamp = reviewLabel ? reviewedAt : submittedAt;
-  const dateTime = timestamp ? [fmtDateValue(timestamp), fmtClockValue(timestamp)].filter(Boolean).join(" · ") : "";
+  const dateTime = timestamp ? formatDisplayDateTime(timestamp) : "";
   return (
     <div className="mt-auto" data-verification-footer>
       <div className="min-h-[84px] px-4 py-3 border-t flex flex-wrap content-center items-center gap-2" style={{ borderColor: c.borderLight, backgroundColor: c.fill }}>
@@ -748,29 +741,49 @@ export default function AdminClaims() {
             </div>
           )}
 
+          {sortedRows.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+              <button type="button"
+                onClick={() => { setKindFilter("CLAIM"); setStatusFilter("PENDING"); setPage(1); }}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors duration-150 hover:bg-[#f8fafc]"
+                style={{ borderColor: c.borderLight, backgroundColor: c.card, color: c.textMuted }}>
+                <FileText size={12} style={{ color: c.primary }} />
+                {sortedRows.filter((row) => row.kind === "CLAIM" && row.claim?.status === "PENDING").length} pending claims
+              </button>
+              <button type="button"
+                onClick={() => { setKindFilter("LOST"); setStatusFilter("PENDING"); setPage(1); }}
+                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors duration-150 hover:bg-[#f8fafc]"
+                style={{ borderColor: c.borderLight, backgroundColor: c.card, color: c.textMuted }}>
+                <PackageSearch size={12} style={{ color: c.primary }} />
+                {sortedRows.filter((row) => row.kind === "LOST" && row.report?.status === "PENDING").length} pending lost reports
+              </button>
+              <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5"
+                style={{ borderColor: c.borderLight, backgroundColor: c.card, color: c.textMuted }}>
+                <Users size={12} style={{ color: c.primary }} />
+                {sortedRows.length} in this view
+              </span>
+            </div>
+          )}
+
           <VContentPanel>
           {loading ? (
             <AdminListSkeleton />
           ) : loadError && claims.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load verification queue</p>
-              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{loadError}</p>
-              <VButton variant="secondary" onClick={() => void Promise.all([fetchClaims(), fetchLostReports()])}>
-                <RotateCcw size={14} /> Try again
-              </VButton>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Search} tone="danger" role="alert" title="Could not load verification queue"
+                description={loadError}
+                action={<VButton variant="secondary" onClick={() => void Promise.all([fetchClaims(), fetchLostReports()])}>
+                  <RotateCcw size={14} /> Try again
+                </VButton>} />
             </VCard>
           ) : sortedRows.length === 0 ? (
             !lostLoaded ? (
-              <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                <Loader2 size={30} className="animate-spin mb-3" style={{ color: c.primary }} />
-                <p className="text-sm font-medium" style={{ color: c.textMuted }}>Loading lost reports…</p>
+              <VCard className="flex flex-1 flex-col">
+                <VEmptyState icon={Search} tone="muted" title="Loading lost reports…" description="Fetching the latest intake queue." />
               </VCard>
             ) : (
-              <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-                <Search size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-                <p className="text-base font-medium" style={{ color: c.textMuted }}>No claims or lost reports found</p>
-                <p className="text-sm mt-1" style={{ color: c.textLight }}>Try adjusting filters.</p>
+              <VCard className="flex flex-1 flex-col">
+                <VEmptyState icon={Search} title="No claims or lost reports found" description="Try adjusting filters." />
               </VCard>
             )
           ) : (
@@ -960,7 +973,17 @@ export default function AdminClaims() {
                   const report = row.report!;
                   const Icon = categoryIcon(report.category);
                   return (
-                    <VCard key={`lost-${report.id}`} className="p-0 w-full min-w-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200" onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}>
+                    <VCard key={`lost-${report.id}`} role="link" tabIndex={0}
+                      aria-label={`View lost report ${report.itemName}`}
+                      className="p-0 w-full min-w-0 flex flex-col h-full overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200"
+                      onClick={() => { setDetailPhotoIndex(0); setLostDetail(report); }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setDetailPhotoIndex(0);
+                          setLostDetail(report);
+                        }
+                      }}>
                       <div className={`${verificationHeaderHeight} shrink-0 px-4 py-3 flex items-start gap-2.5`} data-verification-header>
                         <div className="w-9 h-9 rounded-xl border flex items-center justify-center shrink-0"
                           style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
@@ -1357,7 +1380,8 @@ export default function AdminClaims() {
                   </button>
                 )}
               </div>
-              <button type="button" onClick={() => setCompareClaim(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setCompareClaim(null)} aria-label="Close claim comparison"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <div className="grid grid-cols-2 gap-3 my-4">
               <div className="min-w-0">
@@ -1368,7 +1392,7 @@ export default function AdminClaims() {
                     alt="Found item"
                     label="found item"
                     photoClassName="h-48"
-                    caption={`${fmtDateValue(compareClaim.itemFoundDate)}${compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}`}
+                    caption={`${fmtDateValue(compareClaim.itemFoundDate)}${compareClaim.itemCreatedAt ? ` · ${formatDisplayTime(compareClaim.itemCreatedAt)}` : ""}`}
                   />
                 ) : (
                   <div className="rounded-xl overflow-hidden border" style={{ borderColor: c.border }}>
@@ -1378,7 +1402,7 @@ export default function AdminClaims() {
                     </div>
                     <p className="text-[10px] text-center truncate px-1 py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
                       <time className="vq-date">{fmtDateValue(compareClaim.itemFoundDate)}</time>
-                      {compareClaim.itemCreatedAt ? ` · ${fmtClockValue(compareClaim.itemCreatedAt)}` : ""}
+                      {compareClaim.itemCreatedAt ? ` · ${formatDisplayTime(compareClaim.itemCreatedAt)}` : ""}
                     </p>
                   </div>
                 )}
@@ -1390,7 +1414,7 @@ export default function AdminClaims() {
                     photos={compareClaim.evidenceImageUrls?.length ? compareClaim.evidenceImageUrls : [compareClaim.evidencePreview!]}
                     alt="Evidence"
                     photoClassName="h-48"
-                    caption={`${fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}${(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}`}
+                    caption={`${fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}${(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${formatDisplayTime(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}`}
                   />
                 ) : (
                   <div className="rounded-xl overflow-hidden border-2 border-dashed" style={{ borderColor: c.border }}>
@@ -1400,7 +1424,7 @@ export default function AdminClaims() {
                     </div>
                     <p className="text-[10px] text-center truncate px-1 py-2" style={{ backgroundColor: c.fill, color: c.textMuted }}>
                       <time className="vq-date">{fmtDateValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt || compareClaim.date)}</time>
-                      {(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${fmtClockValue(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}
+                      {(compareClaim.evidenceUploadedAt || compareClaim.createdAt) ? ` · ${formatDisplayTime(compareClaim.evidenceUploadedAt || compareClaim.createdAt)}` : ""}
                     </p>
                   </div>
                 )}

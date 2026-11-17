@@ -790,6 +790,14 @@ test("rate limiting fails closed with 503 and returns 429 with Retry-After", asy
   assert.equal(failing.calls.errors.length, 1);
   assert.ok(!JSON.stringify(failing.calls.errors).includes("student@example.test"));
 
+  const resetUnavailable = await failing.mod.enforceAuthRateLimit(requestDouble({
+    headers: { "x-vercel-forwarded-for": "203.0.113.9" },
+  }), "passwordReset", "student@example.test", {
+    unavailableMessage: "Password reset is temporarily unavailable. Please try again.",
+  });
+  assert.equal(resetUnavailable.status, 503);
+  assert.equal(resetUnavailable.body.error, "Password reset is temporarily unavailable. Please try again.");
+
   const limited = rateLimitHarness({
     env: { VERCEL: "1" },
     rows: [{ attempts: 500, resetAt: new Date(Date.now() + 90_000), retryAfter: 90 }],

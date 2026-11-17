@@ -189,7 +189,7 @@ export default function StudentDashboard() {
                         <div className="w-full h-32 lg:h-40 rounded-xl mb-3 flex items-center justify-center relative overflow-hidden"
                           style={{ background: `linear-gradient(135deg, ${c.borderLight}, ${c.fill})` }}>
                           {item.imageUrl ? (
-                            <img src={item.imageUrl} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                            <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
                           ) : (
                             <>
                               <div className="absolute inset-0 opacity-40" style={{ background: "radial-gradient(circle at 80% 20%, rgba(127,184,181,0.25), transparent 60%)" }} />

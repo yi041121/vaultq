@@ -13,7 +13,7 @@ test("shared dates use day short-month year and preserve date-only values", () =
   }).outputText;
   const exports = {};
   vm.runInNewContext(code, { exports, Date });
-  const { formatDisplayDate, formatDisplayTimestamp } = exports;
+  const { formatDisplayDate, formatDisplayTimestamp, formatDisplayTime, formatDisplayDateTime } = exports;
   assert.equal(formatDisplayDate("2026-11-13"), "13 Nov 2026");
   assert.equal(formatDisplayDate("2026-01-03"), "3 Jan 2026");
   assert.equal(formatDisplayDate("2024-02-29"), "29 Feb 2024");
@@ -23,6 +23,10 @@ test("shared dates use day short-month year and preserve date-only values", () =
   }
   assert.equal(formatDisplayTimestamp("2026-11-13T13:05:00"), "13 Nov 2026 · 1:05 pm");
   assert.equal(formatDisplayTimestamp("invalid"), "—");
+  assert.equal(formatDisplayTime("2026-11-13T13:05:00"), "1:05 pm");
+  assert.equal(formatDisplayTime("invalid"), "");
+  assert.equal(formatDisplayDateTime("2026-11-13T13:05:00"), "13 Nov 2026 · 1:05 pm");
+  assert.equal(formatDisplayDateTime("2026-11-13"), "13 Nov 2026");
 });
 
 function illustrationHarness() {
@@ -93,6 +97,33 @@ test("dropdown option hover does not use React state or event-driven redraws", (
   assert.equal(item.props.onMouseLeave, undefined);
   assert.doesNotMatch(item.props.className, /transition/);
   assert.equal(item.props.style.backgroundColor, "lightblue");
+});
+
+test("empty, filtered and failure states share one layout", () => {
+  const vault = fs.readFileSync(path.join(__dirname, "../src/components/ui/vault.tsx"), "utf8");
+  assert.match(vault, /export function VEmptyState/);
+  assert.match(vault, /data-empty-state/);
+  for (const file of [
+    "src/app/dashboard/student/claims/page.tsx",
+    "src/app/dashboard/student/notifications/page.tsx",
+    "src/app/dashboard/student/report/page.tsx",
+    "src/app/dashboard/student/search/page.tsx",
+    "src/app/dashboard/admin/claims/page.tsx",
+    "src/app/dashboard/admin/items/page.tsx",
+    "src/app/dashboard/admin/lockers/page.tsx",
+    "src/app/dashboard/admin/accounts/page.tsx",
+    "src/app/dashboard/admin/reports/page.tsx",
+  ]) {
+    assert.match(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), /VEmptyState/, `${file} uses the shared state`);
+  }
+});
+
+test("the app shell exposes a skip link and guards horizontal overflow", () => {
+  const shell = fs.readFileSync(path.join(__dirname, "../src/components/student-shell.tsx"), "utf8");
+  assert.match(shell, /href="#main-content"/);
+  assert.match(shell, /Skip to content/);
+  assert.match(shell, /id="main-content"/);
+  assert.match(shell, /overflow-x-clip/);
 });
 
 test("pagination scrolls to the top and avoids the mobile tap/focus flash", () => {

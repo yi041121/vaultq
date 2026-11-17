@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, AlertCircle, Loader2, RefreshCw, CheckCheck } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VCard, VContentPanel, VBadge, VSearchInput, VFilterButton, VPaginationFooter, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VSearchInput, VFilterButton, VPaginationFooter, VButton, VEmptyState, vcolors as c } from "@/components/ui/vault";
 import { FilterPanel } from "@/components/filter-panel";
 import {
   NOTIFICATION_META, relativeTime,
@@ -285,24 +285,17 @@ export default function StudentNotifications() {
               ))}
             </div>
           ) : error ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <AlertCircle size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>Could not load notifications</p>
-              <p className="text-sm mt-1 mb-5" style={{ color: c.textLight }}>{error}</p>
-              <button type="button"
-                className="h-10 px-4 rounded-xl text-sm font-semibold border bg-white cursor-pointer"
-                style={{ borderColor: c.border, color: c.primary }}
-                onClick={() => void load()}>
-                <RefreshCw size={14} className="inline mr-1.5" /> Try again
-              </button>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={AlertCircle} tone="danger" role="alert" title="Could not load notifications"
+                description={error}
+                action={<VButton variant="secondary" onClick={() => void load()}>
+                  <RefreshCw size={14} /> Try again
+                </VButton>} />
             </VCard>
           ) : filtered.length === 0 ? (
-            <VCard className="py-20 text-center flex-1 flex flex-col items-center justify-center">
-              <BellRing size={40} className="mx-auto mb-4" style={{ color: c.textLight }} />
-              <p className="text-base font-medium" style={{ color: c.textMuted }}>No notifications</p>
-              <p className="text-sm mt-1" style={{ color: c.textLight }}>
-                {notifs.length === 0 ? "You're all caught up." : "Nothing matches these filters."}
-              </p>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={BellRing} title="No notifications"
+                description={notifs.length === 0 ? "You're all caught up." : "Nothing matches these filters."} />
             </VCard>
           ) : (
             <div className="flex flex-1 flex-col gap-3">

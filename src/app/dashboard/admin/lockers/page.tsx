@@ -22,7 +22,7 @@ import { useEscapeKey } from "@/lib/use-escape-key";
 import { matchesSearch } from "@/lib/search";
 import { usePageQuickAction } from "@/lib/use-page-quick-action";
 import {
-  VCard, VContentPanel, VButton, VInput, VSearchInput, vcolors as c, font as f,
+  VCard, VContentPanel, VButton, VInput, VSearchInput, VEmptyState, vcolors as c, font as f,
 } from "@/components/ui/vault";
 
 const adminNav = [
@@ -390,7 +390,7 @@ export default function AdminLockers() {
                       aria-label={`View ${l.item.name} photo`}
                       className="absolute inset-0 cursor-pointer group"
                       onClick={() => setViewer({ photos: [l.item!.imageUrl!], index: 0, title: l.item!.name })}>
-                      <img src={l.item.imageUrl} alt={l.item.name} className="w-full h-full object-contain" />
+                      <img src={l.item.imageUrl} alt={l.item.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                       <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors duration-200 flex items-center justify-center">
                         <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 inline-flex items-center gap-1 text-[11px] font-semibold text-white">
                           <Eye size={13} /> View photo
@@ -452,9 +452,9 @@ export default function AdminLockers() {
           </div>
           )}
           {!loading && filtered.length === 0 && (
-            <VCard className="py-16 text-center flex-1 flex flex-col items-center justify-center">
-              <Search size={32} className="mx-auto mb-3" style={{ color: c.textLight }} />
-              <p className="text-sm" style={{ color: c.textMuted }}>No lockers match filter.</p>
+            <VCard className="flex flex-1 flex-col">
+              <VEmptyState icon={Search} title="No lockers match this filter" description="Try another status or clear the search."
+                action={<VButton onClick={() => setManageOpen(true)}><Plus size={14} /> Add locker</VButton>} />
             </VCard>
           )}
           </VContentPanel>
@@ -538,7 +538,7 @@ export default function AdminLockers() {
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Assign to {assignLocker.number}</h3>
-              <button type="button" onClick={() => setAssignLocker(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
+              <button type="button" onClick={() => setAssignLocker(null)} aria-label="Close assign locker dialog" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}><X size={16} /></button>
             </div>
             <p className="text-xs mb-3" style={{ color: c.textMuted }}>Select a found item without locker to assign:</p>
             <div className="space-y-2 mb-4 max-h-60 overflow-auto">
@@ -581,7 +581,7 @@ export default function AdminLockers() {
           <VCard className="relative w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold" style={{ color: c.text }}>Change locker</h3>
-              <button type="button" onClick={() => { if (!changingLocker) setChangeLocker(null); }}
+              <button type="button" onClick={() => { if (!changingLocker) setChangeLocker(null); }} aria-label="Close change locker dialog"
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>

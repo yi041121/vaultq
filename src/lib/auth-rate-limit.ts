@@ -68,7 +68,7 @@ export async function checkAuthRateLimit(request: NextRequest, action: Action, i
   return { allowed: true, retryAfter: 0 };
 }
 
-export async function enforceAuthRateLimit(request: NextRequest, action: Action, identity?: string): Promise<NextResponse | null> {
+export async function enforceAuthRateLimit(request: NextRequest, action: Action, identity?: string, options: { unavailableMessage?: string } = {}): Promise<NextResponse | null> {
   try {
     const result = await checkAuthRateLimit(request, action, identity);
     if (result.allowed) return null;
@@ -78,8 +78,11 @@ export async function enforceAuthRateLimit(request: NextRequest, action: Action,
   } catch {
     // A missing migration, unavailable store or invalid secret must not turn
     // into unlimited login attempts. No raw query/PII/connection details logged.
-    console.error("Authentication rate-limit service unavailable");
-    return NextResponse.json({ success: false, error: "Sign-in service temporarily unavailable. Please try again." }, {
+    console.error(`Authentication rate-limit service unavailable (${action})`);
+    return NextResponse.json({
+      success: false,
+      error: options.unavailableMessage || "Sign-in service temporarily unavailable. Please try again.",
+    }, {
       status: 503, headers: { "Retry-After": "60", "Cache-Control": "no-store" },
     });
   }

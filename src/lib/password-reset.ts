@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 export const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+export const PASSWORD_RESET_UNAVAILABLE_MESSAGE = "Password reset is temporarily unavailable. Please try again.";
 const TOKEN_BYTES = 32;
 
 export function createPasswordResetToken(): string {
