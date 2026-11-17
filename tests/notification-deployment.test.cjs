@@ -5,18 +5,21 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { migrationUrl, assertPendingMigrations, run } = require("../scripts/deploy-notification-migration.cjs");
 const base = ["20260721022019_init", "20261114000000_auth_sessions_and_rate_limits"];
-const target = "20261116000000_notification_outbox";
+const outbox = "20261116000000_notification_outbox";
+const passwordReset = "20261117000000_password_reset_tokens";
 const applied = names => names.map(migration_name => ({ migration_name, finished_at: new Date(), rolled_back_at: null }));
 
-test("production migration guard accepts only the reviewed pending outbox migration", () => {
-  assert.deepEqual(assertPendingMigrations([...base, target], applied(base)), [target]);
-  assert.deepEqual(assertPendingMigrations([...base, target], applied([...base, target])), []);
-  assert.throws(() => assertPendingMigrations([...base, target, "unrelated"], applied(base)), /Unrelated pending/);
+test("production migration guard accepts only reviewed pending migrations", () => {
+  assert.deepEqual(assertPendingMigrations([...base, outbox], applied(base)), [outbox]);
+  assert.deepEqual(assertPendingMigrations([...base, outbox, passwordReset], applied(base)), [outbox, passwordReset]);
+  assert.deepEqual(assertPendingMigrations([...base, outbox, passwordReset], applied([...base, outbox])), [passwordReset]);
+  assert.deepEqual(assertPendingMigrations([...base, outbox, passwordReset], applied([...base, outbox, passwordReset])), []);
+  assert.throws(() => assertPendingMigrations([...base, outbox, passwordReset, "unrelated"], applied(base)), /Unrelated pending/);
 });
 
 test("production migration guard rejects missing history and unfinished migrations without resetting anything", () => {
-  assert.throws(() => assertPendingMigrations([...base, target], []), /history missing/);
-  assert.throws(() => assertPendingMigrations([...base, target], [...applied(base), { migration_name: target, finished_at: null, rolled_back_at: null }]), /unfinished migration/);
+  assert.throws(() => assertPendingMigrations([...base, outbox, passwordReset], []), /history missing/);
+  assert.throws(() => assertPendingMigrations([...base, outbox, passwordReset], [...applied(base), { migration_name: outbox, finished_at: null, rolled_back_at: null }]), /unfinished migration/);
 });
 
 test("migration connection selects the explicit direct URL or derives only a Neon direct endpoint", () => {

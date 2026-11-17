@@ -6,7 +6,10 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { Client } = require("pg");
 
-const target = "20261116000000_notification_outbox";
+const reviewedMigrations = new Set([
+  "20261116000000_notification_outbox",
+  "20261117000000_password_reset_tokens",
+]);
 const root = path.join(__dirname, "..");
 
 function migrationUrl(env) {
@@ -27,13 +30,13 @@ function assertPendingMigrations(known, history) {
     throw new Error("Expected VaultQ migration history missing; refusing automatic deployment migration");
   }
   const pending = known.filter(name => !applied.has(name));
-  if (pending.some(name => name !== target)) throw new Error("Unrelated pending migrations require manual review");
+  if (pending.some(name => !reviewedMigrations.has(name))) throw new Error("Unrelated pending migrations require manual review");
   return pending;
 }
 
 async function run(env = process.env) {
   if (env.VERCEL_ENV !== "production") {
-    console.log("Production notification migration skipped outside production deployment");
+    console.log("Production database migration skipped outside production deployment");
     return;
   }
   const connectionString = migrationUrl(env);
@@ -44,16 +47,17 @@ async function run(env = process.env) {
     const known = fs.readdirSync(path.join(root, "prisma/migrations"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name);
     const pending = assertPendingMigrations(known, history.rows);
     if (pending.length) {
-      console.log("Applying reviewed additive notification-outbox migration");
+      console.log("Applying reviewed additive database migrations");
       const output = execFileSync(process.execPath, [path.join(root, "node_modules/prisma/build/index.js"), "migrate", "deploy"], {
         cwd: root, env: { ...env, DATABASE_URL: connectionString }, encoding: "utf8", timeout: 120_000,
         stdio: ["ignore", "pipe", "pipe"],
       });
       console.log(output.replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted]"));
     }
-    // Validate the required columns, not just that a similarly named table exists.
+    // Validate the required columns, not just that similarly named tables exist.
     await client.query('SELECT id, dedupe_key, kind, payload, attempts, available_at, completed_at, failed_at, last_error, created_at FROM "notification_jobs" LIMIT 0');
-    console.log("Notification-outbox schema verified; application build may proceed");
+    await client.query('SELECT id, user_id, token_hash, expires_at, used_at, created_at FROM "password_reset_tokens" LIMIT 0');
+    console.log("Notification-outbox and password-reset schemas verified; application build may proceed");
   } finally { await client.end(); }
 }
 
@@ -61,7 +65,7 @@ module.exports = { migrationUrl, assertPendingMigrations, run };
 if (require.main === module) {
   run().catch(() => {
     // Do not print raw driver errors, CLI buffers or connection strings.
-    console.error("Production notification migration failed. Deployment stopped; existing production remains live. Review migration history and connectivity without resetting the database.");
+    console.error("Production database migration failed. Deployment stopped; existing production remains live. Review migration history and connectivity without resetting the database.");
     process.exitCode = 1;
   });
 }

@@ -47,10 +47,11 @@ This is for notifications displayed inside VaultQ, not email or SMS delivery.
    `scripts/deploy-notification-migration.cjs` before `npm run build`. It uses
    the deployed database secret, selects a direct Neon connection, verifies the
    existing migration history and refuses unrelated/unfinished migrations.
-   Prisma applies only the reviewed pending outbox migration, then the script
-   verifies the required table columns. A failed migration stops deployment;
-   the existing production application remains live. The old app ignores the
-   new table. Local/preview builds do not run this production migration step.
+   Prisma applies only the reviewed pending migrations (the notification outbox
+   and password-reset token table), then the script verifies the required table
+   columns. A failed migration stops deployment; the existing production
+   application remains live. The old app ignores the new tables. Local/preview
+   builds do not run this production migration step.
 3. Configure a private, environment-specific **CRON_SECRET** with at least 32
    random characters. Never use a `NEXT_PUBLIC_` variable or put it in a URL.
 4. `vercel.json` schedules `GET /api/internal/notifications/drain` daily using
