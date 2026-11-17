@@ -47,6 +47,13 @@ test("reset links use the canonical APP_URL when configured", () => {
     reset.buildPasswordResetUrl("https://vaultq-fawn.vercel.app", "abc_DEF-1234567890"),
     "https://vaultq-fawn.vercel.app/reset-password?token=abc_DEF-1234567890",
   );
+  process.env.APP_URL = "not a valid url";
+  assert.equal(
+    reset.buildPasswordResetUrl("https://vaultq-fawn.vercel.app", "abc_DEF-1234567890"),
+    "https://vaultq-fawn.vercel.app/reset-password?token=abc_DEF-1234567890",
+    "a malformed APP_URL falls back to the request origin",
+  );
+  delete process.env.APP_URL;
 });
 
 test("email content includes the one-time link, expiry and escaped greeting", () => {
@@ -141,6 +148,9 @@ test("reset-password consumes the token once, updates the hash and revokes sessi
   assert.match(route, /tx\.authSession\.deleteMany\(\{ where: \{ userId: record\.userId \} \}\)/);
   assert.match(route, /clearSessionCookies\(response\)/);
   assert.match(route, /Cache-Control": "no-store/);
+  assert.match(route, /PASSWORD_RESET_COOKIE/);
+  assert.match(route, /readResetToken\(request, input\.token\)/);
+  assert.match(route, /clearPasswordResetCookie\(response\)/);
   assert.equal((route.match(/PASSWORD_RESET_UNAVAILABLE_MESSAGE/g) ?? []).length, 3,
     "both reset checks use the reset-specific unavailable message");
 });
@@ -150,9 +160,14 @@ test("forgot and reset pages are wired to the auth APIs", () => {
   const resetPage = read("src/app/(auth)/reset-password/page.tsx");
   const login = read("src/app/(auth)/login/page.tsx");
   assert.match(login, /href="\/forgot-password"/);
-  assert.match(forgot, /\/api\/auth\/forgot-password/);
-  assert.match(forgot, /Check your email/);
-  assert.match(resetPage, /\/api\/auth\/reset-password\?token=/);
+  assert.match(forgot, /\/api\/auth\/self-reset/);
+  assert.match(forgot, /Student card barcode/);
+  assert.doesNotMatch(forgot, /type="password"/, "password fields appear only after verification");
+  assert.doesNotMatch(forgot, /Full name/);
+  assert.doesNotMatch(forgot, /Verify with Google/);
+  assert.match(resetPage, /\/api\/auth\/reset-password\$\{query\}/);
+  assert.match(resetPage, /Choose a new password/);
+  assert.match(resetPage, /Verify your account again/);
   assert.match(resetPage, /Passwords do not match/);
   assert.match(resetPage, /Password updated/);
   assert.match(resetPage, /response\.status === 503/);

@@ -214,9 +214,14 @@ export default function AdminAccounts() {
       const res = await fetch(`/api/accounts/${encodeURIComponent(resetTarget.id)}/password-reset`, {
         method: "POST",
         headers: authHeaders(),
+        cache: "no-store",
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.success) throw new Error(data?.error || "Could not generate a reset link");
+      if (res.status === 401) throw new Error("Your admin session expired. Sign in again.");
+      if (res.status === 404) throw new Error("Account not found. Refresh the Accounts page.");
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Could not generate a reset link. Please try again.");
+      }
       setResetLink(data.data);
     } catch (e) {
       setResetError(e instanceof Error ? e.message : "Could not generate a reset link");

@@ -23,7 +23,14 @@ export function isPlausibleResetToken(token: unknown): token is string {
 
 export function buildPasswordResetUrl(origin: string, token: string): string {
   const configured = process.env.APP_URL?.trim();
-  const base = configured ? new URL(configured).origin : new URL(origin).origin;
+  let base = new URL(origin).origin;
+  if (configured) {
+    try {
+      base = new URL(configured).origin;
+    } catch {
+      // A malformed APP_URL must not break link generation; use the request origin.
+    }
+  }
   const url = new URL("/reset-password", base);
   url.searchParams.set("token", token);
   return url.toString();

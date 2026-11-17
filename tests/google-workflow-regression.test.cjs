@@ -23,21 +23,35 @@ function load(file, deps = {}, globals = {}) {
 }
 
 function harness(options = {}) {
-  const calls = { fetch: [], lookup: [], sessions: [] };
+  const calls = { fetch: [], lookup: [], sessions: [], resets: { deleted: 0, created: [] } };
   const origin = "https://vaultq.example";
   const cookies = load("src/lib/session-cookie.ts");
+  const prisma = {
+    user: { findFirst: async query => {
+      calls.lookup.push(query);
+      if (options.databaseFailure) throw new Error("database unavailable");
+      return options.newUser ? null : { id: "student", role: "STUDENT", isActive: !options.disabled };
+    } },
+    passwordResetToken: {
+      deleteMany: async () => { calls.resets.deleted += 1; },
+      create: async ({ data }) => { calls.resets.created.push(data); },
+    },
+    $transaction: async (operation) => operation(prisma),
+  };
   const deps = {
     "next/server": server,
     "@/lib/request-origin": { getRequestOrigin: () => origin },
     "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => options.limited ? server.NextResponse.json({ success: false }, { status: 429 }) : null },
-    "@/lib/prisma": { prisma: { user: { findFirst: async query => {
-      calls.lookup.push(query);
-      if (options.databaseFailure) throw new Error("database unavailable");
-      return options.newUser ? null : { id: "student", role: "STUDENT", isActive: !options.disabled };
-    } } } },
+    "@/lib/prisma": { prisma },
     "@/lib/auth": { createAuthSession: async user => { calls.sessions.push(user); return "test-session-token"; } },
     "@/lib/db-retry": { withDbRetry: fn => fn() },
     "@/lib/session-cookie": cookies,
+    "@/lib/password-reset": {
+      createPasswordResetToken: () => "reset-token",
+      hashPasswordResetToken: token => `hash:${token}`,
+      passwordResetExpiry: () => new Date("2026-11-17T12:30:00.000Z"),
+      buildPasswordResetUrl: (requestOrigin, token) => `${requestOrigin}/reset-password?token=${token}`,
+    },
   };
   const callback = load("src/app/api/auth/google/callback/route.ts", deps, {
     fetch: async (url, init) => {
@@ -157,4 +171,33 @@ test("successful Google callback sets a secure HttpOnly session without URL cred
   assert.equal(cookie.sameSite, "lax");
   assert.equal(cookie.value, "test-session-token");
   for (const name of ["g_state", "g_intent", "g_barcode"]) assert.equal(response.cookies.get(name).maxAge, 0);
+});
+
+test("Google-verified reset creates a one-time token without a session", async () => {
+  const h = harness();
+  const response = await h.callback.GET(h.request(undefined, "g_state=valid-state; g_intent=reset"));
+  const target = new URL(response.headers.get("location"));
+  assert.equal(target.pathname, "/reset-password");
+  assert.equal(target.searchParams.get("token"), "reset-token");
+  assert.equal(h.calls.sessions.length, 0);
+  assert.equal(h.calls.resets.deleted, 1);
+  assert.equal(h.calls.resets.created.length, 1);
+  assert.equal(h.calls.resets.created[0].userId, "student");
+  assert.equal(h.calls.resets.created[0].tokenHash, "hash:reset-token");
+  assert.equal(response.cookies.get("vq_session"), undefined);
+  for (const name of ["g_state", "g_intent", "g_barcode"]) assert.equal(response.cookies.get(name).maxAge, 0);
+});
+
+test("Google-verified reset refuses unknown or disabled accounts", async () => {
+  const unknown = harness({ newUser: true });
+  const unknownResponse = await unknown.callback.GET(unknown.request(undefined, "g_state=valid-state; g_intent=reset"));
+  assert.match(new URL(unknownResponse.headers.get("location")).searchParams.get("googleError"), /No VaultQ account/);
+  assert.equal(unknown.calls.resets.created.length, 0);
+  assert.equal(unknown.calls.sessions.length, 0);
+
+  const disabled = harness({ disabled: true });
+  const disabledResponse = await disabled.callback.GET(disabled.request(undefined, "g_state=valid-state; g_intent=reset"));
+  assert.match(new URL(disabledResponse.headers.get("location")).searchParams.get("googleError"), /Account disabled/);
+  assert.equal(disabled.calls.resets.created.length, 0);
+  assert.equal(disabled.calls.sessions.length, 0);
 });

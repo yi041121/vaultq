@@ -19,6 +19,32 @@ export function clearSessionCookies(response: NextResponse) {
   response.headers.set("Cache-Control", "private, no-store");
 }
 
+// The self-service verification step stores its one-time reset token in an
+// HttpOnly cookie instead of a URL. The token is therefore never visible in
+// the address bar, browser history or referrer headers.
+export const PASSWORD_RESET_COOKIE = "vq_reset";
+const PASSWORD_RESET_COOKIE_MAX_AGE = 30 * 60;
+
+export function setPasswordResetCookie(response: NextResponse, token: string) {
+  response.cookies.set(PASSWORD_RESET_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: PASSWORD_RESET_COOKIE_MAX_AGE,
+  });
+}
+
+export function clearPasswordResetCookie(response: NextResponse) {
+  response.cookies.set(PASSWORD_RESET_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
 /** Mutating auth endpoints reject cross-origin requests, including subdomains. */
 export function isSameOriginAuthRequest(request: NextRequest): boolean {
   const origin = request.headers.get("origin");

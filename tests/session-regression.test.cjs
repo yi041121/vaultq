@@ -189,6 +189,12 @@ function googleHarness({ databaseFails = false, missingUser = false, email = "st
       },
     },
     "@/lib/auth-rate-limit": { enforceAuthRateLimit: async () => null },
+    "@/lib/password-reset": {
+      createPasswordResetToken: () => "reset-token",
+      hashPasswordResetToken: token => `hash:${token}`,
+      passwordResetExpiry: () => new Date("2026-11-17T12:30:00.000Z"),
+      buildPasswordResetUrl: (origin, token) => `${origin}/reset-password?token=${token}`,
+    },
   }, {
     process: { env: { GOOGLE_CLIENT_ID: "test-client", GOOGLE_CLIENT_SECRET: "test-secret" } },
     console: { error: (...args) => logs.push(args) },

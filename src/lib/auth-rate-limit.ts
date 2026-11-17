@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "./prisma";
 import { getJwtSecret } from "./auth-secrets";
 
-type Action = "login" | "register" | "lookup" | "google" | "barcode" | "report" | "claim" | "suggestion" | "passwordReset";
+type Action = "login" | "register" | "lookup" | "google" | "barcode" | "report" | "claim" | "suggestion" | "passwordReset" | "selfReset";
 type Bucket = { scope: string; identity: string; limit: number; seconds: number };
 
 export function authClientIdentity(request: NextRequest): string {
@@ -24,6 +24,7 @@ function buckets(action: Action, ip: string, identity?: string): Bucket[] {
     login: { limit: 100, seconds: 900 }, register: { limit: 20, seconds: 3600 },
     lookup: { limit: 60, seconds: 60 }, google: { limit: 30, seconds: 300 }, barcode: { limit: 10, seconds: 300 },
     passwordReset: { limit: 10, seconds: 900 },
+    selfReset: { limit: 10, seconds: 900 },
     report: { limit: 2000, seconds: 3600 }, claim: { limit: 2000, seconds: 3600 }, suggestion: { limit: 6000, seconds: 60 },
   };
   const result: Bucket[] = [{ scope: `${action}:ip`, identity: ip, ...limits[action] }];
@@ -33,6 +34,14 @@ function buckets(action: Action, ip: string, identity?: string): Bucket[] {
   }
   if (action === "passwordReset" && identity) {
     result.push({ scope: "password-reset:account-ip", identity: `${identity}:${ip}`, limit: 5, seconds: 900 });
+  }
+  if (action === "selfReset" && identity) {
+    // Recovery answers are guessable, so cap attempts per account as well as
+    // per IP. Changing networks does not reset the account budget, and the
+    // daily cap stops slow guessing that waits out the short window.
+    result.push({ scope: "self-reset:account", identity, limit: 5, seconds: 900 });
+    result.push({ scope: "self-reset:account-ip", identity: `${identity}:${ip}`, limit: 5, seconds: 900 });
+    result.push({ scope: "self-reset:account-day", identity, limit: 20, seconds: 86400 });
   }
   if ((action === "report" || action === "claim" || action === "suggestion") && identity) {
     // Account limits survive IP changes; generous IP caps avoid penalising a

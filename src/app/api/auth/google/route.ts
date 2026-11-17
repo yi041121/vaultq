@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
   const state = crypto.randomUUID();
   // Remember which entrance the user used (signup vs login) so the callback
   // can behave differently for already-registered accounts
-  const intent = request.nextUrl.searchParams.get("intent") === "signup" ? "signup" : "login";
+  const rawIntent = request.nextUrl.searchParams.get("intent");
+  const intent = rawIntent === "signup" || rawIntent === "reset" ? rawIntent : "login";
   // Carry a detected card barcode through the OAuth round-trip so the sign-up
   // form still has it when the user returns from Google.
   const bcParam = request.nextUrl.searchParams.get("bc") || "";

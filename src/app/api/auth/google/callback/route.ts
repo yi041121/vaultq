@@ -5,6 +5,12 @@ import { withDbRetry } from "@/lib/db-retry";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { setSessionCookies } from "@/lib/session-cookie";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
+import {
+  buildPasswordResetUrl,
+  createPasswordResetToken,
+  hashPasswordResetToken,
+  passwordResetExpiry,
+} from "@/lib/password-reset";
 
 const CLIENT_ID = process.env["GOOGLE_CLIENT_ID"];
 const CLIENT_SECRET = process.env["GOOGLE_CLIENT_SECRET"];
@@ -23,7 +29,8 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const cookieState = request.cookies.get("g_state")?.value;
-  const intent = request.cookies.get("g_intent")?.value === "signup" ? "signup" : "login";
+  const rawIntent = request.cookies.get("g_intent")?.value;
+  const intent = rawIntent === "signup" || rawIntent === "reset" ? rawIntent : "login";
   const carriedBarcode = request.cookies.get("g_barcode")?.value || "";
 
   const finish = (response: NextResponse) => {
@@ -110,6 +117,9 @@ export async function GET(request: NextRequest) {
       })
     );
     if (!user) {
+      if (intent === "reset") {
+        return fail("No VaultQ account uses this Google email. Contact the Lost & Found office.");
+      }
       if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
         return fail(`Only @${ALLOWED_DOMAIN} accounts can register with Google.`);
       }
@@ -128,6 +138,21 @@ export async function GET(request: NextRequest) {
       return fail("Account already registered. Please sign in.");
     }
     if (!user.isActive) return fail("Account disabled. Contact admin.");
+
+    // A Google-verified campus identity can create a one-time reset token
+    // without email delivery. The reset page still enforces the normal token
+    // expiry, single-use and session-revocation rules.
+    if (intent === "reset") {
+      stage = "reset_link";
+      const resetToken = createPasswordResetToken();
+      const tokenHash = hashPasswordResetToken(resetToken);
+      const expiresAt = passwordResetExpiry();
+      await withDbRetry(() => prisma.$transaction(async (tx) => {
+        await tx.passwordResetToken.deleteMany({ where: { userId: user.id } });
+        await tx.passwordResetToken.create({ data: { userId: user.id, tokenHash, expiresAt } });
+      }));
+      return finish(NextResponse.redirect(buildPasswordResetUrl(origin, resetToken)));
+    }
 
     stage = "session_creation";
     const token = await createAuthSession(user);
@@ -151,6 +176,9 @@ export async function GET(request: NextRequest) {
     });
     if (stage === "account_lookup") {
       return fail("Account service unavailable. Please try again.");
+    }
+    if (stage === "reset_link") {
+      return fail("Could not prepare the password reset. Please try again.");
     }
     if (stage === "token_exchange" || stage === "google_profile") {
       return fail("Could not reach Google. Please try again.");

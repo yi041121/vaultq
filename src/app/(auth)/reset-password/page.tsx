@@ -19,19 +19,17 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("token") || "";
-    // The token lives only in the URL, so it is read after hydration.
+    // A link token is in the URL; the self-service flow keeps its token in an
+    // HttpOnly cookie, so both cases are validated by the same endpoint.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setToken(value);
-    if (!value) {
-      setState("invalid");
-      return;
-    }
     let cancelled = false;
     async function check() {
       if (cancelled) return;
       setState("checking");
       try {
-        const response = await fetch(`/api/auth/reset-password?token=${encodeURIComponent(value)}`, {
+        const query = value ? `?token=${encodeURIComponent(value)}` : "";
+        const response = await fetch(`/api/auth/reset-password${query}`, {
           headers: { "X-VaultQ-Request": "1" }, cache: "no-store",
         });
         const data = await response.json().catch(() => null);
@@ -66,7 +64,7 @@ export default function ResetPasswordPage() {
       const response = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-VaultQ-Request": "1" },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify(token ? { token, password } : { password }),
       });
       const data = await response.json().catch(() => null);
       if (response.status === 503) {
@@ -99,7 +97,7 @@ export default function ResetPasswordPage() {
         </div>
 
         {state === "checking" && (
-          <p role="status" className="py-8 text-center text-sm" style={{ color: c.textMuted }}>Checking your reset link…</p>
+          <p role="status" className="py-8 text-center text-sm" style={{ color: c.textMuted }}>Checking your reset request…</p>
         )}
 
         {state === "invalid" && (
@@ -107,12 +105,12 @@ export default function ResetPasswordPage() {
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: "#fef2f2" }}>
               <ShieldAlert size={24} style={{ color: c.danger }} />
             </div>
-            <p className="text-sm font-medium" style={{ color: c.text }}>This reset link is invalid or expired</p>
+            <p className="text-sm font-medium" style={{ color: c.text }}>This reset request is invalid or expired</p>
             <p className="mt-1 text-xs leading-relaxed" style={{ color: c.textMuted }}>
-              Reset links expire after 30 minutes and can only be used once.
+              Reset requests expire after 30 minutes and can only be used once.
             </p>
             <Link href="/forgot-password" className="mt-4 inline-flex text-sm font-semibold hover:opacity-80" style={{ color: c.primary }}>
-              Request a new link
+              Verify your account again
             </Link>
           </div>
         )}
@@ -124,7 +122,7 @@ export default function ResetPasswordPage() {
             </div>
             <p className="text-sm font-medium" style={{ color: c.text }}>Password reset is temporarily unavailable</p>
             <p className="mt-1 text-xs leading-relaxed" style={{ color: c.textMuted }}>
-              This is not a problem with your reset link. Please wait a moment and try again.
+              This is not a problem with your account details. Please wait a moment and try again.
             </p>
             <VButton type="button" className="mt-4" onClick={() => setCheckAttempt((attempt) => attempt + 1)}>
               <RefreshCw size={14} /> Try again
