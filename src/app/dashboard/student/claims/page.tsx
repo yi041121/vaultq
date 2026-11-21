@@ -213,8 +213,11 @@ export default function StudentClaims() {
     if (!token) return;
     setResubmitting(true);
     try {
+      // Evidence is stored as a data URL, so a retained photo is neither a new
+      // File nor an http(s) URL. Keeping only http(s) silently dropped every
+      // existing photo and the API rejected the resubmit as having none.
       const keepImages = resubmitPhotos
-        .filter((photo) => !photo.file && /^https?:/i.test(photo.preview))
+        .filter((photo) => !photo.file && /^(?:data:image\/|https?:)/i.test(photo.preview))
         .map((photo) => photo.preview);
       if (!resubmitPhotos.length && !resubmitNoPhoto) {
         showCenteredMessage("error", "Please keep or add at least one photo");
