@@ -1049,6 +1049,8 @@ function StudentReportContent() {
                       key={report.id}
                       report={report}
                       onViewReport={openReportDetail}
+                      onEditReport={openEdit}
+                      onWithdrawReport={setWithdrawTarget}
                       onCheckMatches={checkReportMatches}
                       onViewClaims={() => router.push("/dashboard/student/claims")}
                     />

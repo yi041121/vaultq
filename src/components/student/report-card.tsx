@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, Eye, FileText, Sparkles } from "lucide-react";
+import { CircleAlert, Eye, FileText, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { formatDisplayDate, formatDisplayTimestamp } from "@/lib/date-format";
 import { CATEGORY_ICONS } from "@/lib/category-icons";
 import type { UserReport } from "@/lib/report-mapper";
@@ -23,6 +23,8 @@ function fmtReviewed(value: string | null) {
 export interface ReportCardProps {
   report: UserReport;
   onViewReport: (report: UserReport) => void;
+  onEditReport: (report: UserReport) => void;
+  onWithdrawReport: (report: UserReport) => void;
   onCheckMatches: (report: UserReport) => void;
   onViewClaims: () => void;
 }
@@ -31,11 +33,19 @@ export interface ReportCardProps {
  * One card in My Reports.
  *
  * A glance is enough to recognise the report: photo, item, when/where,
- * category, status and a two-line description. Reference, photo gallery,
- * admin guidance and the edit/withdraw actions live in "View details", so
- * every card keeps the same shape in a mixed lost/found grid.
+ * category, status and a two-line description. Pending reports expose Edit
+ * and Withdraw on the card itself; once a report has been reviewed it becomes
+ * read-only, so the card offers "View details" instead. Reference, photo
+ * gallery and admin guidance stay in the details dialog.
  */
-export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims }: ReportCardProps) {
+export function ReportCard({
+  report,
+  onViewReport,
+  onEditReport,
+  onWithdrawReport,
+  onCheckMatches,
+  onViewClaims,
+}: ReportCardProps) {
   const Icon = CATEGORY_ICONS[report.category] || FileText;
   const thumb = report.images[0] || report.item?.imageUrl || null;
   const pending = report.status === "PENDING";
@@ -99,14 +109,27 @@ export function ReportCard({ report, onViewReport, onCheckMatches, onViewClaims 
               <Sparkles size={13} /> Check matches
             </VButton>
           )}
-          {report.type === "LOST" && (report.status === "MATCHED" || report.status === "CLOSED") && (
-            <VButton variant="secondary" size="sm" onClick={onViewClaims}>
-              My claims
-            </VButton>
+          {pending ? (
+            <>
+              <VButton size="sm" onClick={() => onEditReport(report)}>
+                <Pencil size={13} /> Edit
+              </VButton>
+              <VButton variant="danger" size="sm" onClick={() => onWithdrawReport(report)}>
+                <Trash2 size={13} /> Withdraw
+              </VButton>
+            </>
+          ) : (
+            <>
+              {report.type === "LOST" && (report.status === "MATCHED" || report.status === "CLOSED") && (
+                <VButton variant="secondary" size="sm" onClick={onViewClaims}>
+                  My claims
+                </VButton>
+              )}
+              <VButton variant="secondary" size="sm" onClick={() => onViewReport(report)}>
+                <Eye size={13} /> View details
+              </VButton>
+            </>
           )}
-          <VButton variant="secondary" size="sm" onClick={() => onViewReport(report)}>
-            <Eye size={13} /> View details
-          </VButton>
         </div>
       </div>
     </VCard>
