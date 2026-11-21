@@ -1145,6 +1145,10 @@ function StudentReportContent() {
                     </div>
                   )}
 
+                  <p className="mb-4 text-[11px]" style={{ color: c.textLight }}>
+                    Fields marked <span style={{ color: c.danger }} aria-hidden="true">*</span> are required.
+                  </p>
+
                   <div className="mb-5">
                     <div className="space-y-3">
                       <div>
@@ -1529,16 +1533,24 @@ function StudentReportContent() {
               </button>
             </div>
 
+            <p className="mb-3 text-[11px]" style={{ color: c.textLight }}>
+              Fields marked <span style={{ color: c.danger }} aria-hidden="true">*</span> are required.
+            </p>
+
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Item name</label>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+                  Item name <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                </label>
                 <VInput value={editForm.itemName} maxLength={100}
                   onChange={(e) => setEditForm({ ...editForm, itemName: e.target.value })} />
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Category</label>
+                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+                    Category <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                  </label>
                   <VDropdown open={editCategoryOpen} onOpenChange={setEditCategoryOpen} width="w-full"
                     trigger={
                       <button type="button"
@@ -1573,7 +1585,9 @@ function StudentReportContent() {
                 </div>
 
                 <div className="relative">
-                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Date</label>
+                  <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+                    Date <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                  </label>
                   <VFilterButton className="w-full justify-between" style={{ height: 44, fontWeight: 400, color: editForm.date ? c.text : c.textMuted, boxShadow: "0 1px 3px rgba(0,0,0,0.02)" }}
                     onClick={(e) => { setEditDateAnchor(e.currentTarget); setEditDateOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
@@ -1603,7 +1617,9 @@ function StudentReportContent() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>Description</label>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: c.text }}>
+                  Description <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                </label>
                 <VTextarea rows={4} value={editForm.description} maxLength={2000}
                   onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
               </div>
