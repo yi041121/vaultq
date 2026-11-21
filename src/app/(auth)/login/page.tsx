@@ -44,7 +44,13 @@ export default function LoginPage() {
             clearStudentCache();
             storeBrowserSession(session);
             markSessionActivity();
-            router.replace(session.user.role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
+            router.replace(
+              session.user.mustChangePassword
+                ? "/change-password"
+                : session.user.role === "ADMIN"
+                  ? "/dashboard/admin"
+                  : "/dashboard/student",
+            );
             return;
           }
         }
@@ -149,7 +155,12 @@ export default function LoginPage() {
       const role = data.data.user.role;
       // The login response already set the HttpOnly session cookie and the
       // non-HttpOnly vq_role display hint. Do not overwrite them from script.
-      const target = role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student";
+      // An account holding a temporary password must replace it first.
+      const target = data.data.user.mustChangePassword
+        ? "/change-password"
+        : role === "ADMIN"
+          ? "/dashboard/admin"
+          : "/dashboard/student";
       // Show centered success popup on this page, then redirect quickly —
       // rendered here so it never appears again on the dashboard.
       // Keep loading=true so the button stays in "Signing in..." state.

@@ -6,7 +6,14 @@ export const SESSION_EXPIRY_KEY = "vq_session_expires";
 export interface PublicBrowserSession {
   sessionKey: string;
   expiresAt: number;
-  user: { id: string; name: string; email: string; role: "ADMIN" | "STUDENT"; cardBarcode: string | null };
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: "ADMIN" | "STUDENT";
+    cardBarcode: string | null;
+    mustChangePassword?: boolean;
+  };
 }
 
 export function getBrowserSessionKey(): string | null {

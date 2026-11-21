@@ -48,7 +48,14 @@ export async function POST(request: NextRequest) {
     const res = NextResponse.json({
       success: true,
       data: {
-        user: { id: user.id, name: user.name, email: user.email, role: user.role, cardBarcode: user.cardBarcode },
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          cardBarcode: user.cardBarcode,
+          mustChangePassword: user.mustChangePassword,
+        },
         sessionKey: claims.jti,
         expiresAt: claims.exp * 1000,
       },

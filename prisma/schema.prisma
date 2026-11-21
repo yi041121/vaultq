@@ -54,6 +54,9 @@ model User{
   cardBarcode   String?   @unique
   role          Role      @default(STUDENT)
   isActive      Boolean   @default(true) @map("is_active")
+  // Set when an administrator issues a temporary password. The account can
+  // sign in but must replace the password before using any other feature.
+  mustChangePassword Boolean @default(false) @map("must_change_password")
   createdAt     DateTime  @default(now()) @map("created_at")
 
   reports Report[] @relation("ReportAuthor")

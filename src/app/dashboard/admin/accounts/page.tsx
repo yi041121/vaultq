@@ -1,16 +1,15 @@
 "use client";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
-import { formatDisplayTimestamp } from "@/lib/date-format";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch, Upload, Loader2, KeyRound, Copy, Check } from "lucide-react";
+import { Package, Grid3X3, Lock, FileText, Users, Search, Plus, X, Barcode, Mail, GraduationCap, Trash2, AlertTriangle, SquarePen, PackageSearch, Upload, Loader2, KeyRound, Eye, EyeOff } from "lucide-react";
 import { showCenteredMessage } from "@/components/centered-message";
 import { decodeBarcodeFromImage } from "@/lib/barcode-decode";
 import { StudentShell } from "@/components/student-shell";
 import { AdminStatusFilters, FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { AdminListSkeleton } from "@/components/admin-list-skeleton";
 import { fetchAdminData, invalidateAdminData, registerAdminCacheReset } from "@/lib/admin-data";
-import { VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VSearchInput, VPaginationFooter, VEmptyState, vcolors as c } from "@/components/ui/vault";
+import { VCard, VContentPanel, VBadge, VButton, VInput, VSearchInput, VPaginationFooter, VEmptyState, vcolors as c } from "@/components/ui/vault";
 import { getPersonNameError, sanitizePersonNameInput, NAME_MAX_LENGTH } from "@/lib/person-name";
 import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } from "@/lib/student-id";
 import { matchesSearch } from "@/lib/search";
@@ -75,10 +74,12 @@ export default function AdminAccounts() {
   const [deleting, setDeleting] = useState(false);
 
   const [resetTarget, setResetTarget] = useState<Student | null>(null);
-  const [resetLink, setResetLink] = useState<{ url: string; expiresAt: string; name: string; email: string } | null>(null);
+  const [tempPassword, setTempPassword] = useState("");
+  const [tempConfirm, setTempConfirm] = useState("");
+  const [tempShow, setTempShow] = useState(false);
+  const [tempDone, setTempDone] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
-  const [resetCopied, setResetCopied] = useState(false);
 
   const [editTarget, setEditTarget] = useState<Student | null>(null);
 
@@ -193,51 +194,54 @@ export default function AdminAccounts() {
 
   function openReset(st: Student) {
     setResetTarget(st);
-    setResetLink(null);
+    setTempPassword("");
+    setTempConfirm("");
+    setTempShow(false);
+    setTempDone(false);
     setResetError(null);
-    setResetCopied(false);
   }
 
   function closeReset() {
     if (resetBusy) return;
     setResetTarget(null);
-    setResetLink(null);
+    setTempPassword("");
+    setTempConfirm("");
+    setTempShow(false);
+    setTempDone(false);
     setResetError(null);
-    setResetCopied(false);
   }
 
-  async function handleGenerateReset() {
+  async function handleSetTemporaryPassword() {
     if (!resetTarget || resetBusy) return;
+    if (tempPassword.length < 8) {
+      setResetError("Use at least 8 characters.");
+      return;
+    }
+    if (tempPassword !== tempConfirm) {
+      setResetError("The two passwords do not match.");
+      return;
+    }
     setResetBusy(true);
     setResetError(null);
     try {
-      const res = await fetch(`/api/accounts/${encodeURIComponent(resetTarget.id)}/password-reset`, {
+      const res = await fetch(`/api/accounts/${encodeURIComponent(resetTarget.id)}/temporary-password`, {
         method: "POST",
-        headers: authHeaders(),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ password: tempPassword }),
         cache: "no-store",
       });
       if (res.status === 401) throw new Error("Your admin session expired. Sign in again.");
       if (res.status === 404) throw new Error("Account not found. Refresh the Accounts page.");
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || "Could not generate a reset link. Please try again.");
+        throw new Error(data?.error || "Could not set the temporary password.");
       }
-      setResetLink(data.data);
+      invalidateAdminData();
+      setTempDone(true);
     } catch (e) {
-      setResetError(e instanceof Error ? e.message : "Could not generate a reset link");
+      setResetError(e instanceof Error ? e.message : "Could not set the temporary password");
     } finally {
       setResetBusy(false);
-    }
-  }
-
-  async function copyResetLink() {
-    if (!resetLink?.url) return;
-    try {
-      await navigator.clipboard.writeText(resetLink.url);
-      setResetCopied(true);
-      showCenteredMessage("success", "Reset link copied");
-    } catch {
-      showCenteredMessage("error", "Could not copy automatically. Select the link and copy it manually.");
     }
   }
 
@@ -530,7 +534,7 @@ export default function AdminAccounts() {
                       {st.role !== "ADMIN" && (
                         <>
                           <VButton variant="secondary" size="md" onClick={() => openReset(st)}>
-                            <KeyRound size={14} /> Reset password
+                            <KeyRound size={14} /> Temporary password
                           </VButton>
                           <VButton variant="secondary" size="md" onClick={() => openEdit(st)}><SquarePen size={14} /> Edit</VButton>
                           <VButton variant="secondary" size="md" onClick={() => setDeleteTarget(st)}><Trash2 size={14} /> Delete</VButton>
@@ -692,59 +696,71 @@ export default function AdminAccounts() {
           </VCard>
         </div>
       )}
-      {/* Password reset link modal */}
+      {/* Temporary password modal */}
       {resetTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 vq-modal-backdrop" style={{ backgroundColor: "rgba(2,6,23,0.72)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }} onClick={closeReset} />
           <VCard className="relative w-full max-w-lg p-6 lg:p-7 max-h-[90vh] overflow-auto">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="text-base font-semibold" style={{ color: c.text }}>Reset password</h3>
+                <h3 className="text-base font-semibold" style={{ color: c.text }}>Set a temporary password</h3>
                 <p className="text-xs mt-1" style={{ color: c.textMuted }}>{resetTarget.name} · {resetTarget.email}</p>
               </div>
-              <button type="button" onClick={closeReset} aria-label="Close reset password dialog"
+              <button type="button" onClick={closeReset} aria-label="Close temporary password dialog"
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#f1f5f9] transition-colors duration-200 cursor-pointer shrink-0" style={{ color: c.textMuted }}>
                 <X size={16} />
               </button>
             </div>
 
-            {resetLink ? (
+            {tempDone ? (
               <div className="space-y-4">
-                <div className="rounded-xl border p-3.5" style={{ borderColor: c.borderLight, backgroundColor: c.primarySoft }}>
-                  <p className="text-xs font-semibold" style={{ color: c.primary }}>Send this one-time link privately</p>
+                <div className="rounded-xl border p-3.5" style={{ borderColor: c.borderLight, backgroundColor: "#f0fdf4" }}>
+                  <p className="text-xs font-semibold" style={{ color: "#15803d" }}>Temporary password set</p>
                   <p className="mt-1 text-[11px] leading-relaxed" style={{ color: c.textMuted }}>
-                    It expires in 30 minutes and can only be used once. Anyone with this link can set a new password, so do not post it publicly.
+                    Give it to the student privately. Their existing sessions were signed out, and they must choose a new
+                    password immediately after signing in.
                   </p>
                 </div>
-                <VTextarea readOnly value={resetLink.url} rows={3} className="font-mono text-xs"
-                  aria-label="One-time password reset link"
-                  onFocus={(event) => event.currentTarget.select()} />
-                <p className="text-[11px]" style={{ color: c.textLight }}>
-                  Expires {formatDisplayTimestamp(resetLink.expiresAt)}
-                </p>
-                {resetError && <p role="alert" className="text-xs" style={{ color: c.danger }}>{resetError}</p>}
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <VButton variant="secondary" onClick={closeReset}>Done</VButton>
-                  <VButton onClick={copyResetLink}>
-                    {resetCopied ? <Check size={14} /> : <Copy size={14} />}
-                    {resetCopied ? "Copied" : "Copy link"}
-                  </VButton>
+                <div className="flex justify-end">
+                  <VButton onClick={closeReset}>Done</VButton>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 <p className="text-sm leading-relaxed" style={{ color: c.textMuted }}>
-                  Generate a one-time reset link for this student. This invalidates any previous reset link for the account.
+                  Set a temporary password for this student. They will sign in with it and choose their own password before
+                  using the system. Any existing sessions for the account are ended.
                 </p>
-                <p className="rounded-xl border p-3 text-[11px] leading-relaxed" style={{ borderColor: c.borderLight, backgroundColor: c.fill, color: c.textMuted }}>
-                  Email delivery is not required. Send the link through your official channel, such as the Lost &amp; Found office or the student&apos;s registered email.
-                </p>
+
+                <div>
+                  <label htmlFor="temp-password" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                    Temporary password <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                  </label>
+                  <VInput id="temp-password" type={tempShow ? "text" : "password"} autoComplete="new-password"
+                    value={tempPassword} onChange={(e) => setTempPassword(e.target.value)} placeholder="At least 8 characters" />
+                </div>
+
+                <div>
+                  <label htmlFor="temp-confirm" className="text-sm font-medium mb-1.5 block" style={{ color: c.text }}>
+                    Confirm temporary password <span style={{ color: c.danger }} aria-hidden="true">*</span>
+                  </label>
+                  <VInput id="temp-confirm" type={tempShow ? "text" : "password"} autoComplete="new-password"
+                    value={tempConfirm} onChange={(e) => setTempConfirm(e.target.value)} />
+                </div>
+
+                <button type="button" onClick={() => setTempShow((value) => !value)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium cursor-pointer" style={{ color: c.primary }}>
+                  {tempShow ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {tempShow ? "Hide passwords" : "Show passwords"}
+                </button>
+
                 {resetError && <p role="alert" className="text-xs" style={{ color: c.danger }}>{resetError}</p>}
+
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <VButton variant="secondary" onClick={closeReset} disabled={resetBusy}>Cancel</VButton>
-                  <VButton onClick={handleGenerateReset} disabled={resetBusy}>
+                  <VButton onClick={handleSetTemporaryPassword} disabled={resetBusy || !tempPassword || !tempConfirm}>
                     {resetBusy ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
-                    {resetBusy ? "Generating..." : "Generate reset link"}
+                    {resetBusy ? "Saving..." : "Set temporary password"}
                   </VButton>
                 </div>
               </div>

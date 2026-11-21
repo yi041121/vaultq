@@ -100,7 +100,10 @@ export async function POST(request: NextRequest) {
         data: { usedAt: new Date() },
       });
       if (claimed.count !== 1) throw new InvalidResetTokenError();
-      await tx.user.update({ where: { id: record.userId }, data: { password: hashedPassword } });
+      await tx.user.update({
+        where: { id: record.userId },
+        data: { password: hashedPassword, mustChangePassword: false },
+      });
       await tx.passwordResetToken.deleteMany({ where: { userId: record.userId } });
       await tx.authSession.deleteMany({ where: { userId: record.userId } });
     });

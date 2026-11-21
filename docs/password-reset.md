@@ -18,8 +18,8 @@ URL, browser history or referrer header. The student never receives a link.
 
 - Email is matched case-insensitively.
 - The barcode must be exactly the 10 digits stored on the account.
-- Only active `STUDENT` accounts are eligible; admin accounts must use another
-  admin's link.
+- Only active `STUDENT` accounts are eligible; admin accounts are recovered by
+  another administrator issuing a temporary password.
 - Every failed attempt returns the same message, so the endpoint does not
   reveal whether an account exists or whether the barcode was wrong.
 - Comparisons are constant-time.
@@ -37,8 +37,8 @@ is created, and the raw token is placed in the `vq_reset` cookie
 The barcode is printed on the student card. A photo of a card, combined with
 the student's campus email, is enough to reset that student's password. Rate
 limiting and the exact-match requirement make guessing impractical, but this is
-a possession/knowledge check, not a cryptographic identity check. Keep the
-admin link available for cases where identity is disputed, and review the
+a possession/knowledge check, not a cryptographic identity check. When identity
+is disputed, issue a temporary password from Accounts and review the
 `Self-service password reset verified` log lines if an account is reported as
 taken over.
 
@@ -50,16 +50,21 @@ atomically, replaces the password hash, deletes every reset token for the
 account, revokes every existing session and clears the session and reset
 cookies. The same token cannot be used twice.
 
-## Admin-generated reset link
+## Admin-issued temporary password
 
-An admin can open **Accounts → Reset password** for an active student, generate
-a one-time link, and send it through an official channel. The same 30-minute,
-single-use, hashed-token rules apply, and generating a new link invalidates the
-previous one.
+An admin opens **Accounts → Temporary password** for an active student and sets
+a password of at least 8 characters. The server stores only its bcrypt hash,
+sets `mustChangePassword`, and deletes every existing session for that account.
+The admin hands the password to the student privately.
 
-The raw link is returned only to that authenticated admin request with
-`Cache-Control: no-store`; it is never stored or emailed by the app. This is the
-fallback for students without their card or whose account details do not match.
+On the next sign-in the student is taken to `/change-password`; every dashboard
+route and API except the change-password, session and logout endpoints stays
+blocked until the password is replaced. The change writes the new bcrypt hash,
+clears the flag and revokes the account's other sessions. Administrators cannot
+issue a temporary password for their own account.
+
+This replaces the previous admin-generated one-time link, which is no longer
+produced anywhere in the UI or API.
 
 ## Email link (optional, not shown in the UI)
 

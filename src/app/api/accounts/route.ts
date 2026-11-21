@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
         email: email.trim().toLowerCase(),
         password: await hashPassword(String(password)),
         role: targetRole as any,
+        // The value entered by the administrator is a temporary password.
+        mustChangePassword: true,
         studentId: cleanStudentId || null,
         adminId: targetRole === "ADMIN" ? (adminId?.trim() || null) : null,
         cardBarcode: cleanBarcode || null,

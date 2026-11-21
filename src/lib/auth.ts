@@ -8,7 +8,24 @@ import { SESSION_COOKIE, isSameOriginAuthRequest } from "./session-cookie";
 
 export { generateToken, verifyToken, SESSION_SECONDS, type SessionClaims };
 
-const USER_SELECT = { id: true, name: true, email: true, role: true, cardBarcode: true, isActive: true } as const;
+const USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  cardBarcode: true,
+  isActive: true,
+  mustChangePassword: true,
+} as const;
+
+// A session created with a temporary password may only reach the endpoints the
+// change-password screen needs. Everything else stays blocked until the account
+// replaces the password, so a shared temporary credential cannot browse data.
+const TEMP_PASSWORD_ALLOWED_PATHS = new Set([
+  "/api/auth/change-password",
+  "/api/auth/logout",
+  "/api/auth/session",
+]);
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
@@ -85,6 +102,10 @@ export async function authenticateRequest(request: NextRequest) {
   try {
     const expected = request.headers.get("x-vaultq-session");
     if (expected && verifyToken(token).jti !== expected) return null;
-    return authenticateToken(token);
+    const user = await authenticateToken(token);
+    if (user?.mustChangePassword && !TEMP_PASSWORD_ALLOWED_PATHS.has(request.nextUrl.pathname)) {
+      return null;
+    }
+    return user;
   } catch { return null; }
 }

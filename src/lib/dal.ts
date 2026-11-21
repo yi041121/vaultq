@@ -28,6 +28,9 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 export async function requireSession(role?: "ADMIN" | "STUDENT"): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) redirect("/login?skip=1");
+  // A temporary password unlocks the account but nothing else until the owner
+  // replaces it, so every dashboard entry point funnels to the change screen.
+  if (user.mustChangePassword) redirect("/change-password");
   if (role && user.role !== role) {
     redirect(user.role === "ADMIN" ? "/dashboard/admin" : "/dashboard/student");
   }
