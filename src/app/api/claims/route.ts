@@ -331,6 +331,7 @@ export async function POST(request: NextRequest) {
           claimReason: claimReason.trim(),
           evidenceImageUrl: evidenceImageUrls[0] || null,
           evidenceImageUrls,
+          source: linkedReport ? "MATCH" : "STUDENT",
           matchedReportId: linkedReport?.id || null,
         },
       });

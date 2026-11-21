@@ -24,6 +24,8 @@ interface AdminClaim {
   id: string;
   status: string;
   createdAt: string;
+  source?: string | null;
+  matchedReportId?: string | null;
   item?: { itemName?: string | null } | null;
   user?: { name?: string | null } | null;
 }
@@ -124,6 +126,9 @@ export default function AdminDashboard() {
     item: claim.item?.itemName || "Unknown item",
     student: claim.user?.name || "Student",
     time: relativeTime(claim.createdAt),
+    // Claims created by matching a lost report keep that origin, so the queue
+    // can distinguish them from a direct claim on a found item.
+    isLost: claim.source === "MATCH" || Boolean(claim.matchedReportId),
   }));
 
   const stats = [
@@ -265,7 +270,10 @@ export default function AdminDashboard() {
                     <button key={claim.id} type="button" onClick={() => router.push(`/dashboard/admin/claims?open=${encodeURIComponent(claim.id)}`)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl text-left cursor-pointer hover:bg-[#dbe4ee]" style={{ backgroundColor: c.fill }}>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold truncate" style={{ color: c.text }}>{claim.item}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="block truncate text-sm font-semibold" style={{ color: c.text }}>{claim.item}</span>
+                          {claim.isLost && <VBadge className="shrink-0" color="#b45309">Lost</VBadge>}
+                        </span>
                         <span className="block text-xs mt-1" style={{ color: c.textMuted }}>{claim.student} · <span className="vq-date">{claim.time}</span> · {claim.reference}</span>
                       </span>
                       <ChevronRight size={14} className="shrink-0" style={{ color: c.textMuted }} />
