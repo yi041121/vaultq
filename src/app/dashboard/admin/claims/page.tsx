@@ -741,30 +741,6 @@ export default function AdminClaims() {
             </div>
           )}
 
-          {sortedRows.length > 0 && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
-              <button type="button"
-                onClick={() => { setKindFilter("CLAIM"); setStatusFilter("PENDING"); setPage(1); }}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors duration-150 hover:bg-[#f8fafc]"
-                style={{ borderColor: c.borderLight, backgroundColor: c.card, color: c.textMuted }}>
-                <FileText size={12} style={{ color: c.primary }} />
-                {sortedRows.filter((row) => row.kind === "CLAIM" && row.claim?.status === "PENDING").length} pending claims
-              </button>
-              <button type="button"
-                onClick={() => { setKindFilter("LOST"); setStatusFilter("PENDING"); setPage(1); }}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors duration-150 hover:bg-[#f8fafc]"
-                style={{ borderColor: c.borderLight, backgroundColor: c.card, color: c.textMuted }}>
-                <PackageSearch size={12} style={{ color: c.primary }} />
-                {sortedRows.filter((row) => row.kind === "LOST" && row.report?.status === "PENDING").length} pending lost reports
-              </button>
-              <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5"
-                style={{ borderColor: c.borderLight, backgroundColor: c.card, color: c.textMuted }}>
-                <Users size={12} style={{ color: c.primary }} />
-                {sortedRows.length} in this view
-              </span>
-            </div>
-          )}
-
           <VContentPanel>
           {loading ? (
             <AdminListSkeleton />
