@@ -135,17 +135,11 @@ export default function AdminDashboard() {
   for (const locker of lockers) {
     if (locker.status in lockerCounts) lockerCounts[locker.status] += 1;
   }
-  const lockerRows = [
-    { label: "Available", value: lockerCounts.AVAILABLE, color: "#4a9d6b" },
-    { label: "Occupied", value: lockerCounts.OCCUPIED, color: "#355C8A" },
-    { label: "Maintenance", value: lockerCounts.MAINTENANCE, color: "#b45309" },
-  ];
-  const lockerMax = Math.max(1, ...lockerRows.map((row) => row.value));
-
   const stats = [
     { label: "Total Items", value: dataLoading ? "—" : String(items.length), icon: Package, color: "#355C8A" },
     { label: "Pending Claims", value: dataLoading ? "—" : String(pendingClaims.length), icon: FileText, color: "#dc2626" },
     { label: "Pending Intake", value: dataLoading ? "—" : String(intake.length), icon: PackageSearch, color: "#3f8b86" },
+    { label: "Available Lockers", value: dataLoading ? "—" : String(lockerCounts.AVAILABLE), icon: Lock, color: "#4a9d6b" },
     { label: "Total Users", value: dataLoading ? "—" : String(accounts.length), icon: Users, color: "#29486A" },
   ];
 
@@ -165,7 +159,7 @@ export default function AdminDashboard() {
           )}
 
           {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
             {stats.map((s) => (
               <VCard key={s.label} className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
                 <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -319,35 +313,6 @@ export default function AdminDashboard() {
               </VCard>
               </section>
 
-              <section className="flex flex-col">
-                <div className="flex items-center justify-between gap-2 mb-4">
-                  <h2 className={f.sectionTitle} style={{ color: c.text }}>Locker Status</h2>
-                  <button type="button" className="text-sm font-medium flex items-center gap-1 cursor-pointer hover:opacity-70" style={{ color: c.primary }} onClick={() => router.push("/dashboard/admin/lockers")}>
-                    View all <ChevronRight size={14} />
-                  </button>
-                </div>
-                <VCard className="p-5 lg:p-6">
-                  <div className="space-y-3">
-                    {lockerRows.map((row) => (
-                      <div key={row.label}>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span style={{ color: c.textMuted }}>{row.label}</span>
-                          <span className="font-semibold tabular-nums" style={{ color: c.text }}>
-                            {dataLoading ? "—" : row.value}
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: c.fill }}>
-                          <div className="h-full rounded-full transition-[width] duration-300"
-                            style={{ width: `${Math.max(3, (row.value / lockerMax) * 100)}%`, backgroundColor: row.color }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-4 text-xs" style={{ color: c.textMuted }}>
-                    {dataLoading ? "Loading locker usage…" : `${lockers.length} lockers in total`}
-                  </p>
-                </VCard>
-              </section>
             </div>
           </div>
           </VContentPanel>
