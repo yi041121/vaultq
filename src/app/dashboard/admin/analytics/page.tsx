@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Clock, Download, RefreshCw } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VButton, VCard, VContentPanel, VFilterButton, vcolors as c } from "@/components/ui/vault";
+import {
+  VButton, VCard, VContentPanel, VDropdown, VDropdownItem, VFilterButton, vcolors as c,
+} from "@/components/ui/vault";
 import { ResetFiltersButton } from "@/components/filter-panel";
 import { CalendarPopover } from "@/components/date-calendar";
 import { adminNav } from "@/lib/admin-nav";
@@ -87,12 +89,6 @@ function MonthBars({ data }: { data: Record<string, number> }) {
   );
 }
 
-function closeOpenCalendars() {
-  document.querySelector("[data-filter-panel]")?.dispatchEvent(
-    new CustomEvent("vaultq:filter-hover", { detail: null }),
-  );
-}
-
 export default function AdminAnalyticsPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
@@ -102,6 +98,7 @@ export default function AdminAnalyticsPage() {
   const [toAnchor, setToAnchor] = useState<HTMLElement | null>(null);
   const [fromOpen, setFromOpen] = useState(false);
   const [toOpen, setToOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -165,9 +162,26 @@ export default function AdminAnalyticsPage() {
     <StudentShell active="Reports" userName={user.name} userRole={user.role} pageTitle="Reports" bottomNav={adminNav} logout={handleLogout}>
       <main className="bg-white pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
-          <VContentPanel>
-            <div data-filter-panel className="rounded-2xl border p-3 lg:p-4 mb-6 flex flex-wrap items-center gap-2"
-              style={{ backgroundColor: c.panel, borderColor: c.border }}>
+          <div data-filter-panel className="rounded-2xl border p-3 lg:p-4 mb-6 flex flex-wrap items-center gap-2"
+            style={{ backgroundColor: c.panel, borderColor: c.border }}>
+            <VDropdown open={exportOpen} onOpenChange={setExportOpen} width="w-44" align="left"
+              trigger={
+                <VButton onClick={() => setExportOpen(!exportOpen)}>
+                  <Download size={14} /> Export
+                </VButton>
+              }>
+              {(close) => (
+                <>
+                  {EXPORTS.map((item) => (
+                    <VDropdownItem key={item.type} onSelect={() => { window.location.href = exportHref(item.type); close(); }}>
+                      {item.label}
+                    </VDropdownItem>
+                  ))}
+                </>
+              )}
+            </VDropdown>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               <div className="relative"
                 onPointerEnter={(event) => { if (event.pointerType === "mouse") { setFromAnchor(event.currentTarget); if (!fromOpen) setFromOpen(true); } }}>
                 <VFilterButton active={!!from} className="justify-between w-full sm:w-auto sm:min-w-[140px]"
@@ -180,7 +194,7 @@ export default function AdminAnalyticsPage() {
                   <ChevronDown size={13} style={{ color: from ? c.primary : c.textMuted }} />
                 </VFilterButton>
                 {fromOpen && (
-                  <CalendarPopover anchor={fromAnchor} compact value={from}
+                  <CalendarPopover anchor={fromAnchor} compact closeOnPointerLeave value={from}
                     onChange={(iso) => setFrom(iso)} onClose={() => setFromOpen(false)} />
                 )}
               </div>
@@ -197,16 +211,16 @@ export default function AdminAnalyticsPage() {
                   <ChevronDown size={13} style={{ color: to ? c.primary : c.textMuted }} />
                 </VFilterButton>
                 {toOpen && (
-                  <CalendarPopover anchor={toAnchor} compact value={to}
+                  <CalendarPopover anchor={toAnchor} compact closeOnPointerLeave value={to}
                     onChange={(iso) => setTo(iso)} onClose={() => setToOpen(false)} />
                 )}
               </div>
 
-              <div className="ml-auto flex items-center gap-2">
-                <ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />
-              </div>
+              <ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />
             </div>
+          </div>
 
+          <VContentPanel>
             {error && (
               <VCard className="mb-4 flex flex-wrap items-center gap-3 p-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
                 <p className="min-w-0 flex-1 text-sm" style={{ color: c.danger }}>{error}</p>
@@ -223,7 +237,7 @@ export default function AdminAnalyticsPage() {
                 ))}
               </div>
             ) : summary ? (
-              <div className="space-y-5" onPointerEnter={closeOpenCalendars}>
+              <div className="space-y-5">
                 <div className="grid gap-5 md:grid-cols-2">
                   <ChartCard title="Inventory by status" total={summary.items.total}>
                     <BarList data={summary.items.byStatus} />
@@ -244,18 +258,6 @@ export default function AdminAnalyticsPage() {
                   <span>Report types: {Object.keys(summary.reports.byType).join(" / ") || "—"}</span>
                   <span>Accounts: {summary.accounts.active} active · {summary.accounts.inactive} inactive</span>
                 </div>
-
-                <VCard className="p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {EXPORTS.map((item) => (
-                      <a key={item.type} href={exportHref(item.type)}
-                        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-xs font-semibold bg-white"
-                        style={{ borderColor: c.border, color: c.text }}>
-                        <Download size={13} style={{ color: c.primary }} /> {item.label}
-                      </a>
-                    ))}
-                  </div>
-                </VCard>
               </div>
             ) : null}
           </VContentPanel>

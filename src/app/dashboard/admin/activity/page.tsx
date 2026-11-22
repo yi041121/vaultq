@@ -52,12 +52,6 @@ const ACTIONS = Object.keys(ACTION_LABELS);
 const ENTITIES = ["REPORT", "CLAIM", "ITEM", "LOCKER", "ACCOUNT"];
 const PAGE_SIZE = 20;
 
-function closeOpenCalendars() {
-  document.querySelector("[data-filter-panel]")?.dispatchEvent(
-    new CustomEvent("vaultq:filter-hover", { detail: null }),
-  );
-}
-
 export default function AdminActivityPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
@@ -149,17 +143,15 @@ export default function AdminActivityPage() {
                 clearable placeholder="Search summary, actor or ID" className="w-full" aria-label="Search activity" />
             }
             actions={
-              <a href={exportHref} className="inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white whitespace-nowrap"
-                style={{ borderColor: c.border, color: c.primary }}>
+              <VButton onClick={() => { window.location.href = exportHref; }}>
                 <Download size={13} /> Export CSV
-              </a>
+              </VButton>
             }
             filters={
               <>
                 <VDropdown open={actionOpen} onOpenChange={setActionOpen} width="w-56" align="left"
                   trigger={
                     <VFilterButton active={action !== "ALL"} className="w-full justify-between sm:w-auto sm:min-w-[150px]"
-                      onPointerEnter={closeOpenCalendars}
                       onClick={() => setActionOpen(!actionOpen)}>
                       <span className="flex items-center gap-1.5 min-w-0">
                         <History size={14} style={{ color: action !== "ALL" ? c.primary : c.textMuted }} />
@@ -187,7 +179,6 @@ export default function AdminActivityPage() {
                 <VDropdown open={entityOpen} onOpenChange={setEntityOpen} width="w-44" align="left"
                   trigger={
                     <VFilterButton active={entityType !== "ALL"} className="w-full justify-between sm:w-auto sm:min-w-[130px]"
-                      onPointerEnter={closeOpenCalendars}
                       onClick={() => setEntityOpen(!entityOpen)}>
                       <span className="truncate">{entityType === "ALL" ? "All entities" : entityType}</span>
                       <ChevronDown size={13} style={{ color: entityType !== "ALL" ? c.primary : c.textMuted }} />
@@ -221,7 +212,7 @@ export default function AdminActivityPage() {
                     <ChevronDown size={13} style={{ color: from ? c.primary : c.textMuted }} />
                   </VFilterButton>
                   {fromOpen && (
-                    <CalendarPopover anchor={fromAnchor} compact value={from}
+                    <CalendarPopover anchor={fromAnchor} compact closeOnPointerLeave value={from}
                       onChange={(iso) => setFrom(iso)} onClose={() => setFromOpen(false)} />
                   )}
                 </div>
@@ -238,7 +229,7 @@ export default function AdminActivityPage() {
                     <ChevronDown size={13} style={{ color: to ? c.primary : c.textMuted }} />
                   </VFilterButton>
                   {toOpen && (
-                    <CalendarPopover anchor={toAnchor} compact value={to}
+                    <CalendarPopover anchor={toAnchor} compact closeOnPointerLeave value={to}
                       onChange={(iso) => setTo(iso)} onClose={() => setToOpen(false)} />
                   )}
                 </div>
@@ -260,7 +251,7 @@ export default function AdminActivityPage() {
               </VCard>
             )}
 
-            <div onPointerEnter={closeOpenCalendars}>
+            <div>
               <VCard className="p-0 overflow-hidden">
                 {loading ? (
                   <div className="p-6 space-y-3" aria-busy="true" aria-label="Loading activity">

@@ -276,14 +276,17 @@ export function FloatingPanel({
 interface CalendarPopoverProps extends DateCalendarProps {
   /** Trigger element the popover should sit next to. */
   anchor: HTMLElement | null;
+  /** Close once the pointer leaves both the trigger and the calendar. */
+  closeOnPointerLeave?: boolean;
 }
 
 /** Portal-based calendar popover with collision handling and viewport clamping. */
-export function CalendarPopover({ anchor, compact = false, ...props }: CalendarPopoverProps) {
+export function CalendarPopover({ anchor, compact = false, closeOnPointerLeave = false, ...props }: CalendarPopoverProps) {
   return (
     <FloatingPanel
       anchor={anchor}
       onClose={props.onClose}
+      closeOnPointerLeave={closeOnPointerLeave}
       offsetX={-10}
       offsetY={-6}
       fallbackWidth={compact ? 248 : 300}
