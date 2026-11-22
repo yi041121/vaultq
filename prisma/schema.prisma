@@ -237,3 +237,23 @@ model NotificationJob {
   @@index([completedAt, failedAt, availableAt])
   @@map("notification_jobs")
 }
+
+// Append-only record of administrative and lifecycle actions. Deliberately has
+// no foreign key to users: deleting an account must not erase its history.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  actorName  String?  @map("actor_name")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  summary    String
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

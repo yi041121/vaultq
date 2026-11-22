@@ -1,4 +1,5 @@
 "use client";
+import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -15,15 +16,6 @@ import { isValidStudentId, STUDENT_ID_ERROR_MESSAGE, STUDENT_ID_MAX_LENGTH } fro
 import { matchesSearch } from "@/lib/search";
 import { usePageQuickAction } from "@/lib/use-page-quick-action";
 import { useEscapeKey } from "@/lib/use-escape-key";
-
-const adminNav = [
-  { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
-  { label: "Items", icon: Package, path: "/dashboard/admin/items" },
-  { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
-  { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
-  { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
-];
 
 type Student = {
   id: string;

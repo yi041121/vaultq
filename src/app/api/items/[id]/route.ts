@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
 import { flushNotifications } from "@/lib/notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
+import { recordAudit } from "@/lib/audit";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 const READ_ONLY_STATUSES = ["CLAIMED", "RETRIEVED"] as const;
@@ -136,6 +137,14 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         return updated;
       });
       await flushNotifications();
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "ITEM_UPDATED",
+        entityType: "ITEM",
+        entityId: id,
+        summary: `Updated inventory item "${updated?.itemName ?? existing.itemName}"`,
+        metadata: { lockerChanged: true },
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -147,6 +156,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       return updated;
     });
     await flushNotifications();
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ITEM_UPDATED",
+      entityType: "ITEM",
+      entityId: id,
+      summary: `Updated inventory item "${item?.itemName ?? existing.itemName}"`,
+    });
     return NextResponse.json({ success: true, data: item });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
@@ -181,6 +197,14 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
       }
     });
 
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ITEM_DELETED",
+      entityType: "ITEM",
+      entityId: id,
+      summary: `Deleted inventory item "${existing.itemName}"`,
+      metadata: { status: existing.status },
+    });
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
     if (e instanceof ItemWriteConflict) return NextResponse.json({ success: false, error: e.message }, { status: 409 });

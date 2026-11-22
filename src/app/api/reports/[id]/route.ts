@@ -8,6 +8,7 @@ import { ImageValidationError, normalizeImageSources } from "@/lib/image-validat
 import { ClaimReviewError, isReviewWriteConflict, reviewUnclaimedReport } from "@/lib/claim-review-service";
 import { enforceAuthRateLimit } from "@/lib/auth-rate-limit";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
+import { recordAudit } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -131,6 +132,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       }
       const nextImages = await normalizeImageSources(body.imageUrls);
       const updated = await reviewUnclaimedReport(id, report, { imageUrls: nextImages, imageUrl: nextImages[0] || null });
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "REPORT_UPDATED",
+        entityType: "REPORT",
+        entityId: id,
+        summary: `Updated ${report.type.toLowerCase()} report "${report.itemName}"`,
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -170,6 +178,14 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         );
       });
       await flushNotifications();
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "REPORT_MATCHED",
+        entityType: "REPORT",
+        entityId: id,
+        summary: `Matched lost report "${report.itemName}" to inventory item "${item.itemName}"`,
+        metadata: { itemId: item.id },
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -193,6 +209,14 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         );
       });
       await flushNotifications();
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "REPORT_REJECTED",
+        entityType: "REPORT",
+        entityId: id,
+        summary: `Rejected ${report.type.toLowerCase()} report "${report.itemName}"`,
+        metadata: adminNote ? { adminNote } : undefined,
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -212,6 +236,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         );
       });
       await flushNotifications();
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "REPORT_CLOSED",
+        entityType: "REPORT",
+        entityId: id,
+        summary: `Closed lost report "${report.itemName}"`,
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -229,6 +260,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       if (report.type === "LOST") await notifyInventoryMatches({ reportId: id }, tx);
     });
     await flushNotifications();
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "REPORT_REOPENED",
+      entityType: "REPORT",
+      entityId: id,
+      summary: `Reopened ${report.type.toLowerCase()} report "${report.itemName}"`,
+    });
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

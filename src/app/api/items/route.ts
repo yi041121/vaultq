@@ -7,6 +7,7 @@ import { signedImageUrl } from "@/lib/image-url";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
 import { flushNotifications } from "@/lib/notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
+import { recordAudit } from "@/lib/audit";
 
 const VALID_STATUS = ["FOUND", "CLAIMED", "RETRIEVED", "EXPIRED"] as const;
 
@@ -108,6 +109,14 @@ export async function POST(request: NextRequest) {
       return created;
     });
     await flushNotifications();
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ITEM_CREATED",
+      entityType: "ITEM",
+      entityId: item.id,
+      summary: `Added inventory item "${item.itemName}"`,
+      metadata: { category: item.category, status: item.status },
+    });
     return NextResponse.json({ success: true, data: item }, { status: 201 });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest, hashPassword } from "@/lib/auth";
 import { withDbRetry, isTransientDbError } from "@/lib/db-retry";
 import { isSameOriginAuthRequest } from "@/lib/session-cookie";
+import { recordAudit } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -59,6 +60,14 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       // Anyone already signed in with the old password loses access.
       await tx.authSession.deleteMany({ where: { userId: target.id } });
     }));
+
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ACCOUNT_TEMP_PASSWORD",
+      entityType: "ACCOUNT",
+      entityId: target.id,
+      summary: `Issued a temporary password for "${target.name}" (${target.email})`,
+    });
 
     return NextResponse.json({
       success: true,

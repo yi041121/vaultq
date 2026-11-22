@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/auth";
 import { notifyUser, notifyUsers, flushNotifications } from "@/lib/notification-service";
 import { cancelPendingClaim, rejectPendingClaim, ClaimTransitionError } from "@/lib/claim-transition-service";
 import { approvePendingClaim, ClaimReviewError, isReviewWriteConflict } from "@/lib/claim-review-service";
+import { recordAudit } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -149,6 +150,14 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         );
       });
       await flushNotifications();
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "CLAIM_REJECTED",
+        entityType: "CLAIM",
+        entityId: id,
+        summary: `Rejected claim for "${claim.item.itemName}"`,
+        metadata: adminNote ? { adminNote } : undefined,
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -188,6 +197,14 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       },
     });
     await flushNotifications();
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "CLAIM_APPROVED",
+      entityType: "CLAIM",
+      entityId: id,
+      summary: `Approved claim for "${claim.item.itemName}"${lockerNum ? ` and assigned locker ${lockerNum}` : ""}`,
+      metadata: lockerNum ? { lockerNumber: lockerNum } : undefined,
+    });
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     if (e instanceof ClaimTransitionError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

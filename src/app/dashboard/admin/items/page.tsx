@@ -1,4 +1,5 @@
 "use client";
+import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtDay } from "@/lib/date-format";
 
@@ -27,15 +28,6 @@ import {
   VCard, VContentPanel, VBadge, VButton, VInput, VTextarea, VDropdown, VDropdownItem, VSearchInput, VPaginationFooter, VFilterButton, VEmptyState,
   vcolors as c,
 } from "@/components/ui/vault";
-
-const adminNav = [
-  { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
-  { label: "Items", icon: Package, path: "/dashboard/admin/items" },
-  { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
-  { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
-  { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
-];
 
 const categories = [
   { label: "Electronics", icon: Monitor, color: "#355C8A" },

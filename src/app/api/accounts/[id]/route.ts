@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { getPersonNameError } from "@/lib/person-name";
 import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE } from "@/lib/student-id";
+import { recordAudit } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -116,6 +117,14 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     }
 
     const updated = await prisma.user.update({ where: { id }, data, select: SAFE_SELECT });
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ACCOUNT_UPDATED",
+      entityType: "ACCOUNT",
+      entityId: id,
+      summary: `Updated account "${updated.name}" (${updated.email})`,
+      metadata: { fields: Object.keys(data) },
+    });
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     if ((e as { code?: string })?.code === "P2002") {
@@ -156,6 +165,13 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
       await tx.user.delete({ where: { id } });
     });
 
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ACCOUNT_DELETED",
+      entityType: "ACCOUNT",
+      entityId: id,
+      summary: `Deleted ${existing.role.toLowerCase()} account "${existing.name}" (${existing.email})`,
+    });
     return NextResponse.json({ success: true, data: { id } });
   } catch (e) {
     console.error("Account delete failed", e);

@@ -7,6 +7,7 @@ import { notifyUser, flushNotifications } from "@/lib/notification-service";
 import { REPORT_INCLUDE } from "@/lib/report-include";
 import { notifyInventoryMatches } from "@/lib/match-notification-service";
 import { ImageValidationError, normalizeImageSource } from "@/lib/image-validation";
+import { recordAudit } from "@/lib/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 class VerificationConflict extends Error {}
@@ -66,6 +67,14 @@ export async function POST(request: NextRequest, { params }: Ctx) {
         return tx.report.findUniqueOrThrow({ where: { id }, include: REPORT_INCLUDE });
       });
       await flushNotifications();
+      await recordAudit({
+        actor: { id: user.id, name: user.name },
+        action: "REPORT_VERIFIED",
+        entityType: "REPORT",
+        entityId: id,
+        summary: `Verified found report "${report.itemName}" and linked it to "${item.itemName}"`,
+        metadata: { itemId: item.id },
+      });
       return NextResponse.json({ success: true, data: updated });
     }
 
@@ -123,6 +132,14 @@ export async function POST(request: NextRequest, { params }: Ctx) {
       return { item, report: updated };
     });
     await flushNotifications();
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "REPORT_VERIFIED",
+      entityType: "REPORT",
+      entityId: id,
+      summary: `Verified found report "${report.itemName}" and added inventory item "${result.item.itemName}"`,
+      metadata: { itemId: result.item.id },
+    });
     return NextResponse.json({ success: true, data: result.report });
   } catch (e) {
     if (e instanceof ImageValidationError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });

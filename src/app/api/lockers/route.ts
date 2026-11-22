@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { signedImageUrl } from "@/lib/image-url";
+import { recordAudit } from "@/lib/audit";
 
 const VALID_STATUS = ["AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const;
 
@@ -52,6 +53,13 @@ export async function POST(request: NextRequest) {
     if (existing) return NextResponse.json({ success: false, error: "Locker number already exists" }, { status: 409 });
 
     const locker = await prisma.locker.create({ data: { lockerNumber } });
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "LOCKER_CREATED",
+      entityType: "LOCKER",
+      entityId: locker.id,
+      summary: `Created locker ${locker.lockerNumber}`,
+    });
     return NextResponse.json({ success: true, data: locker }, { status: 201 });
   } catch (e) {
     console.error("Locker creation failed", e);

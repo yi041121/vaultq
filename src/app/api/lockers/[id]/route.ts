@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateRequest } from "@/lib/auth";
 import { changeLocker, deleteEmptyLocker, LockerManagementError } from "@/lib/locker-management-service";
+import { recordAudit } from "@/lib/audit";
 
 const VALID_STATUS = ["AVAILABLE", "OCCUPIED", "MAINTENANCE"] as const;
 
@@ -44,6 +45,22 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (release !== undefined && typeof release !== "boolean") return NextResponse.json({ success: false, error: "Invalid release flag" }, { status: 400 });
     if (Number(status !== undefined) + Number(itemId !== undefined) + Number(release === true) !== 1) return NextResponse.json({ success: false, error: "Choose exactly one locker action" }, { status: 400 });
     const updated = await changeLocker(id, { status, itemId, release });
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: release === true
+        ? "LOCKER_RELEASED"
+        : itemId !== undefined
+          ? "LOCKER_ASSIGNED"
+          : "LOCKER_UPDATED",
+      entityType: "LOCKER",
+      entityId: id,
+      summary: release === true
+        ? `Released locker ${updated.lockerNumber}`
+        : itemId !== undefined
+          ? `Assigned locker ${updated.lockerNumber}`
+          : `Set locker ${updated.lockerNumber} to ${status}`,
+      metadata: itemId !== undefined ? { itemId } : status !== undefined ? { status } : undefined,
+    });
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     if (e instanceof LockerManagementError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
@@ -60,7 +77,16 @@ export async function DELETE(request: NextRequest, { params }: Ctx) {
   const { id } = await params;
 
   try {
-    return NextResponse.json({ success: true, data: await deleteEmptyLocker(id) });
+    const locker = await prisma.locker.findUnique({ where: { id }, select: { lockerNumber: true } });
+    const removed = await deleteEmptyLocker(id);
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "LOCKER_DELETED",
+      entityType: "LOCKER",
+      entityId: id,
+      summary: `Deleted locker ${locker?.lockerNumber ?? id}`,
+    });
+    return NextResponse.json({ success: true, data: removed });
   } catch (e) {
     if (e instanceof LockerManagementError) return NextResponse.json({ success: false, error: e.message }, { status: e.status });
     console.error("Locker delete failed", e);

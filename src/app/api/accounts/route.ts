@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authenticateRequest, hashPassword } from "@/lib/auth";
 import { getPersonNameError } from "@/lib/person-name";
 import { isValidStudentId, normalizeStudentId, STUDENT_ID_ERROR_MESSAGE } from "@/lib/student-id";
+import { recordAudit } from "@/lib/audit";
 
 const SAFE_SELECT = {
   id: true,
@@ -125,6 +126,13 @@ export async function POST(request: NextRequest) {
       select: { id: true, name: true, email: true, role: true, studentId: true, adminId: true, cardBarcode: true, isActive: true, createdAt: true },
     });
 
+    await recordAudit({
+      actor: { id: user.id, name: user.name },
+      action: "ACCOUNT_CREATED",
+      entityType: "ACCOUNT",
+      entityId: created.id,
+      summary: `Created ${created.role.toLowerCase()} account "${created.name}" (${created.email})`,
+    });
     return NextResponse.json({ success: true, data: created }, { status: 201 });
   } catch (e) {
     if ((e as { code?: string })?.code === "P2002") {

@@ -1,4 +1,5 @@
 "use client";
+import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as formatDate } from "@/lib/date-format";
 
@@ -32,15 +33,6 @@ interface AdminClaim {
 
 interface AdminAccount { id: string; role: string; }
 interface PendingIntake { id: string; itemName: string; createdAt: string; user?: { name?: string | null } | null; }
-
-const adminNav = [
-  { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
-  { label: "Items", icon: Package, path: "/dashboard/admin/items" },
-  { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
-  { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
-  { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
-];
 
 
 export default function AdminDashboard() {

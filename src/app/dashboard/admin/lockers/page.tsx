@@ -1,4 +1,5 @@
 "use client";
+import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate as fmtItemDate } from "@/lib/date-format";
 
@@ -24,15 +25,6 @@ import { usePageQuickAction } from "@/lib/use-page-quick-action";
 import {
   VCard, VContentPanel, VButton, VInput, VSearchInput, VEmptyState, vcolors as c, font as f,
 } from "@/components/ui/vault";
-
-const adminNav = [
-  { label: "Dashboard", icon: Grid3X3, path: "/dashboard/admin" },
-  { label: "Items", icon: Package, path: "/dashboard/admin/items" },
-  { label: "Claims", icon: FileText, path: "/dashboard/admin/claims" },
-  { label: "Intake", icon: PackageSearch, path: "/dashboard/admin/reports" },
-  { label: "Lockers", icon: Lock, path: "/dashboard/admin/lockers" },
-  { label: "Accounts", icon: Users, path: "/dashboard/admin/accounts" },
-];
 
 type Locker = {
   id: string;
