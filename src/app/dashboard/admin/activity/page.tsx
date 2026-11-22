@@ -2,12 +2,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Download, History, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Clock, Download, History, RefreshCw } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VButton, VCard, VContentPanel, VEmptyState, VInput, vcolors as c, font as f } from "@/components/ui/vault";
+import {
+  VButton, VCard, VContentPanel, VDropdown, VDropdownItem, VEmptyState, VFilterButton,
+  vcolors as c, font as f,
+} from "@/components/ui/vault";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { PillSearchInput } from "@/components/pill-search-input";
+import { CalendarPopover } from "@/components/date-calendar";
 import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
-import { formatDisplayTimestamp } from "@/lib/date-format";
+import { formatDisplayDate, formatDisplayTimestamp } from "@/lib/date-format";
 
 interface AuditRow {
   id: string;
@@ -42,19 +48,9 @@ const ACTION_LABELS: Record<string, string> = {
   ACCOUNT_TEMP_PASSWORD: "Temporary password issued",
 };
 
-const ACTIONS = ["ALL", ...Object.keys(ACTION_LABELS)];
-const ENTITIES = ["ALL", "REPORT", "CLAIM", "ITEM", "LOCKER", "ACCOUNT"];
-
+const ACTIONS = Object.keys(ACTION_LABELS);
+const ENTITIES = ["REPORT", "CLAIM", "ITEM", "LOCKER", "ACCOUNT"];
 const PAGE_SIZE = 20;
-
-function FilterSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  const { style, ...rest } = props;
-  return (
-    <select {...rest}
-      className="h-11 w-full rounded-xl border bg-white px-3 text-sm cursor-pointer"
-      style={{ borderColor: c.border, color: c.text, ...style }} />
-  );
-}
 
 export default function AdminActivityPage() {
   const router = useRouter();
@@ -67,6 +63,12 @@ export default function AdminActivityPage() {
   const [entityType, setEntityType] = useState("ALL");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [actionOpen, setActionOpen] = useState(false);
+  const [entityOpen, setEntityOpen] = useState(false);
+  const [fromAnchor, setFromAnchor] = useState<HTMLElement | null>(null);
+  const [toAnchor, setToAnchor] = useState<HTMLElement | null>(null);
+  const [fromOpen, setFromOpen] = useState(false);
+  const [toOpen, setToOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,12 +77,12 @@ export default function AdminActivityPage() {
     if (stored) {
       try {
         setUser(JSON.parse(stored));
+        return;
       } catch {
-        setUser({ name: "Admin User", role: "ADMIN" });
+        // fall through
       }
-    } else {
-      setUser({ name: "Admin User", role: "ADMIN" });
     }
+    setUser({ name: "Admin User", role: "ADMIN" });
   }, []);
 
   const load = useCallback(async () => {
@@ -121,6 +123,7 @@ export default function AdminActivityPage() {
   }
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasFilters = !!query || action !== "ALL" || entityType !== "ALL" || !!from || !!to;
   const exportHref = (() => {
     const params = new URLSearchParams({ type: "audit" });
     if (from) params.set("from", from);
@@ -135,37 +138,110 @@ export default function AdminActivityPage() {
       <main className="bg-white pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
           <VContentPanel>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-              <div>
-                <h1 className={f.sectionTitle} style={{ color: c.text }}>Activity Log</h1>
-                <p className="text-sm mt-1" style={{ color: c.textMuted }}>
-                  Every administrative action, newest first. {total} record{total === 1 ? "" : "s"}.
-                </p>
-              </div>
-              <a href={exportHref} className="inline-flex items-center gap-2 h-11 px-4 rounded-xl text-sm font-semibold border bg-white cursor-pointer"
-                style={{ borderColor: c.border, color: c.primary }}>
-                <Download size={15} /> Export CSV
-              </a>
-            </div>
+            <FilterPanel
+              search={
+                <PillSearchInput value={query} onChange={(value) => { setQuery(value); setPage(1); }}
+                  clearable placeholder="Search summary, actor or ID" className="w-full" aria-label="Search activity" />
+              }
+              actions={
+                <a href={exportHref} className="inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-xs font-semibold border bg-white whitespace-nowrap"
+                  style={{ borderColor: c.border, color: c.primary }}>
+                  <Download size={13} /> Export CSV
+                </a>
+              }
+              filters={
+                <>
+                  <VDropdown open={actionOpen} onOpenChange={setActionOpen} width="w-56" align="left"
+                    trigger={
+                      <VFilterButton onPointerEnter={(event) => { if (event.pointerType === "mouse") event.currentTarget.focus(); }} active={action !== "ALL"} className="w-full justify-between sm:w-auto sm:min-w-[160px]"
+                        onClick={() => setActionOpen(!actionOpen)}>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <History size={14} style={{ color: action !== "ALL" ? c.primary : c.textMuted }} />
+                          <span className="truncate">{action === "ALL" ? "All actions" : ACTION_LABELS[action]}</span>
+                        </span>
+                        <ChevronDown size={13} style={{ color: action !== "ALL" ? c.primary : c.textMuted }} />
+                      </VFilterButton>
+                    }>
+                    {(close) => (
+                      <>
+                        <VDropdownItem active={action === "ALL"} onSelect={() => { setAction("ALL"); setPage(1); close(); }}>
+                          All actions
+                        </VDropdownItem>
+                        <div style={{ borderColor: c.border }} className="mx-3 border-t" />
+                        {ACTIONS.map((value) => (
+                          <VDropdownItem key={value} active={action === value}
+                            onSelect={() => { setAction(value); setPage(1); close(); }}>
+                            {ACTION_LABELS[value]}
+                          </VDropdownItem>
+                        ))}
+                      </>
+                    )}
+                  </VDropdown>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6 mb-5">
-              <div className="lg:col-span-2">
-                <VInput value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                  placeholder="Search summary, actor or ID" aria-label="Search activity" />
-              </div>
-              <FilterSelect value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }} aria-label="Filter by action">
-                {ACTIONS.map((value) => (
-                  <option key={value} value={value}>{value === "ALL" ? "All actions" : ACTION_LABELS[value]}</option>
-                ))}
-              </FilterSelect>
-              <FilterSelect value={entityType} onChange={(e) => { setEntityType(e.target.value); setPage(1); }} aria-label="Filter by entity">
-                {ENTITIES.map((value) => (
-                  <option key={value} value={value}>{value === "ALL" ? "All entities" : value}</option>
-                ))}
-              </FilterSelect>
-              <VInput type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} aria-label="From date" />
-              <VInput type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} aria-label="To date" />
-            </div>
+                  <VDropdown open={entityOpen} onOpenChange={setEntityOpen} width="w-44" align="left"
+                    trigger={
+                      <VFilterButton onPointerEnter={(event) => { if (event.pointerType === "mouse") event.currentTarget.focus(); }} active={entityType !== "ALL"} className="w-full justify-between sm:w-auto sm:min-w-[140px]"
+                        onClick={() => setEntityOpen(!entityOpen)}>
+                        <span className="truncate">{entityType === "ALL" ? "All entities" : entityType}</span>
+                        <ChevronDown size={13} style={{ color: entityType !== "ALL" ? c.primary : c.textMuted }} />
+                      </VFilterButton>
+                    }>
+                    {(close) => (
+                      <>
+                        <VDropdownItem active={entityType === "ALL"} onSelect={() => { setEntityType("ALL"); setPage(1); close(); }}>
+                          All entities
+                        </VDropdownItem>
+                        <div style={{ borderColor: c.border }} className="mx-3 border-t" />
+                        {ENTITIES.map((value) => (
+                          <VDropdownItem key={value} active={entityType === value}
+                            onSelect={() => { setEntityType(value); setPage(1); close(); }}>
+                            {value}
+                          </VDropdownItem>
+                        ))}
+                      </>
+                    )}
+                  </VDropdown>
+
+                  <div className="relative"
+                    onPointerEnter={(event) => { if (event.pointerType === "mouse") { setFromAnchor(event.currentTarget); if (!fromOpen) setFromOpen(true); } }}>
+                    <VFilterButton onPointerEnter={(event) => { if (event.pointerType === "mouse") event.currentTarget.focus(); }} active={!!from} className="justify-between w-full sm:w-auto sm:min-w-[150px]"
+                      aria-haspopup="dialog" aria-expanded={fromOpen}
+                      onClick={(event) => { setFromAnchor(event.currentTarget); setFromOpen((open) => !open); }}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Clock size={14} style={{ color: from ? c.primary : c.textMuted }} />
+                        <span className="vq-date truncate">{from ? formatDisplayDate(from) : "From date"}</span>
+                      </span>
+                      <ChevronDown size={13} style={{ color: from ? c.primary : c.textMuted }} />
+                    </VFilterButton>
+                    {fromOpen && (
+                      <CalendarPopover anchor={fromAnchor} compact value={from}
+                        onChange={(iso) => setFrom(iso)} onClose={() => setFromOpen(false)} />
+                    )}
+                  </div>
+
+                  <div className="relative"
+                    onPointerEnter={(event) => { if (event.pointerType === "mouse") { setToAnchor(event.currentTarget); if (!toOpen) setToOpen(true); } }}>
+                    <VFilterButton onPointerEnter={(event) => { if (event.pointerType === "mouse") event.currentTarget.focus(); }} active={!!to} className="justify-between w-full sm:w-auto sm:min-w-[150px]"
+                      aria-haspopup="dialog" aria-expanded={toOpen}
+                      onClick={(event) => { setToAnchor(event.currentTarget); setToOpen((open) => !open); }}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Clock size={14} style={{ color: to ? c.primary : c.textMuted }} />
+                        <span className="vq-date truncate">{to ? formatDisplayDate(to) : "To date"}</span>
+                      </span>
+                      <ChevronDown size={13} style={{ color: to ? c.primary : c.textMuted }} />
+                    </VFilterButton>
+                    {toOpen && (
+                      <CalendarPopover anchor={toAnchor} compact value={to}
+                        onChange={(iso) => setTo(iso)} onClose={() => setToOpen(false)} />
+                    )}
+                  </div>
+                </>
+              }
+              reset={
+                <ResetFiltersButton disabled={!hasFilters}
+                  onClick={() => { setQuery(""); setAction("ALL"); setEntityType("ALL"); setFrom(""); setTo(""); setPage(1); }} />
+              }
+            />
 
             {error && (
               <VCard className="mb-4 flex flex-wrap items-center gap-3 p-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>

@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Download, RefreshCw } from "lucide-react";
+import { ChevronDown, Clock, Download, RefreshCw } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
-import { VButton, VCard, VContentPanel, VInput, vcolors as c, font as f } from "@/components/ui/vault";
+import { VButton, VCard, VContentPanel, VFilterButton, vcolors as c, font as f } from "@/components/ui/vault";
+import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
+import { CalendarPopover } from "@/components/date-calendar";
 import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
+import { formatDisplayDate } from "@/lib/date-format";
 
 interface Summary {
   items: { total: number; byStatus: Record<string, number>; byCategory: Record<string, number> };
@@ -26,36 +29,56 @@ const EXPORTS: { type: string; label: string }[] = [
   { type: "audit", label: "Activity" },
 ];
 
-function StatCard({ label, value }: { label: string; value: number | string }) {
+const COLORS = ["#355C8A", "#4a9d6b", "#b45309", "#64748b", "#3f8b86", "#7c3aed"];
+
+function labelize(value: string) {
+  return value.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function BarList({ title, data, empty = "No data" }: { title: string; data: Record<string, number>; empty?: string }) {
+  const rows = Object.entries(data);
+  const max = Math.max(1, ...rows.map(([, count]) => count));
+
   return (
-    <VCard className="p-4 sm:p-5">
-      <p className="text-2xl font-bold tabular-nums" style={{ color: c.text }}>{value}</p>
-      <p className="text-xs sm:text-sm mt-0.5" style={{ color: c.textMuted }}>{label}</p>
-    </VCard>
+    <div>
+      <h3 className="text-sm font-semibold mb-3" style={{ color: c.text }}>{title}</h3>
+      {rows.length === 0 ? (
+        <p className="text-xs py-3" style={{ color: c.textMuted }}>{empty}</p>
+      ) : (
+        <div className="space-y-2.5">
+          {rows.map(([name, count], index) => (
+            <div key={name}>
+              <div className="flex items-center justify-between gap-2 mb-1 text-xs">
+                <span className="truncate" style={{ color: c.textMuted }}>{labelize(name)}</span>
+                <span className="font-semibold tabular-nums shrink-0" style={{ color: c.text }}>{count}</span>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: c.fill }} role="img"
+                aria-label={`${labelize(name)}: ${count}`}>
+                <div className="h-full rounded-full transition-[width] duration-300"
+                  style={{ width: `${Math.max(4, (count / max) * 100)}%`, backgroundColor: COLORS[index % COLORS.length] }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function CountTable({ title, data, empty = "No data" }: { title: string; data: Record<string, number>; empty?: string }) {
-  const rows = Object.entries(data);
+function MonthBars({ data }: { data: Record<string, number> }) {
+  const rows = Object.entries(data).sort(([a], [b]) => a.localeCompare(b)).slice(-8);
+  if (rows.length === 0) return <p className="text-xs py-3" style={{ color: c.textMuted }}>No claims in this period</p>;
+  const max = Math.max(1, ...rows.map(([, count]) => count));
+
   return (
-    <div>
-      <h3 className="text-sm font-semibold mb-2" style={{ color: c.text }}>{title}</h3>
-      <div className="rounded-xl border overflow-hidden" style={{ borderColor: c.borderLight }}>
-        {rows.length === 0 ? (
-          <p className="px-3 py-3 text-xs" style={{ color: c.textMuted }}>{empty}</p>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody>
-              {rows.map(([name, count]) => (
-                <tr key={name} className="border-t first:border-t-0" style={{ borderColor: c.borderLight }}>
-                  <td className="px-3 py-2" style={{ color: c.textMuted }}>{name.replaceAll("_", " ")}</td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums" style={{ color: c.text }}>{count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+    <div className="flex items-end gap-2 h-32" role="img" aria-label="Claims per month">
+      {rows.map(([month, count]) => (
+        <div key={month} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0">
+          <span className="text-[10px] tabular-nums" style={{ color: c.text }}>{count}</span>
+          <div className="w-full rounded-t-md" style={{ height: `${Math.max(6, (count / max) * 88)}px`, backgroundColor: c.primary }} />
+          <span className="text-[10px] truncate w-full text-center" style={{ color: c.textMuted }}>{month.slice(2)}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -65,6 +88,10 @@ export default function AdminReportsPage() {
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [fromAnchor, setFromAnchor] = useState<HTMLElement | null>(null);
+  const [toAnchor, setToAnchor] = useState<HTMLElement | null>(null);
+  const [fromOpen, setFromOpen] = useState(false);
+  const [toOpen, setToOpen] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,32 +151,58 @@ export default function AdminReportsPage() {
 
   if (!user) return null;
 
+  const dateLabel = (value: string) => (value ? formatDisplayDate(value) : "Select date");
+
   return (
     <StudentShell active="Reports" userName={user.name} userRole={user.role} pageTitle="Reports and Analytics" bottomNav={adminNav} logout={handleLogout}>
       <main className="bg-white pb-28 lg:pb-6">
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
           <VContentPanel>
-            <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
-              <div>
-                <h1 className={f.sectionTitle} style={{ color: c.text }}>Reports and Analytics</h1>
-                <p className="text-sm mt-1" style={{ color: c.textMuted }}>
-                  Summary counts for the selected period, with CSV exports for record keeping.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="text-xs" style={{ color: c.textMuted }}>
-                  From
-                  <VInput type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1" aria-label="From date" />
-                </label>
-                <label className="text-xs" style={{ color: c.textMuted }}>
-                  To
-                  <VInput type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1" aria-label="To date" />
-                </label>
-                <VButton variant="secondary" onClick={() => { setFrom(""); setTo(""); }}>
-                  <RefreshCw size={14} /> Reset
-                </VButton>
-              </div>
+            <div className="mb-5">
+              <h1 className={f.sectionTitle} style={{ color: c.text }}>Reports and Analytics</h1>
             </div>
+
+            <FilterPanel
+              search={<span className="sr-only">Report filters</span>}
+              filters={
+                <>
+                  <div className="relative"
+                    onPointerEnter={(event) => { if (event.pointerType === "mouse") { setFromAnchor(event.currentTarget); if (!fromOpen) setFromOpen(true); } }}>
+                    <VFilterButton onPointerEnter={(event) => { if (event.pointerType === "mouse") event.currentTarget.focus(); }} active={!!from} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
+                      aria-haspopup="dialog" aria-expanded={fromOpen}
+                      onClick={(event) => { setFromAnchor(event.currentTarget); setFromOpen((open) => !open); }}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Clock size={14} style={{ color: from ? c.primary : c.textMuted }} />
+                        <span className="vq-date truncate">{from ? dateLabel(from) : "From date"}</span>
+                      </span>
+                      <ChevronDown size={13} style={{ color: from ? c.primary : c.textMuted }} />
+                    </VFilterButton>
+                    {fromOpen && (
+                      <CalendarPopover anchor={fromAnchor} compact value={from}
+                        onChange={(iso) => setFrom(iso)} onClose={() => setFromOpen(false)} />
+                    )}
+                  </div>
+
+                  <div className="relative"
+                    onPointerEnter={(event) => { if (event.pointerType === "mouse") { setToAnchor(event.currentTarget); if (!toOpen) setToOpen(true); } }}>
+                    <VFilterButton onPointerEnter={(event) => { if (event.pointerType === "mouse") event.currentTarget.focus(); }} active={!!to} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
+                      aria-haspopup="dialog" aria-expanded={toOpen}
+                      onClick={(event) => { setToAnchor(event.currentTarget); setToOpen((open) => !open); }}>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Clock size={14} style={{ color: to ? c.primary : c.textMuted }} />
+                        <span className="vq-date truncate">{to ? dateLabel(to) : "To date"}</span>
+                      </span>
+                      <ChevronDown size={13} style={{ color: to ? c.primary : c.textMuted }} />
+                    </VFilterButton>
+                    {toOpen && (
+                      <CalendarPopover anchor={toAnchor} compact value={to}
+                        onChange={(iso) => setTo(iso)} onClose={() => setToOpen(false)} />
+                    )}
+                  </div>
+                </>
+              }
+              reset={<ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />}
+            />
 
             {error && (
               <VCard className="mb-4 flex flex-wrap items-center gap-3 p-4" style={{ borderColor: "#fecaca", backgroundColor: "#fef2f2" }}>
@@ -161,70 +214,57 @@ export default function AdminReportsPage() {
             )}
 
             {loading && !summary ? (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4" aria-busy="true" aria-label="Loading report">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <div key={index} className="h-24 rounded-xl animate-pulse" style={{ backgroundColor: c.fill }} />
+              <div className="grid md:grid-cols-2 gap-5" aria-busy="true" aria-label="Loading report">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="h-56 rounded-xl animate-pulse" style={{ backgroundColor: c.fill }} />
                 ))}
               </div>
             ) : summary ? (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                  <StatCard label="Inventory items" value={summary.items.total} />
-                  <StatCard label="Reports" value={summary.reports.total} />
-                  <StatCard label="Claims" value={summary.claims.total} />
-                  <StatCard label="Lockers" value={summary.lockers.total} />
-                  <StatCard label="Accounts" value={summary.accounts.total} />
-                  <StatCard label="Activity entries" value={summary.audit.total} />
+              <div className="space-y-5">
+                <div className="grid gap-5 md:grid-cols-2">
+                  <VCard className="p-5">
+                    <BarList title="Inventory by status" data={summary.items.byStatus} />
+                    <div className="mt-5">
+                      <BarList title="Inventory by category" data={summary.items.byCategory} />
+                    </div>
+                  </VCard>
+                  <VCard className="p-5">
+                    <BarList title="Reports by type" data={summary.reports.byType} />
+                    <div className="mt-5">
+                      <BarList title="Reports by status" data={summary.reports.byStatus} />
+                    </div>
+                  </VCard>
+                  <VCard className="p-5">
+                    <BarList title="Claims by status" data={summary.claims.byStatus} />
+                    <div className="mt-6">
+                      <h3 className="text-sm font-semibold mb-3" style={{ color: c.text }}>Claims per month</h3>
+                      <MonthBars data={summary.claims.byMonth} />
+                    </div>
+                  </VCard>
+                  <VCard className="p-5">
+                    <BarList title="Lockers by status" data={summary.lockers.byStatus} />
+                    <div className="mt-5">
+                      <BarList title="Accounts by role" data={summary.accounts.byRole} />
+                    </div>
+                  </VCard>
                 </div>
 
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <VCard className="p-5">
-                    <CountTable title="Inventory by status" data={summary.items.byStatus} />
-                    <div className="mt-4">
-                      <CountTable title="Inventory by category" data={summary.items.byCategory} />
-                    </div>
-                  </VCard>
-                  <VCard className="p-5">
-                    <CountTable title="Reports by type" data={summary.reports.byType} />
-                    <div className="mt-4">
-                      <CountTable title="Reports by status" data={summary.reports.byStatus} />
-                    </div>
-                  </VCard>
-                  <VCard className="p-5">
-                    <CountTable title="Claims by status" data={summary.claims.byStatus} />
-                    <div className="mt-4">
-                      <CountTable title="Claims by month" data={summary.claims.byMonth} empty="No claims in this period" />
-                    </div>
-                  </VCard>
-                  <VCard className="p-5">
-                    <CountTable title="Lockers by status" data={summary.lockers.byStatus} />
-                  </VCard>
-                  <VCard className="p-5">
-                    <CountTable title="Accounts by role" data={summary.accounts.byRole} />
-                    <div className="mt-4">
-                      <CountTable title="Account state" data={{ Active: summary.accounts.active, Inactive: summary.accounts.inactive }} />
-                    </div>
-                  </VCard>
-                  <VCard className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <BarChart3 size={16} style={{ color: c.primary }} />
-                      <h3 className="text-sm font-semibold" style={{ color: c.text }}>Download CSV</h3>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {EXPORTS.map((item) => (
-                        <a key={item.type} href={exportHref(item.type)}
-                          className="inline-flex items-center justify-between gap-2 h-10 px-3 rounded-lg border text-sm font-medium bg-white"
-                          style={{ borderColor: c.border, color: c.text }}>
-                          {item.label}
-                          <Download size={14} style={{ color: c.primary }} />
-                        </a>
-                      ))}
-                    </div>
-                    <p className="text-[11px] mt-3" style={{ color: c.textMuted }}>
-                      Exports respect the date range above.
-                    </p>
-                  </VCard>
-                </div>
+                <VCard className="p-5">
+                  <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                    <h3 className="text-sm font-semibold" style={{ color: c.text }}>Download reports</h3>
+                    <p className="text-[11px]" style={{ color: c.textMuted }}>CSV exports follow the selected date range.</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    {EXPORTS.map((item) => (
+                      <a key={item.type} href={exportHref(item.type)}
+                        className="inline-flex items-center justify-between gap-2 h-10 px-3 rounded-lg border text-sm font-medium bg-white"
+                        style={{ borderColor: c.border, color: c.text }}>
+                        {item.label}
+                        <Download size={14} style={{ color: c.primary }} />
+                      </a>
+                    ))}
+                  </div>
+                </VCard>
               </div>
             ) : null}
           </VContentPanel>

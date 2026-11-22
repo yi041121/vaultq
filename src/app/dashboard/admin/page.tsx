@@ -43,6 +43,7 @@ export default function AdminDashboard() {
   const [claims, setClaims] = useState<AdminClaim[]>([]);
   const [accounts, setAccounts] = useState<AdminAccount[]>([]);
   const [intake, setIntake] = useState<PendingIntake[]>([]);
+  const [lockers, setLockers] = useState<Array<{ id: string; status: string }>>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
 
@@ -55,27 +56,34 @@ export default function AdminDashboard() {
     setDataLoading(true);
     setDataError(null);
     try {
-      const [itemsRes, claimsRes, accountsRes, intakeRes] = await Promise.all([
+      const [itemsRes, claimsRes, accountsRes, intakeRes, lockersRes] = await Promise.all([
         fetchAdminData("/api/items?light=1", token),
         fetchAdminData("/api/claims?light=1", token),
         fetchAdminData("/api/accounts", token),
         fetchAdminData("/api/reports?light=1&type=FOUND&status=PENDING", token),
+        fetchAdminData("/api/lockers", token),
       ]);
-      const [itemsJson, claimsJson, accountsJson, intakeJson] = await Promise.all([
+      const [itemsJson, claimsJson, accountsJson, intakeJson, lockersJson] = await Promise.all([
         itemsRes.json().catch(() => null),
         claimsRes.json().catch(() => null),
         accountsRes.json().catch(() => null),
         intakeRes.json().catch(() => null),
+        lockersRes.json().catch(() => null),
       ]);
       if (!itemsRes.ok || !itemsJson?.success) throw new Error(itemsJson?.error || "Failed to load items");
       if (!claimsRes.ok || !claimsJson?.success) throw new Error(claimsJson?.error || "Failed to load claims");
       if (!accountsRes.ok || !accountsJson?.success) throw new Error(accountsJson?.error || "Failed to load accounts");
       if (!intakeRes.ok || !intakeJson?.success) throw new Error(intakeJson?.error || "Failed to load pending intake");
+      if (!lockersRes.ok || !lockersJson?.success) throw new Error(lockersJson?.error || "Failed to load lockers");
 
       setItems((Array.isArray(itemsJson.data) ? itemsJson.data : []).map(mapApiItem));
       setClaims(Array.isArray(claimsJson.data) ? claimsJson.data : []);
       setAccounts(Array.isArray(accountsJson.data) ? accountsJson.data : []);
       setIntake(Array.isArray(intakeJson.data) ? intakeJson.data : []);
+      setLockers((Array.isArray(lockersJson.data) ? lockersJson.data : []).map((locker: { id: string; status: string }) => ({
+        id: locker.id,
+        status: locker.status,
+      })));
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Failed to load dashboard");
     } finally {
@@ -122,6 +130,17 @@ export default function AdminDashboard() {
     // can distinguish them from a direct claim on a found item.
     isLost: claim.source === "MATCH" || Boolean(claim.matchedReportId),
   }));
+
+  const lockerCounts = { AVAILABLE: 0, OCCUPIED: 0, MAINTENANCE: 0 } as Record<string, number>;
+  for (const locker of lockers) {
+    if (locker.status in lockerCounts) lockerCounts[locker.status] += 1;
+  }
+  const lockerRows = [
+    { label: "Available", value: lockerCounts.AVAILABLE, color: "#4a9d6b" },
+    { label: "Occupied", value: lockerCounts.OCCUPIED, color: "#355C8A" },
+    { label: "Maintenance", value: lockerCounts.MAINTENANCE, color: "#b45309" },
+  ];
+  const lockerMax = Math.max(1, ...lockerRows.map((row) => row.value));
 
   const stats = [
     { label: "Total Items", value: dataLoading ? "—" : String(items.length), icon: Package, color: "#355C8A" },
@@ -298,6 +317,36 @@ export default function AdminDashboard() {
                   {!dataLoading && intake.length === 0 && <p className="text-sm text-center py-5" style={{ color: c.textMuted }}>No found reports waiting for intake.</p>}
                 </div>
               </VCard>
+              </section>
+
+              <section className="flex flex-col">
+                <div className="flex items-center justify-between gap-2 mb-4">
+                  <h2 className={f.sectionTitle} style={{ color: c.text }}>Locker Status</h2>
+                  <button type="button" className="text-sm font-medium flex items-center gap-1 cursor-pointer hover:opacity-70" style={{ color: c.primary }} onClick={() => router.push("/dashboard/admin/lockers")}>
+                    View all <ChevronRight size={14} />
+                  </button>
+                </div>
+                <VCard className="p-5 lg:p-6">
+                  <div className="space-y-3">
+                    {lockerRows.map((row) => (
+                      <div key={row.label}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span style={{ color: c.textMuted }}>{row.label}</span>
+                          <span className="font-semibold tabular-nums" style={{ color: c.text }}>
+                            {dataLoading ? "—" : row.value}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: c.fill }}>
+                          <div className="h-full rounded-full transition-[width] duration-300"
+                            style={{ width: `${Math.max(3, (row.value / lockerMax) * 100)}%`, backgroundColor: row.color }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-xs" style={{ color: c.textMuted }}>
+                    {dataLoading ? "Loading locker usage…" : `${lockers.length} lockers in total`}
+                  </p>
+                </VCard>
               </section>
             </div>
           </div>
