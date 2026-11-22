@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Clock, Download, RefreshCw } from "lucide-react";
+import {
+  BadgeCheck, ChevronDown, ClipboardList, Clock, Download, FileText, Grid3X3,
+  ListChecks, Lock, Package, RefreshCw, type LucideIcon,
+} from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VButton, VCard, VContentPanel, VFilterButton, vcolors as c } from "@/components/ui/vault";
 import { ResetFiltersButton } from "@/components/filter-panel";
@@ -21,6 +24,13 @@ interface Summary {
 }
 
 const PALETTE = ["#2f7f74", "#5fbfae", "#9ad9cb", "#f2b544", "#e08a3c", "#64748b"];
+const STATUS_COLORS: Record<string, string> = {
+  VERIFIED: "#2f7f74",
+  CLOSED: "#5fbfae",
+  PENDING: "#f2b544",
+  MATCHED: "#64748b",
+  REJECTED: "#dc2626",
+};
 
 function labelize(value: string) {
   return value.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
@@ -30,12 +40,37 @@ function pct(part: number, total: number) {
   return total > 0 ? (part / total) * 100 : 0;
 }
 
-function CardTitle({ title, subtitle, href }: { title: string; subtitle?: string; href?: string }) {
+/** Eight consecutive months ending at the newest month in the data. */
+function monthSlots(data: Record<string, number>, count = 8): Array<[string, number]> {
+  const keys = Object.keys(data).sort();
+  const anchor = keys.length ? new Date(`${keys[keys.length - 1]}-01T00:00:00`) : new Date();
+  const slots: Array<[string, number]> = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const d = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    slots.push([key, data[key] || 0]);
+  }
+  return slots;
+}
+
+function CardTitle({ title, subtitle, href, icon: Icon, accent = "#2f7f74" }: {
+  title: string;
+  subtitle?: string;
+  href?: string;
+  icon: LucideIcon;
+  accent?: string;
+}) {
   return (
     <div className="flex items-start justify-between gap-2 mb-4">
-      <div>
-        <h2 className="text-sm font-semibold" style={{ color: c.text }}>{title}</h2>
-        {subtitle && <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>{subtitle}</p>}
+      <div className="flex items-start gap-2.5 min-w-0">
+        <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`, color: accent }}>
+          <Icon size={15} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold" style={{ color: c.text }}>{title}</h2>
+          {subtitle && <p className="text-[11px] mt-0.5" style={{ color: c.textMuted }}>{subtitle}</p>}
+        </div>
       </div>
       {href && (
         <a href={href} aria-label={`Export ${title} as CSV`}
@@ -59,7 +94,7 @@ function Donut({ data }: { data: Record<string, number> }) {
 
   return (
     <div className="flex flex-col sm:flex-row items-center gap-4">
-      <svg viewBox="0 0 160 160" className="w-[150px] h-[150px] shrink-0" role="img" aria-label="Inventory by status donut chart">
+      <svg viewBox="0 0 160 160" className="w-[145px] h-[145px] shrink-0" role="img" aria-label="Inventory by status donut chart">
         <g transform="rotate(-90 80 80)">
           {entries.map(([name, value], index) => {
             const length = (value / total) * circumference;
@@ -110,20 +145,15 @@ function Gauge({ value, label, color }: { value: number; label: string; color: s
   );
 }
 
-function lastMonths(data: Record<string, number>, count = 8) {
-  return Object.entries(data).sort(([a], [b]) => a.localeCompare(b)).slice(-count);
-}
-
 function LineChart({ data }: { data: Record<string, number> }) {
-  const entries = lastMonths(data);
-  if (entries.length === 0) return <p className="text-xs py-8 text-center" style={{ color: c.textMuted }}>No reports in this period</p>;
-  const max = Math.max(1, ...entries.map(([, value]) => value));
+  const slots = monthSlots(data);
+  const max = Math.max(1, ...slots.map(([, value]) => value));
   const width = 320;
   const height = 150;
-  const padX = 28;
+  const padX = 24;
   const padY = 22;
-  const step = entries.length > 1 ? (width - padX * 2) / (entries.length - 1) : 0;
-  const points = entries.map(([, value], index) => ({
+  const step = (width - padX * 2) / (slots.length - 1);
+  const points = slots.map(([, value], index) => ({
     x: padX + index * step,
     y: height - padY - (value / max) * (height - padY * 2),
     value,
@@ -131,7 +161,8 @@ function LineChart({ data }: { data: Record<string, number> }) {
   const line = points.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Reports per month line chart">
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[180px]" preserveAspectRatio="xMidYMid meet"
+      role="img" aria-label="Reports per month line chart">
       {[0, 0.5, 1].map((fraction) => (
         <line key={fraction} x1={padX} x2={width - padX}
           y1={height - padY - fraction * (height - padY * 2)}
@@ -140,10 +171,12 @@ function LineChart({ data }: { data: Record<string, number> }) {
       ))}
       <polyline points={line} fill="none" stroke={c.primary} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       {points.map((point, index) => (
-        <g key={index}>
+        <g key={slots[index][0]}>
           <circle cx={point.x} cy={point.y} r="3" fill="#fff" stroke={c.primary} strokeWidth="2" />
-          <text x={point.x} y={point.y - 7} textAnchor="middle" fontSize="9" fontWeight="600" fill={c.text}>{point.value}</text>
-          <text x={point.x} y={height - 6} textAnchor="middle" fontSize="8" fill={c.textMuted}>{entries[index][0].slice(2)}</text>
+          {point.value > 0 && (
+            <text x={point.x} y={point.y - 7} textAnchor="middle" fontSize="8" fontWeight="600" fill={c.text}>{point.value}</text>
+          )}
+          <text x={point.x} y={height - 6} textAnchor="middle" fontSize="8" fill={c.textMuted}>{slots[index][0].slice(2)}</text>
         </g>
       ))}
     </svg>
@@ -151,16 +184,15 @@ function LineChart({ data }: { data: Record<string, number> }) {
 }
 
 function ColumnBars({ data }: { data: Record<string, number> }) {
-  const entries = lastMonths(data);
-  if (entries.length === 0) return <p className="text-xs py-8 text-center" style={{ color: c.textMuted }}>No claims in this period</p>;
-  const max = Math.max(1, ...entries.map(([, value]) => value));
+  const slots = monthSlots(data);
+  const max = Math.max(1, ...slots.map(([, value]) => value));
 
   return (
-    <div className="flex items-end gap-2 h-40" role="img" aria-label="Claims per month column chart">
-      {entries.map(([month, value]) => (
+    <div className="flex items-end gap-1.5 h-40" role="img" aria-label="Claims per month column chart">
+      {slots.map(([month, value]) => (
         <div key={month} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0">
-          <span className="text-[10px] tabular-nums font-semibold" style={{ color: c.text }}>{value}</span>
-          <div className="w-full rounded-t-md" style={{ height: `${Math.max(6, (value / max) * 112)}px`, backgroundColor: "#2f7f74" }} />
+          <span className="text-[10px] tabular-nums font-semibold" style={{ color: c.text }}>{value || ""}</span>
+          <div className="w-full max-w-[34px] rounded-t-md" style={{ height: `${Math.max(4, (value / max) * 112)}px`, backgroundColor: "#2f7f74" }} />
           <span className="text-[9px] truncate w-full text-center" style={{ color: c.textMuted }}>{month.slice(2)}</span>
         </div>
       ))}
@@ -168,18 +200,19 @@ function ColumnBars({ data }: { data: Record<string, number> }) {
   );
 }
 
-function HBar({ data, color = "#f2b544" }: { data: Record<string, number>; color?: string }) {
+function HBar({ data, colorFor }: { data: Record<string, number>; colorFor?: (name: string) => string }) {
   const entries = Object.entries(data).sort(([, a], [, b]) => b - a).slice(0, 6);
   if (entries.length === 0) return <p className="text-xs py-6 text-center" style={{ color: c.textMuted }}>No data</p>;
   const max = Math.max(1, ...entries.map(([, value]) => value));
 
   return (
     <div className="space-y-2.5">
-      {entries.map(([name, value]) => (
+      {entries.map(([name, value], index) => (
         <div key={name} className="flex items-center gap-3">
           <span className="w-24 sm:w-28 shrink-0 truncate text-[11px]" style={{ color: c.textMuted }} title={labelize(name)}>{labelize(name)}</span>
           <div className="flex-1 h-5 rounded-md overflow-hidden" style={{ backgroundColor: c.fill }}>
-            <div className="h-full rounded-md" style={{ width: `${Math.max(6, (value / max) * 100)}%`, backgroundColor: color }} />
+            <div className="h-full rounded-md"
+              style={{ width: `${Math.max(6, (value / max) * 100)}%`, backgroundColor: colorFor ? colorFor(name) : PALETTE[index % PALETTE.length] }} />
           </div>
           <span className="w-8 shrink-0 text-right text-[11px] font-semibold tabular-nums" style={{ color: c.text }}>{value}</span>
         </div>
@@ -266,28 +299,28 @@ export default function AdminAnalyticsPage() {
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
           <div data-filter-panel className="rounded-2xl border p-3 lg:p-4 mb-6 flex flex-wrap items-center gap-2"
             style={{ backgroundColor: c.panel, borderColor: c.border }}>
-            <div className="relative"
-              onPointerEnter={(event) => { if (event.pointerType === "mouse") { setRangeAnchor(event.currentTarget); if (!rangeOpen) setRangeOpen(true); } }}>
-              <VFilterButton active={!!from || !!to} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
-                aria-haspopup="dialog" aria-expanded={rangeOpen}
-                onClick={(event) => { setRangeAnchor(event.currentTarget); setRangeOpen((open) => !open); }}>
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <Clock size={14} style={{ color: from || to ? c.primary : c.textMuted }} />
-                  <span className="vq-date truncate">
-                    {from && to ? (from === to ? formatDisplayDate(from) : `${formatDisplayDate(from)} – ${formatDisplayDate(to)}`) : from ? `${formatDisplayDate(from)} – ?` : "Select date"}
-                  </span>
-                </span>
-                <ChevronDown size={13} style={{ color: from || to ? c.primary : c.textMuted }} />
-              </VFilterButton>
-              {rangeOpen && (
-                <DateRangePopover anchor={rangeAnchor} from={from} to={to}
-                  onApply={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }}
-                  onClose={() => setRangeOpen(false)} />
-              )}
-            </div>
-
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               <ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />
+
+              <div className="relative"
+                onPointerEnter={(event) => { if (event.pointerType === "mouse") { setRangeAnchor(event.currentTarget); if (!rangeOpen) setRangeOpen(true); } }}>
+                <VFilterButton active={!!from || !!to} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
+                  aria-haspopup="dialog" aria-expanded={rangeOpen}
+                  onClick={(event) => { setRangeAnchor(event.currentTarget); setRangeOpen((open) => !open); }}>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <Clock size={14} style={{ color: from || to ? c.primary : c.textMuted }} />
+                    <span className="vq-date truncate">
+                      {from && to ? (from === to ? formatDisplayDate(from) : `${formatDisplayDate(from)} – ${formatDisplayDate(to)}`) : from ? `${formatDisplayDate(from)} – ?` : "Select date"}
+                    </span>
+                  </span>
+                  <ChevronDown size={13} style={{ color: from || to ? c.primary : c.textMuted }} />
+                </VFilterButton>
+                {rangeOpen && (
+                  <DateRangePopover anchor={rangeAnchor} from={from} to={to}
+                    onApply={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }}
+                    onClose={() => setRangeOpen(false)} />
+                )}
+              </div>
             </div>
           </div>
 
@@ -309,40 +342,40 @@ export default function AdminAnalyticsPage() {
               </div>
             ) : summary ? (
               <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-3">
+                <div className="grid gap-4 lg:grid-cols-3 items-start">
                   <VCard className="p-5">
-                    <CardTitle title="Inventory by status" subtitle="Share of items" href={exportHref("items")} />
+                    <CardTitle title="Inventory by status" subtitle="Share of items" icon={Package} accent="#2f7f74" href={exportHref("items")} />
                     <Donut data={summary.items.byStatus} />
                   </VCard>
                   <VCard className="p-5">
-                    <CardTitle title="Claim approval rate" subtitle="Approved vs rejected claims" href={exportHref("claims")} />
+                    <CardTitle title="Claim approval rate" subtitle="Approved vs rejected" icon={BadgeCheck} accent="#5fbfae" href={exportHref("claims")} />
                     <Gauge value={approvalRate} label={`${approved} approved · ${rejected} rejected`} color="#5fbfae" />
                   </VCard>
                   <VCard className="p-5">
-                    <CardTitle title="Locker utilisation" subtitle="Occupied lockers" href={exportHref("lockers")} />
+                    <CardTitle title="Locker utilisation" subtitle="Occupied lockers" icon={Lock} accent="#f2b544" href={exportHref("lockers")} />
                     <Gauge value={utilisation} label={`${occupied} of ${summary.lockers.total} lockers`} color="#f2b544" />
                   </VCard>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-3">
+                <div className="grid gap-4 lg:grid-cols-3 items-start">
                   <VCard className="p-5 lg:col-span-2">
-                    <CardTitle title="Reports per month" subtitle="Lost and found submissions" href={exportHref("reports")} />
+                    <CardTitle title="Reports per month" subtitle="Lost and found submissions" icon={FileText} accent="#355C8A" href={exportHref("reports")} />
                     <LineChart data={summary.reports.byMonth || {}} />
                   </VCard>
                   <VCard className="p-5">
-                    <CardTitle title="Claims per month" subtitle="Volume trend" href={exportHref("claims")} />
+                    <CardTitle title="Claims per month" subtitle="Volume trend" icon={ClipboardList} accent="#2f7f74" href={exportHref("claims")} />
                     <ColumnBars data={summary.claims.byMonth} />
                   </VCard>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-3">
+                <div className="grid gap-4 lg:grid-cols-3 items-start">
                   <VCard className="p-5 lg:col-span-2">
-                    <CardTitle title="Inventory by category" subtitle="Largest categories" href={exportHref("items")} />
+                    <CardTitle title="Inventory by category" subtitle="Largest categories" icon={Grid3X3} accent="#e08a3c" href={exportHref("items")} />
                     <HBar data={summary.items.byCategory} />
                   </VCard>
                   <VCard className="p-5">
-                    <CardTitle title="Reports by status" subtitle="Review outcomes" href={exportHref("reports")} />
-                    <HBar data={summary.reports.byStatus} color="#5fbfae" />
+                    <CardTitle title="Reports by status" subtitle="Review outcomes" icon={ListChecks} accent="#2f7f74" href={exportHref("reports")} />
+                    <HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f7f74"} />
                   </VCard>
                 </div>
 
