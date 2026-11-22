@@ -148,38 +148,42 @@ function Gauge({ value, label, color }: { value: number; label: string; color: s
 function LineChart({ data }: { data: Record<string, number> }) {
   const slots = monthSlots(data);
   const max = Math.max(1, ...slots.map(([, value]) => value));
-  const width = 320;
-  const height = 150;
-  const padX = 24;
-  const padY = 22;
-  const step = (width - padX * 2) / (slots.length - 1);
+  const count = slots.length;
   const points = slots.map(([, value], index) => ({
-    x: padX + index * step,
-    y: height - padY - (value / max) * (height - padY * 2),
+    x: count > 1 ? (index / (count - 1)) * 100 : 50,
+    y: 100 - (value / max) * 78 - 11,
     value,
+    month: slots[index][0],
   }));
-  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[180px]" preserveAspectRatio="xMidYMid meet"
-      role="img" aria-label="Reports per month line chart">
-      {[0, 0.5, 1].map((fraction) => (
-        <line key={fraction} x1={padX} x2={width - padX}
-          y1={height - padY - fraction * (height - padY * 2)}
-          y2={height - padY - fraction * (height - padY * 2)}
-          stroke={c.borderLight} strokeWidth="1" />
+    <div className="relative h-48 w-full" role="img" aria-label="Reports per month line chart">
+      {[11, 50, 89].map((top) => (
+        <div key={top} className="absolute inset-x-0 border-t" style={{ top: `${top}%`, borderColor: c.borderLight }} />
       ))}
-      <polyline points={line} fill="none" stroke={c.primary} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((point, index) => (
-        <g key={slots[index][0]}>
-          <circle cx={point.x} cy={point.y} r="3" fill="#fff" stroke={c.primary} strokeWidth="2" />
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+          fill="none" stroke={c.primary} strokeWidth="2" vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      {points.map((point) => (
+        <div key={point.month} className="absolute -translate-x-1/2 -translate-y-1/2"
+          style={{ left: `${point.x}%`, top: `${point.y}%` }}>
+          <span className="block h-2.5 w-2.5 rounded-full bg-white border-2" style={{ borderColor: c.primary }} />
           {point.value > 0 && (
-            <text x={point.x} y={point.y - 7} textAnchor="middle" fontSize="8" fontWeight="600" fill={c.text}>{point.value}</text>
+            <span className="absolute left-1/2 -top-4 -translate-x-1/2 whitespace-nowrap text-[9px] font-semibold" style={{ color: c.text }}>
+              {point.value}
+            </span>
           )}
-          <text x={point.x} y={height - 6} textAnchor="middle" fontSize="8" fill={c.textMuted}>{slots[index][0].slice(2)}</text>
-        </g>
+        </div>
       ))}
-    </svg>
+      {points.map((point) => (
+        <span key={`${point.month}-label`} className="absolute bottom-0 -translate-x-1/2 text-[9px]"
+          style={{ left: `${point.x}%`, color: c.textMuted }}>
+          {point.month.slice(2)}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -300,7 +304,6 @@ export default function AdminAnalyticsPage() {
           <div data-filter-panel className="rounded-2xl border p-3 lg:p-4 mb-6 flex flex-wrap items-center gap-2"
             style={{ backgroundColor: c.panel, borderColor: c.border }}>
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />
 
               <div className="relative"
                 onPointerEnter={(event) => { if (event.pointerType === "mouse") { setRangeAnchor(event.currentTarget); if (!rangeOpen) setRangeOpen(true); } }}>
@@ -321,6 +324,7 @@ export default function AdminAnalyticsPage() {
                     onClose={() => setRangeOpen(false)} />
                 )}
               </div>
+              <ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />
             </div>
           </div>
 
@@ -342,40 +346,40 @@ export default function AdminAnalyticsPage() {
               </div>
             ) : summary ? (
               <div className="space-y-4">
-                <div className="grid gap-4 lg:grid-cols-3 items-start">
-                  <VCard className="p-5">
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Inventory by status" subtitle="Share of items" icon={Package} accent="#2f7f74" href={exportHref("items")} />
-                    <Donut data={summary.items.byStatus} />
+                    <div className="flex flex-1 items-center"><Donut data={summary.items.byStatus} /></div>
                   </VCard>
-                  <VCard className="p-5">
+                  <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Claim approval rate" subtitle="Approved vs rejected" icon={BadgeCheck} accent="#5fbfae" href={exportHref("claims")} />
-                    <Gauge value={approvalRate} label={`${approved} approved · ${rejected} rejected`} color="#5fbfae" />
+                    <div className="flex flex-1 items-center justify-center"><Gauge value={approvalRate} label={`${approved} approved · ${rejected} rejected`} color="#5fbfae" /></div>
                   </VCard>
-                  <VCard className="p-5">
+                  <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Locker utilisation" subtitle="Occupied lockers" icon={Lock} accent="#f2b544" href={exportHref("lockers")} />
-                    <Gauge value={utilisation} label={`${occupied} of ${summary.lockers.total} lockers`} color="#f2b544" />
+                    <div className="flex flex-1 items-center justify-center"><Gauge value={utilisation} label={`${occupied} of ${summary.lockers.total} lockers`} color="#f2b544" /></div>
                   </VCard>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-3 items-start">
-                  <VCard className="p-5 lg:col-span-2">
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <VCard className="p-5 lg:col-span-2 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Reports per month" subtitle="Lost and found submissions" icon={FileText} accent="#355C8A" href={exportHref("reports")} />
-                    <LineChart data={summary.reports.byMonth || {}} />
+                    <div className="flex flex-1 flex-col justify-center"><LineChart data={summary.reports.byMonth || {}} /></div>
                   </VCard>
-                  <VCard className="p-5">
+                  <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Claims per month" subtitle="Volume trend" icon={ClipboardList} accent="#2f7f74" href={exportHref("claims")} />
-                    <ColumnBars data={summary.claims.byMonth} />
+                    <div className="flex flex-1 flex-col justify-center"><ColumnBars data={summary.claims.byMonth} /></div>
                   </VCard>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-3 items-start">
-                  <VCard className="p-5 lg:col-span-2">
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <VCard className="p-5 lg:col-span-2 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Inventory by category" subtitle="Largest categories" icon={Grid3X3} accent="#e08a3c" href={exportHref("items")} />
-                    <HBar data={summary.items.byCategory} />
+                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.items.byCategory} /></div>
                   </VCard>
-                  <VCard className="p-5">
+                  <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Reports by status" subtitle="Review outcomes" icon={ListChecks} accent="#2f7f74" href={exportHref("reports")} />
-                    <HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f7f74"} />
+                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f7f74"} /></div>
                   </VCard>
                 </div>
 
