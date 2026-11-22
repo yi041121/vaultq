@@ -8,7 +8,7 @@ import {
   Search, Package,
   Briefcase, CreditCard, Key, BookText, CupSoda,
   ChevronDown, Monitor, Grid3X3, ArrowUpDown,
-  MapPin, Clock, ChevronLeft, ChevronRight, X, Upload, Eye, Crop, FileText,
+  MapPin, Clock, X, Upload, Eye, Crop, FileText,
   RefreshCw, CheckCircle2, Plus, RotateCcw,
   type LucideIcon,
 } from "lucide-react";
@@ -17,7 +17,7 @@ import { ItemDetailsModal } from "@/components/item-details-modal";
 import { PillSearchInput } from "@/components/pill-search-input";
 import { StudentShell } from "@/components/student-shell";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
-import { FloatingPanel } from "@/components/date-calendar";
+import { DateRangePopover } from "@/components/date-calendar";
 import { PhotoPicker } from "@/components/photo-picker";
 import { PhotoCropModal } from "@/components/photo-crop-modal";
 import { CameraCaptureModal } from "@/components/camera-capture-modal";
@@ -85,9 +85,6 @@ export default function StudentSearch() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
-  const [calOffset, setCalOffset] = useState(0);
-  const [tempFrom, setTempFrom] = useState("");
-  const [tempTo, setTempTo] = useState("");
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -303,47 +300,12 @@ export default function StudentSearch() {
   }
 
 
-  function toISO(d: Date) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function monthGrid(year: number, month: number) {
-    const first = new Date(year, month, 1);
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const startWeekday = first.getDay();
-    const cells: (Date | null)[] = [];
-    for (let i = 0; i < startWeekday; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
-    return cells;
-  }
-
-  const today = new Date();
-  const todayIso = toISO(today);
-  const baseMonth = new Date(today.getFullYear(), today.getMonth() + calOffset, 1);
-  const months = [baseMonth, new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1)];
-
-  function monthOffsetFor(iso: string) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 0;
-    const d = new Date(`${iso}T00:00:00`);
-    return (d.getFullYear() - today.getFullYear()) * 12 + (d.getMonth() - today.getMonth());
-  }
-
   function closeDateCalendar() {
     setDateRangeOpen(false);
-    setCalOffset(0);
   }
 
   function openDateCalendar() {
-    setTempFrom(dateFrom);
-    setTempTo(dateTo);
-    // Reopen on the month of the applied date, or the current month if empty.
-    setCalOffset(dateFrom ? monthOffsetFor(dateFrom) : 0);
     setDateRangeOpen(true);
-  }
-
-  function isInRange(d: Date) {
-    if (!tempFrom || !tempTo) return false;
-    return d > parseDate(tempFrom) && d < parseDate(tempTo);
   }
 
   async function openClaim(item: FoundItem) {
@@ -570,7 +532,6 @@ export default function StudentSearch() {
     setDateTo("");
     setSortOrder("newest");
     setPage(1);
-    setCalOffset(0);
     setSortOpen(false);
     setCategoryOpen(false);
     setDateRangeOpen(false);
@@ -657,7 +618,7 @@ export default function StudentSearch() {
                     if (!dateRangeOpen) openDateCalendar();
                   }}>
                   <VFilterButton active={!!dateFrom} className="justify-between w-full sm:w-auto sm:min-w-[160px] sm:max-w-[16rem]"
-                    aria-haspopup="dialog" aria-expanded={dateRangeOpen} aria-controls="search-date-range"
+                    aria-haspopup="dialog" aria-expanded={dateRangeOpen}
                     onClick={() => { if (dateRangeOpen) closeDateCalendar(); else openDateCalendar(); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
                       <Clock size={14} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
@@ -674,116 +635,9 @@ export default function StudentSearch() {
                     <ChevronDown size={13} className="shrink-0" style={{ color: dateFrom ? c.primary : c.textMuted }} />
                   </VFilterButton>
                   {dateRangeOpen && (
-                    <FloatingPanel anchor={dateFilterRef.current} onClose={closeDateCalendar} closeOnPointerLeave
-                      offsetY={8} fallbackWidth={300} fallbackHeight={380}>
-                      <div id="search-date-range" role="dialog" aria-label="Select date range"
-                        className="w-[300px] max-w-[calc(100vw-3rem)] rounded-2xl border bg-white p-4 shadow-xl" style={{ borderColor: c.border }}>
-                        <div className="flex items-center justify-between mb-3">
-                          <button type="button"
-                            aria-label="Previous month"
-                            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer"
-                            style={{ backgroundColor: c.fill, color: c.textMuted }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                            onClick={() => setCalOffset(calOffset - 1)}>
-                            <ChevronLeft size={14} />
-                          </button>
-                          <span className="text-xs font-medium" style={{ color: c.primary }}>
-                            {months[0].toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
-                          </span>
-                          <button type="button"
-                            aria-label="Next month"
-                            disabled={calOffset >= 0}
-                            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors duration-150 ${calOffset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
-                            style={{ backgroundColor: c.fill, color: c.textMuted }}
-                            onMouseEnter={(e) => { if (calOffset < 0) e.currentTarget.style.backgroundColor = c.borderLight; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                            onClick={() => { if (calOffset < 0) setCalOffset(calOffset + 1); }}>
-                            <ChevronRight size={14} />
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-7 gap-0.5 text-center">
-                          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                            <span key={d} className="text-[10px] font-semibold py-1" style={{ color: c.textMuted }}>{d}</span>
-                          ))}
-                          {monthGrid(months[0].getFullYear(), months[0].getMonth()).map((d, i) => {
-                            if (!d) return <span key={i} />;
-                            const iso = toISO(d);
-                            const isStart = tempFrom === iso;
-                            const isEnd = tempTo === iso && tempTo !== tempFrom;
-                            const inRange = isInRange(d);
-                            const isFuture = iso > todayIso;
-                            return (
-                              <button key={i} type="button"
-                                disabled={isFuture}
-                                className={`h-8 w-8 mx-auto rounded-full text-xs transition-all duration-150 ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
-                                style={{
-                                  backgroundColor: isFuture ? "transparent" : isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
-                                  color: isFuture ? c.textLight : isStart || isEnd ? "#fff" : c.text,
-                                  fontWeight: isStart || isEnd ? "700" : "400",
-                                }}
-                                onMouseEnter={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = c.fill; }}
-                                onMouseLeave={(e) => { if (!isFuture && !isStart && !isEnd) e.currentTarget.style.backgroundColor = inRange ? c.primarySoft : "transparent"; }}
-                                onClick={() => {
-                                  if (isFuture) return;
-                                  if (tempFrom && tempTo && tempFrom !== tempTo) {
-                                    setTempFrom(iso);
-                                    setTempTo(iso);
-                                    return;
-                                  }
-                                  if (!tempFrom) {
-                                    setTempFrom(iso);
-                                    setTempTo(iso);
-                                    return;
-                                  }
-                                  if (iso === tempFrom) {
-                                    setTempTo(iso);
-                                    return;
-                                  }
-                                  if (iso < tempFrom) {
-                                    setTempFrom(iso);
-                                    setTempTo(iso);
-                                  } else {
-                                    setTempTo(iso);
-                                  }
-                                }}>
-                                {d.getDate()}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: c.fill }}>
-                          <button type="button"
-                            className="h-8 px-3 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer"
-                            style={{ backgroundColor: c.fill, color: c.textMuted }}
-                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = c.borderLight; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.fill; }}
-                            onClick={() => { setTempFrom(""); setTempTo(""); }}>
-                            Clear
-                          </button>
-                          <button type="button"
-                            className="h-8 px-4 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer"
-                            style={{ backgroundColor: c.primary, color: "#fff" }}
-                            onMouseEnter={(e) => { if (tempFrom) e.currentTarget.style.backgroundColor = c.primaryDark; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = c.primary; }}
-                            onClick={() => {
-                              if (!tempFrom) {
-                                setDateFrom("");
-                                setDateTo("");
-                                setPage(1);
-                                closeDateCalendar();
-                                return;
-                              }
-                              setDateFrom(tempFrom);
-                              setDateTo(tempTo || tempFrom);
-                              setPage(1);
-                              closeDateCalendar();
-                            }}>
-                            Confirm
-                          </button>
-                        </div>
-                      </div>
-                    </FloatingPanel>
+                    <DateRangePopover anchor={dateFilterRef.current} from={dateFrom} to={dateTo}
+                      onApply={(nextFrom, nextTo) => { setDateFrom(nextFrom); setDateTo(nextTo); setPage(1); }}
+                      onClose={() => setDateRangeOpen(false)} />
                   )}
                 </div>
                 <ResetFiltersButton disabled={!hasFilters} onClick={resetFilters} className="w-full sm:w-auto" />
