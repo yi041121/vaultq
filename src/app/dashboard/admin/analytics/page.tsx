@@ -10,6 +10,7 @@ import { StudentShell } from "@/components/student-shell";
 import { VButton, VCard, VContentPanel, VFilterButton, vcolors as c } from "@/components/ui/vault";
 import { DateRangePopover } from "@/components/date-calendar";
 import { adminNav } from "@/lib/admin-nav";
+import { categoryIcon } from "@/lib/category-icons";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate } from "@/lib/date-format";
 
@@ -22,13 +23,13 @@ interface Summary {
   audit: { total: number };
 }
 
-const PALETTE = ["#2f7f74", "#5fbfae", "#9ad9cb", "#f2b544", "#e08a3c", "#64748b"];
+const PALETTE = ["#2f5580", "#3f8b86", "#7fa8c9", "#9ecfc9", "#23405f", "#64748b"];
 const STATUS_COLORS: Record<string, string> = {
-  VERIFIED: "#2f7f74",
-  CLOSED: "#5fbfae",
-  PENDING: "#f2b544",
+  VERIFIED: "#2f5580",
+  CLOSED: "#3f8b86",
+  PENDING: "#b45309",
   MATCHED: "#64748b",
-  REJECTED: "#dc2626",
+  REJECTED: "#b91c1c",
 };
 
 function labelize(value: string) {
@@ -92,7 +93,7 @@ function Donut({ data }: { data: Record<string, number> }) {
   if (total === 0) return <p className="text-xs py-8 text-center" style={{ color: c.textMuted }}>No data</p>;
 
   return (
-    <div className="flex w-full flex-col sm:flex-row items-center justify-center gap-4">
+    <div className="flex w-full flex-col sm:flex-row items-center justify-center gap-5">
       <svg viewBox="0 0 160 160" className="w-[145px] h-[145px] shrink-0" role="img" aria-label="Inventory by status donut chart">
         <g transform="rotate(-90 80 80)">
           {entries.map(([name, value], index) => {
@@ -110,7 +111,7 @@ function Donut({ data }: { data: Record<string, number> }) {
         <text x="80" y="76" textAnchor="middle" fontSize="20" fontWeight="700" fill={c.text}>{total}</text>
         <text x="80" y="92" textAnchor="middle" fontSize="9" fill={c.textMuted}>items</text>
       </svg>
-      <div className="w-full min-w-0 space-y-1.5">
+      <div className="w-full min-w-0 space-y-1.5 sm:w-auto sm:min-w-[150px] sm:max-w-[220px]">
         {entries.map(([name, value], index) => (
           <div key={name} className="flex items-center gap-2 text-xs">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: PALETTE[index % PALETTE.length] }} />
@@ -195,7 +196,7 @@ function ColumnBars({ data }: { data: Record<string, number> }) {
       {slots.map(([month, value]) => (
         <div key={month} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0">
           <span className="text-[10px] tabular-nums font-semibold" style={{ color: c.text }}>{value || ""}</span>
-          <div className="w-full max-w-[34px] rounded-t-md" style={{ height: `${Math.max(4, (value / max) * 112)}px`, backgroundColor: "#2f7f74" }} />
+          <div className="w-full max-w-[34px] rounded-t-md" style={{ height: `${Math.max(4, (value / max) * 112)}px`, backgroundColor: "#2f5580" }} />
           <span className="text-[9px] truncate w-full text-center" style={{ color: c.textMuted }}>{month.slice(2)}</span>
         </div>
       ))}
@@ -203,23 +204,29 @@ function ColumnBars({ data }: { data: Record<string, number> }) {
   );
 }
 
-function HBar({ data, colorFor }: { data: Record<string, number>; colorFor?: (name: string) => string }) {
+function HBar({ data, colorFor, showCategoryIcons = false }: { data: Record<string, number>; colorFor?: (name: string) => string; showCategoryIcons?: boolean }) {
   const entries = Object.entries(data).sort(([, a], [, b]) => b - a).slice(0, 6);
   if (entries.length === 0) return <p className="text-xs py-6 text-center" style={{ color: c.textMuted }}>No data</p>;
   const max = Math.max(1, ...entries.map(([, value]) => value));
 
   return (
     <div className="space-y-2.5">
-      {entries.map(([name, value], index) => (
+      {entries.map(([name, value], index) => {
+        const Icon = showCategoryIcons ? categoryIcon(name) : null;
+        return (
         <div key={name} className="flex items-center gap-3">
-          <span className="w-24 sm:w-28 shrink-0 truncate text-[11px]" style={{ color: c.textMuted }} title={labelize(name)}>{labelize(name)}</span>
+          <span className="w-28 sm:w-32 shrink-0 flex items-center gap-1.5 text-[11px]" style={{ color: c.textMuted }} title={labelize(name)}>
+            {Icon && <Icon size={13} className="shrink-0" style={{ color: c.primary }} />}
+            <span className="truncate">{labelize(name)}</span>
+          </span>
           <div className="flex-1 h-5 rounded-md overflow-hidden" style={{ backgroundColor: c.fill }}>
             <div className="h-full rounded-md"
               style={{ width: `${Math.max(6, (value / max) * 100)}%`, backgroundColor: colorFor ? colorFor(name) : PALETTE[index % PALETTE.length] }} />
           </div>
           <span className="w-8 shrink-0 text-right text-[11px] font-semibold tabular-nums" style={{ color: c.text }}>{value}</span>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -343,16 +350,16 @@ export default function AdminAnalyticsPage() {
               <div className="space-y-4">
                 <div className="grid gap-4 lg:grid-cols-3">
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
-                    <CardTitle title="Inventory by status" subtitle="Share of items" icon={Package} accent="#2f7f74" href={exportHref("items")} />
+                    <CardTitle title="Inventory by status" subtitle="Share of items" icon={Package} accent="#2f5580" href={exportHref("items")} />
                     <div className="flex flex-1 items-center justify-center"><Donut data={summary.items.byStatus} /></div>
                   </VCard>
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
-                    <CardTitle title="Claim approval rate" subtitle="Approved vs rejected" icon={BadgeCheck} accent="#5fbfae" href={exportHref("claims")} />
-                    <div className="flex flex-1 items-center justify-center"><Gauge value={approvalRate} label={`${approved} approved · ${rejected} rejected`} color="#5fbfae" /></div>
+                    <CardTitle title="Claim approval rate" subtitle="Approved vs rejected" icon={BadgeCheck} accent="#3f8b86" href={exportHref("claims")} />
+                    <div className="flex flex-1 items-center justify-center"><Gauge value={approvalRate} label={`${approved} approved · ${rejected} rejected`} color="#3f8b86" /></div>
                   </VCard>
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
-                    <CardTitle title="Locker utilisation" subtitle="Occupied lockers" icon={Lock} accent="#f2b544" href={exportHref("lockers")} />
-                    <div className="flex flex-1 items-center justify-center"><Gauge value={utilisation} label={`${occupied} of ${summary.lockers.total} lockers`} color="#f2b544" /></div>
+                    <CardTitle title="Locker utilisation" subtitle="Occupied lockers" icon={Lock} accent="#2f5580" href={exportHref("lockers")} />
+                    <div className="flex flex-1 items-center justify-center"><Gauge value={utilisation} label={`${occupied} of ${summary.lockers.total} lockers`} color="#2f5580" /></div>
                   </VCard>
                 </div>
 
@@ -369,12 +376,12 @@ export default function AdminAnalyticsPage() {
 
                 <div className="grid gap-4 lg:grid-cols-3">
                   <VCard className="p-5 lg:col-span-2 h-full min-h-[300px] flex flex-col">
-                    <CardTitle title="Inventory by category" subtitle="Largest categories" icon={Grid3X3} accent="#e08a3c" href={exportHref("items")} />
-                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.items.byCategory} /></div>
+                    <CardTitle title="Inventory by category" subtitle="Largest categories" icon={Grid3X3} accent="#3f8b86" href={exportHref("items")} />
+                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.items.byCategory} showCategoryIcons /></div>
                   </VCard>
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Reports by status" subtitle="Review outcomes" icon={ListChecks} accent="#2f7f74" href={exportHref("reports")} />
-                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f7f74"} /></div>
+                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f5580"} /></div>
                   </VCard>
                 </div>
 

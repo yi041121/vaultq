@@ -328,6 +328,23 @@ export function DateRangeCalendar({ from, to, onApply, onClose }: DateRangeCalen
     <div role="dialog" aria-label="Select date range"
       className="w-[262px] max-w-[calc(100vw-2.5rem)] rounded-2xl border bg-white p-3 shadow-xl"
       style={{ borderColor: c.border }}>
+      <div className="grid grid-cols-2 gap-2 mb-2.5">
+        <label className="text-[10px] font-medium" style={{ color: c.textMuted }}>
+          From
+          <input type="date" value={tempFrom} max={todayIso} aria-label="Start date"
+            onChange={(event) => setTempFrom(event.target.value)}
+            className="mt-1 h-8 w-full rounded-lg border bg-white px-1.5 text-[11px]"
+            style={{ borderColor: c.border, color: c.text }} />
+        </label>
+        <label className="text-[10px] font-medium" style={{ color: c.textMuted }}>
+          To
+          <input type="date" value={tempTo} max={todayIso} aria-label="End date"
+            onChange={(event) => setTempTo(event.target.value)}
+            className="mt-1 h-8 w-full rounded-lg border bg-white px-1.5 text-[11px]"
+            style={{ borderColor: c.border, color: c.text }} />
+        </label>
+      </div>
+
       <div className="flex items-center justify-between mb-2">
         <button type="button" aria-label="Previous month"
           className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer"
