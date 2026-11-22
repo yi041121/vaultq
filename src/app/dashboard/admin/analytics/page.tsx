@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VButton, VCard, VContentPanel, VFilterButton, vcolors as c } from "@/components/ui/vault";
-import { ResetFiltersButton } from "@/components/filter-panel";
 import { DateRangePopover } from "@/components/date-calendar";
 import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
@@ -93,7 +92,7 @@ function Donut({ data }: { data: Record<string, number> }) {
   if (total === 0) return <p className="text-xs py-8 text-center" style={{ color: c.textMuted }}>No data</p>;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-4">
+    <div className="flex w-full flex-col sm:flex-row items-center justify-center gap-4">
       <svg viewBox="0 0 160 160" className="w-[145px] h-[145px] shrink-0" role="img" aria-label="Inventory by status donut chart">
         <g transform="rotate(-90 80 80)">
           {entries.map(([name, value], index) => {
@@ -303,28 +302,24 @@ export default function AdminAnalyticsPage() {
         <div className="px-4 lg:px-10 pt-4 lg:pt-5 w-full bg-white">
           <div data-filter-panel className="rounded-2xl border p-3 lg:p-4 mb-6 flex flex-wrap items-center gap-2"
             style={{ backgroundColor: c.panel, borderColor: c.border }}>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-
-              <div className="relative"
-                onPointerEnter={(event) => { if (event.pointerType === "mouse") { setRangeAnchor(event.currentTarget); if (!rangeOpen) setRangeOpen(true); } }}>
-                <VFilterButton active={!!from || !!to} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
-                  aria-haspopup="dialog" aria-expanded={rangeOpen}
-                  onClick={(event) => { setRangeAnchor(event.currentTarget); setRangeOpen((open) => !open); }}>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <Clock size={14} style={{ color: from || to ? c.primary : c.textMuted }} />
-                    <span className="vq-date truncate">
-                      {from && to ? (from === to ? formatDisplayDate(from) : `${formatDisplayDate(from)} – ${formatDisplayDate(to)}`) : from ? `${formatDisplayDate(from)} – ?` : "Select date"}
-                    </span>
+            <div className="relative"
+              onPointerEnter={(event) => { if (event.pointerType === "mouse") { setRangeAnchor(event.currentTarget); if (!rangeOpen) setRangeOpen(true); } }}>
+              <VFilterButton active={!!from || !!to} className="justify-between w-full sm:w-auto sm:min-w-[170px]"
+                aria-haspopup="dialog" aria-expanded={rangeOpen}
+                onClick={(event) => { setRangeAnchor(event.currentTarget); setRangeOpen((open) => !open); }}>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Clock size={14} style={{ color: from || to ? c.primary : c.textMuted }} />
+                  <span className="vq-date truncate">
+                    {from && to ? (from === to ? formatDisplayDate(from) : `${formatDisplayDate(from)} – ${formatDisplayDate(to)}`) : from ? `${formatDisplayDate(from)} – ?` : "Select date"}
                   </span>
-                  <ChevronDown size={13} style={{ color: from || to ? c.primary : c.textMuted }} />
-                </VFilterButton>
-                {rangeOpen && (
-                  <DateRangePopover anchor={rangeAnchor} from={from} to={to}
-                    onApply={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }}
-                    onClose={() => setRangeOpen(false)} />
-                )}
-              </div>
-              <ResetFiltersButton disabled={!from && !to} onClick={() => { setFrom(""); setTo(""); }} />
+                </span>
+                <ChevronDown size={13} style={{ color: from || to ? c.primary : c.textMuted }} />
+              </VFilterButton>
+              {rangeOpen && (
+                <DateRangePopover anchor={rangeAnchor} from={from} to={to}
+                  onApply={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }}
+                  onClose={() => setRangeOpen(false)} />
+              )}
             </div>
           </div>
 
@@ -349,7 +344,7 @@ export default function AdminAnalyticsPage() {
                 <div className="grid gap-4 lg:grid-cols-3">
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Inventory by status" subtitle="Share of items" icon={Package} accent="#2f7f74" href={exportHref("items")} />
-                    <div className="flex flex-1 items-center"><Donut data={summary.items.byStatus} /></div>
+                    <div className="flex flex-1 items-center justify-center"><Donut data={summary.items.byStatus} /></div>
                   </VCard>
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Claim approval rate" subtitle="Approved vs rejected" icon={BadgeCheck} accent="#5fbfae" href={exportHref("claims")} />
@@ -387,9 +382,6 @@ export default function AdminAnalyticsPage() {
                   <span>Accounts: {summary.accounts.active} active · {summary.accounts.inactive} inactive</span>
                   <a href={exportHref("accounts")} className="inline-flex items-center gap-1 font-semibold" style={{ color: c.primary }}>
                     <Download size={12} /> Accounts CSV
-                  </a>
-                  <a href={exportHref("audit")} className="inline-flex items-center gap-1 font-semibold" style={{ color: c.primary }}>
-                    <Download size={12} /> Activity CSV
                   </a>
                 </div>
               </div>

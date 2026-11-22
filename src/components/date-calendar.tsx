@@ -326,20 +326,20 @@ export function DateRangeCalendar({ from, to, onApply, onClose }: DateRangeCalen
 
   return (
     <div role="dialog" aria-label="Select date range"
-      className="w-[236px] max-w-[calc(100vw-2.5rem)] rounded-2xl border bg-white p-2.5 shadow-xl"
+      className="w-[262px] max-w-[calc(100vw-2.5rem)] rounded-2xl border bg-white p-3 shadow-xl"
       style={{ borderColor: c.border }}>
       <div className="flex items-center justify-between mb-2">
         <button type="button" aria-label="Previous month"
-          className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer"
+          className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer"
           style={{ backgroundColor: c.fill, color: c.textMuted }}
           onClick={() => setOffset(offset - 1)}>
           <ChevronLeft size={13} />
         </button>
-        <span className="text-[10px] font-medium" style={{ color: c.primary }}>
+        <span className="text-[11px] font-medium" style={{ color: c.primary }}>
           {month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
         </span>
         <button type="button" aria-label="Next month" disabled={offset >= 0}
-          className={`w-6 h-6 rounded-full flex items-center justify-center ${offset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
+          className={`w-7 h-7 rounded-full flex items-center justify-center ${offset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
           style={{ backgroundColor: c.fill, color: c.textMuted }}
           onClick={() => { if (offset < 0) setOffset(offset + 1); }}>
           <ChevronRight size={13} />
@@ -348,7 +348,7 @@ export function DateRangeCalendar({ from, to, onApply, onClose }: DateRangeCalen
 
       <div className="grid grid-cols-7 gap-0.5 text-center">
         {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
-          <span key={day} className="text-[8px] font-semibold py-0.5" style={{ color: c.textMuted }}>{day}</span>
+          <span key={day} className="text-[9px] font-semibold py-0.5" style={{ color: c.textMuted }}>{day}</span>
         ))}
         {monthGrid(month.getFullYear(), month.getMonth()).map((date, index) => {
           if (!date) return <span key={index} />;
@@ -359,7 +359,7 @@ export function DateRangeCalendar({ from, to, onApply, onClose }: DateRangeCalen
           const isFuture = iso > todayIso;
           return (
             <button key={index} type="button" disabled={isFuture}
-              className={`h-6 w-6 mx-auto rounded-full text-[10px] ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
+              className={`h-7 w-7 mx-auto rounded-full text-[11px] ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
               style={{
                 backgroundColor: isFuture ? "transparent" : isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
                 color: isFuture ? c.textLight : isStart || isEnd ? "#fff" : c.text,
@@ -381,13 +381,13 @@ export function DateRangeCalendar({ from, to, onApply, onClose }: DateRangeCalen
 
       <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t" style={{ borderColor: c.fill }}>
         <button type="button"
-          className="h-6 px-2 rounded-lg text-[10px] font-medium cursor-pointer"
+          className="h-7 px-2.5 rounded-lg text-[11px] font-medium cursor-pointer"
           style={{ backgroundColor: c.fill, color: c.textMuted }}
           onClick={() => { setTempFrom(""); setTempTo(""); }}>
           Clear
         </button>
         <button type="button"
-          className="h-6 px-2.5 rounded-lg text-[10px] font-semibold cursor-pointer"
+          className="h-7 px-3 rounded-lg text-[11px] font-semibold cursor-pointer"
           style={{ backgroundColor: c.primary, color: "#fff" }}
           onClick={() => {
             onApply(tempFrom, tempFrom ? (tempTo || tempFrom) : "");
@@ -408,7 +408,7 @@ interface DateRangePopoverProps extends DateRangeCalendarProps {
 export function DateRangePopover({ anchor, ...props }: DateRangePopoverProps) {
   return (
     <FloatingPanel anchor={anchor} onClose={props.onClose} closeOnPointerLeave
-      offsetX={-10} offsetY={8} fallbackWidth={236} fallbackHeight={320}>
+      offsetX={-10} offsetY={8} fallbackWidth={262} fallbackHeight={350}>
       <DateRangeCalendar {...props} />
     </FloatingPanel>
   );
