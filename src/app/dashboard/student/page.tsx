@@ -3,6 +3,7 @@ import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-s
 
 import { useCallback, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useLiveRefresh } from "@/lib/use-live-refresh";
 import {
   Clock,
   Package, ChevronRight,
@@ -44,14 +45,14 @@ export default function StudentDashboard() {
     router.push(`/dashboard/student/search?view=${encodeURIComponent(name)}`);
   }
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (silent = false) => {
     const token = getBrowserSessionKey();
     if (!token) {
-      setDataLoading(false);
+      if (!silent) setDataLoading(false);
       return;
     }
-    setDataLoading(true);
-    setDataError(null);
+    if (!silent) setDataLoading(true);
+    if (!silent) setDataError(null);
     try {
       const headers = { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" };
       const [itemsRes, claimsRes, notificationsRes] = await Promise.all([
@@ -80,9 +81,9 @@ export default function StudentDashboard() {
       setCachedClaims(mappedClaims);
       setCachedNotifications(rawNotifications, unread);
     } catch (error) {
-      setDataError(error instanceof Error ? error.message : "Failed to load dashboard");
+      if (!silent) setDataError(error instanceof Error ? error.message : "Failed to load dashboard");
     } finally {
-      setDataLoading(false);
+      if (!silent) setDataLoading(false);
     }
   }, []);
 
@@ -113,6 +114,9 @@ export default function StudentDashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboard();
   }, [mounted, loadDashboard]);
+
+  // Near-real-time updates: claims and notifications refresh without a reload.
+  useLiveRefresh(() => loadDashboard(true), 5000, mounted && !!user);
 
   function handleLogout() {
     clearStoredBrowserSession();

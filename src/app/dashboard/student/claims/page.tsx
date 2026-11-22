@@ -1,5 +1,6 @@
 "use client";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
+import { useLiveRefresh } from "@/lib/use-live-refresh";
 import { claimNextStep } from "@/lib/student-workflow";
 import { NO_PHOTO_REASON_MIN_LENGTH } from "@/lib/claim-validation";
 import { formatDisplayDate as fmtDay, formatDisplayTime, formatDisplayTimestamp as fmtTimestamp } from "@/lib/date-format";
@@ -81,9 +82,9 @@ export default function StudentClaims() {
   const [cancelling, setCancelling] = useState(false);
   const pageSize = 6;
 
-  async function loadClaims(token: string) {
-    if (!getCachedClaims()) setLoading(true);
-    setLoadError(null);
+  async function loadClaims(token: string, silent = false) {
+    if (!silent && !getCachedClaims()) setLoading(true);
+    if (!silent) setLoadError(null);
     try {
       const res = await fetch("/api/claims", { headers: { "X-VaultQ-Session": token, "X-VaultQ-Request": "1" }, cache: "no-store" });
       const data = await res.json().catch(() => null);
@@ -92,10 +93,12 @@ export default function StudentClaims() {
       setClaims(mapped);
       setCachedClaims(mapped);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load claims");
-      if (!getCachedClaims()) setClaims([]);
+      if (!silent) {
+        setLoadError(e instanceof Error ? e.message : "Failed to load claims");
+        if (!getCachedClaims()) setClaims([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
@@ -114,6 +117,12 @@ export default function StudentClaims() {
     setUser(JSON.parse(stored));
     void loadClaims(token);
   }, []);
+
+  // Claim decisions appear without the student refreshing the page.
+  useLiveRefresh(() => {
+    const token = getBrowserSessionKey();
+    return token ? loadClaims(token, true) : undefined;
+  }, 5000, mounted);
 
   function handleLogout() {
     clearStudentCache();

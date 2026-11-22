@@ -14,6 +14,7 @@ import { StudentShell } from "@/components/student-shell";
 import { VCard, VContentPanel, VBadge, VButton, vcolors as c, font as f } from "@/components/ui/vault";
 import { DescriptionBox } from "@/components/description-box";
 import { fetchAdminData } from "@/lib/admin-data";
+import { useLiveRefresh } from "@/lib/use-live-refresh";
 import { mapApiItem, type FoundItem } from "@/lib/item-mapper";
 import { categoryIcon } from "@/lib/category-icons";
 import { shortClaimReference } from "@/lib/claim-mapper";
@@ -47,14 +48,14 @@ export default function AdminDashboard() {
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (silent = false) => {
     const token = getBrowserSessionKey();
     if (!token) {
       setDataLoading(false);
       return;
     }
-    setDataLoading(true);
-    setDataError(null);
+    if (!silent) setDataLoading(true);
+    if (!silent) setDataError(null);
     try {
       const [itemsRes, claimsRes, accountsRes, intakeRes, lockersRes] = await Promise.all([
         fetchAdminData("/api/items?light=1", token),
@@ -85,9 +86,9 @@ export default function AdminDashboard() {
         status: locker.status,
       })));
     } catch (error) {
-      setDataError(error instanceof Error ? error.message : "Failed to load dashboard");
+      if (!silent) setDataError(error instanceof Error ? error.message : "Failed to load dashboard");
     } finally {
-      setDataLoading(false);
+      if (!silent) setDataLoading(false);
     }
   }, []);
 
@@ -106,6 +107,9 @@ export default function AdminDashboard() {
     if (!mounted) return;
     void loadDashboard();
   }, [mounted, loadDashboard]);
+
+  // Refresh counters and queues without a skeleton flash.
+  useLiveRefresh(() => loadDashboard(true), 5000, mounted && !!user);
 
   function handleLogout() {
     clearStoredBrowserSession();
