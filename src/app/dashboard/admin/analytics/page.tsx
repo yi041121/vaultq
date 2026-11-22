@@ -186,8 +186,12 @@ function LineChart({ data }: { data: Record<string, number> }) {
         </div>
       ))}
       {points.map((point) => (
-        <span key={`${point.month}-label`} className="absolute bottom-0 -translate-x-1/2 text-[9px]"
-          style={{ left: `${point.x}%`, color: c.textMuted }}>
+        <span key={`${point.month}-label`} className="absolute bottom-0 whitespace-nowrap text-[9px]"
+          style={{
+            left: `${point.x}%`,
+            color: c.textMuted,
+            transform: point.x === 0 ? "translateX(0)" : point.x === 100 ? "translateX(-100%)" : "translateX(-50%)",
+          }}>
           {point.month.slice(2)}
         </span>
       ))}
