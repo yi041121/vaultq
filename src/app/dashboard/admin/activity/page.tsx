@@ -50,6 +50,15 @@ const ACTION_LABELS: Record<string, string> = {
 
 const ACTIONS = Object.keys(ACTION_LABELS);
 const ENTITIES = ["REPORT", "CLAIM", "ITEM", "LOCKER", "ACCOUNT"];
+
+// Entity first, then only the actions that entity can produce.
+const ACTIONS_BY_ENTITY: Record<string, string[]> = {
+  REPORT: ["REPORT_VERIFIED", "REPORT_MATCHED", "REPORT_REJECTED", "REPORT_CLOSED", "REPORT_REOPENED", "REPORT_UPDATED"],
+  CLAIM: ["CLAIM_APPROVED", "CLAIM_REJECTED"],
+  ITEM: ["ITEM_CREATED", "ITEM_UPDATED", "ITEM_DELETED"],
+  LOCKER: ["LOCKER_CREATED", "LOCKER_ASSIGNED", "LOCKER_RELEASED", "LOCKER_UPDATED", "LOCKER_DELETED"],
+  ACCOUNT: ["ACCOUNT_CREATED", "ACCOUNT_UPDATED", "ACCOUNT_DELETED", "ACCOUNT_TEMP_PASSWORD"],
+};
 const PAGE_SIZE = 20;
 
 export default function AdminActivityPage() {
@@ -120,6 +129,7 @@ export default function AdminActivityPage() {
     router.push("/login?skip=1&loggedOut=1");
   }
 
+  const availableActions = entityType === "ALL" ? ACTIONS : (ACTIONS_BY_ENTITY[entityType] ?? ACTIONS);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters = !!query || action !== "ALL" || entityType !== "ALL" || !!from || !!to;
   const exportHref = (() => {
@@ -164,7 +174,7 @@ export default function AdminActivityPage() {
                         All actions
                       </VDropdownItem>
                       <div style={{ borderColor: c.border }} className="mx-3 border-t" />
-                      {ACTIONS.map((value) => (
+                      {availableActions.map((value) => (
                         <VDropdownItem key={value} active={action === value}
                           onSelect={() => { setAction(value); setPage(1); close(); }}>
                           {ACTION_LABELS[value]}
@@ -190,7 +200,12 @@ export default function AdminActivityPage() {
                       <div style={{ borderColor: c.border }} className="mx-3 border-t" />
                       {ENTITIES.map((value) => (
                         <VDropdownItem key={value} active={entityType === value}
-                          onSelect={() => { setEntityType(value); setPage(1); close(); }}>
+                          onSelect={() => {
+                              setEntityType(value);
+                              if (action !== "ALL" && !(ACTIONS_BY_ENTITY[value] ?? []).includes(action)) setAction("ALL");
+                              setPage(1);
+                              close();
+                            }}>
                           {value}
                         </VDropdownItem>
                       ))}

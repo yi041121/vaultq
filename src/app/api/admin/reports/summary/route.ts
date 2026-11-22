@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
       accountRole,
       accountActive,
       claimDates,
+      reportDates,
       totalItems,
       totalReports,
       totalClaims,
@@ -59,6 +60,7 @@ export async function GET(request: NextRequest) {
       prisma.user.groupBy({ by: ["role"], where: dated, _count: { _all: true } }),
       prisma.user.groupBy({ by: ["isActive"], where: dated, _count: { _all: true } }),
       prisma.claim.findMany({ where: dated, select: { createdAt: true }, orderBy: { createdAt: "asc" } }),
+      prisma.report.findMany({ where: dated, select: { createdAt: true }, orderBy: { createdAt: "asc" } }),
       prisma.item.count({ where: dated }),
       prisma.report.count({ where: dated }),
       prisma.claim.count({ where: dated }),
@@ -72,13 +74,18 @@ export async function GET(request: NextRequest) {
       const key = claim.createdAt.toISOString().slice(0, 7);
       byMonth[key] = (byMonth[key] || 0) + 1;
     }
+    const reportsByMonth: Record<string, number> = {};
+    for (const report of reportDates) {
+      const key = report.createdAt.toISOString().slice(0, 7);
+      reportsByMonth[key] = (reportsByMonth[key] || 0) + 1;
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         range: { from: params.get("from"), to: params.get("to") },
         items: { total: totalItems, byStatus: toCountMap(itemStatus, "status"), byCategory: toCountMap(itemCategory, "category") },
-        reports: { total: totalReports, byType: toCountMap(reportType, "type"), byStatus: toCountMap(reportStatus, "status") },
+        reports: { total: totalReports, byType: toCountMap(reportType, "type"), byStatus: toCountMap(reportStatus, "status"), byMonth: reportsByMonth },
         claims: { total: totalClaims, byStatus: toCountMap(claimStatus, "status"), byMonth },
         lockers: { total: totalLockers, byStatus: toCountMap(lockerStatus, "status") },
         accounts: {
