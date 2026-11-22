@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BadgeCheck, ChevronDown, ClipboardList, Clock, Download, FileText, Grid3X3,
-  ListChecks, Lock, Package, RefreshCw, type LucideIcon,
+  Archive, BadgeCheck, ChevronDown, ClipboardList, Clock, Download, FileText, Grid3X3,
+  Link2, ListChecks, Lock, Package, RefreshCw, XCircle, type LucideIcon,
 } from "lucide-react";
 import { StudentShell } from "@/components/student-shell";
 import { VButton, VCard, VContentPanel, VFilterButton, vcolors as c } from "@/components/ui/vault";
@@ -24,6 +24,14 @@ interface Summary {
 }
 
 const PALETTE = ["#2f5580", "#3f8b86", "#7fa8c9", "#9ecfc9", "#23405f", "#64748b"];
+const STATUS_ICONS: Record<string, LucideIcon> = {
+  VERIFIED: BadgeCheck,
+  CLOSED: Archive,
+  PENDING: Clock,
+  MATCHED: Link2,
+  REJECTED: XCircle,
+};
+
 const STATUS_COLORS: Record<string, string> = {
   VERIFIED: "#2f5580",
   CLOSED: "#3f8b86",
@@ -204,7 +212,7 @@ function ColumnBars({ data }: { data: Record<string, number> }) {
   );
 }
 
-function HBar({ data, colorFor, showCategoryIcons = false }: { data: Record<string, number>; colorFor?: (name: string) => string; showCategoryIcons?: boolean }) {
+function HBar({ data, colorFor, iconFor }: { data: Record<string, number>; colorFor?: (name: string) => string; iconFor?: (name: string) => LucideIcon | null }) {
   const entries = Object.entries(data).sort(([, a], [, b]) => b - a).slice(0, 6);
   if (entries.length === 0) return <p className="text-xs py-6 text-center" style={{ color: c.textMuted }}>No data</p>;
   const max = Math.max(1, ...entries.map(([, value]) => value));
@@ -212,11 +220,11 @@ function HBar({ data, colorFor, showCategoryIcons = false }: { data: Record<stri
   return (
     <div className="space-y-2.5">
       {entries.map(([name, value], index) => {
-        const Icon = showCategoryIcons ? categoryIcon(name) : null;
+        const Icon = iconFor ? iconFor(name) : null;
         return (
         <div key={name} className="flex items-center gap-3">
           <span className="w-28 sm:w-32 shrink-0 flex items-center gap-1.5 text-[11px]" style={{ color: c.textMuted }} title={labelize(name)}>
-            {Icon && <Icon size={13} className="shrink-0" style={{ color: c.primary }} />}
+            {Icon && <Icon size={13} className="shrink-0" style={{ color: colorFor ? colorFor(name) : c.primary }} />}
             <span className="truncate">{labelize(name)}</span>
           </span>
           <div className="flex-1 h-5 rounded-md overflow-hidden" style={{ backgroundColor: c.fill }}>
@@ -377,11 +385,11 @@ export default function AdminAnalyticsPage() {
                 <div className="grid gap-4 lg:grid-cols-3">
                   <VCard className="p-5 lg:col-span-2 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Inventory by category" subtitle="Largest categories" icon={Grid3X3} accent="#3f8b86" href={exportHref("items")} />
-                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.items.byCategory} showCategoryIcons /></div>
+                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.items.byCategory} iconFor={(name) => categoryIcon(name)} /></div>
                   </VCard>
                   <VCard className="p-5 h-full min-h-[300px] flex flex-col">
                     <CardTitle title="Reports by status" subtitle="Review outcomes" icon={ListChecks} accent="#2f7f74" href={exportHref("reports")} />
-                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f5580"} /></div>
+                    <div className="flex flex-1 flex-col justify-center"><HBar data={summary.reports.byStatus} colorFor={(name) => STATUS_COLORS[name] || "#2f5580"} iconFor={(name) => STATUS_ICONS[name] || null} /></div>
                   </VCard>
                 </div>
 
