@@ -295,3 +295,121 @@ export function CalendarPopover({ anchor, compact = false, closeOnPointerLeave =
     </FloatingPanel>
   );
 }
+
+interface DateRangeCalendarProps {
+  from: string;
+  to: string;
+  onApply: (from: string, to: string) => void;
+  onClose: () => void;
+}
+
+/**
+ * Compact single-month range picker used by the admin report filters.
+ *
+ * Matches the student search calendar (pick a start date, then an end date,
+ * Clear/Confirm) but is deliberately smaller so it fits beside a table.
+ */
+export function DateRangeCalendar({ from, to, onApply, onClose }: DateRangeCalendarProps) {
+  const today = new Date();
+  const todayIso = toISO(today);
+  const [offset, setOffset] = useState(0);
+  const [tempFrom, setTempFrom] = useState(from);
+  const [tempTo, setTempTo] = useState(to);
+
+  const month = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+
+  function isInRange(iso: string) {
+    if (!tempFrom) return false;
+    const end = tempTo || tempFrom;
+    return iso >= tempFrom && iso <= end;
+  }
+
+  return (
+    <div role="dialog" aria-label="Select date range"
+      className="w-[236px] max-w-[calc(100vw-2.5rem)] rounded-2xl border bg-white p-2.5 shadow-xl"
+      style={{ borderColor: c.border }}>
+      <div className="flex items-center justify-between mb-2">
+        <button type="button" aria-label="Previous month"
+          className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer"
+          style={{ backgroundColor: c.fill, color: c.textMuted }}
+          onClick={() => setOffset(offset - 1)}>
+          <ChevronLeft size={13} />
+        </button>
+        <span className="text-[10px] font-medium" style={{ color: c.primary }}>
+          {month.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+        </span>
+        <button type="button" aria-label="Next month" disabled={offset >= 0}
+          className={`w-6 h-6 rounded-full flex items-center justify-center ${offset >= 0 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
+          style={{ backgroundColor: c.fill, color: c.textMuted }}
+          onClick={() => { if (offset < 0) setOffset(offset + 1); }}>
+          <ChevronRight size={13} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => (
+          <span key={day} className="text-[8px] font-semibold py-0.5" style={{ color: c.textMuted }}>{day}</span>
+        ))}
+        {monthGrid(month.getFullYear(), month.getMonth()).map((date, index) => {
+          if (!date) return <span key={index} />;
+          const iso = toISO(date);
+          const isStart = tempFrom === iso;
+          const isEnd = tempTo === iso && tempTo !== tempFrom;
+          const inRange = isInRange(iso);
+          const isFuture = iso > todayIso;
+          return (
+            <button key={index} type="button" disabled={isFuture}
+              className={`h-6 w-6 mx-auto rounded-full text-[10px] ${isFuture ? "cursor-not-allowed" : "cursor-pointer"}`}
+              style={{
+                backgroundColor: isFuture ? "transparent" : isStart || isEnd ? c.primary : inRange ? c.primarySoft : "transparent",
+                color: isFuture ? c.textLight : isStart || isEnd ? "#fff" : c.text,
+                fontWeight: isStart || isEnd ? 700 : 400,
+              }}
+              onClick={() => {
+                if (isFuture) return;
+                if (tempFrom && tempTo && tempFrom !== tempTo) { setTempFrom(iso); setTempTo(iso); return; }
+                if (!tempFrom) { setTempFrom(iso); setTempTo(iso); return; }
+                if (iso === tempFrom) { setTempTo(iso); return; }
+                if (iso < tempFrom) { setTempFrom(iso); setTempTo(iso); }
+                else setTempTo(iso);
+              }}>
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t" style={{ borderColor: c.fill }}>
+        <button type="button"
+          className="h-6 px-2 rounded-lg text-[10px] font-medium cursor-pointer"
+          style={{ backgroundColor: c.fill, color: c.textMuted }}
+          onClick={() => { setTempFrom(""); setTempTo(""); }}>
+          Clear
+        </button>
+        <button type="button"
+          className="h-6 px-2.5 rounded-lg text-[10px] font-semibold cursor-pointer"
+          style={{ backgroundColor: c.primary, color: "#fff" }}
+          onClick={() => {
+            onApply(tempFrom, tempFrom ? (tempTo || tempFrom) : "");
+            onClose();
+          }}>
+          Confirm
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface DateRangePopoverProps extends DateRangeCalendarProps {
+  anchor: HTMLElement | null;
+}
+
+/** Portal wrapper for the compact range picker. */
+export function DateRangePopover({ anchor, ...props }: DateRangePopoverProps) {
+  return (
+    <FloatingPanel anchor={anchor} onClose={props.onClose} closeOnPointerLeave
+      offsetX={-10} offsetY={8} fallbackWidth={236} fallbackHeight={320}>
+      <DateRangeCalendar {...props} />
+    </FloatingPanel>
+  );
+}

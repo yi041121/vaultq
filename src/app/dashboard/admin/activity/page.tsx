@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/vault";
 import { FilterPanel, ResetFiltersButton } from "@/components/filter-panel";
 import { PillSearchInput } from "@/components/pill-search-input";
-import { CalendarPopover } from "@/components/date-calendar";
+import { DateRangePopover } from "@/components/date-calendar";
 import { adminNav } from "@/lib/admin-nav";
 import { getBrowserSessionKey, clearStoredBrowserSession } from "@/lib/browser-session-store";
 import { formatDisplayDate, formatDisplayTimestamp } from "@/lib/date-format";
@@ -65,10 +65,8 @@ export default function AdminActivityPage() {
   const [to, setTo] = useState("");
   const [actionOpen, setActionOpen] = useState(false);
   const [entityOpen, setEntityOpen] = useState(false);
-  const [fromAnchor, setFromAnchor] = useState<HTMLElement | null>(null);
-  const [toAnchor, setToAnchor] = useState<HTMLElement | null>(null);
-  const [fromOpen, setFromOpen] = useState(false);
-  const [toOpen, setToOpen] = useState(false);
+  const [rangeAnchor, setRangeAnchor] = useState<HTMLElement | null>(null);
+  const [rangeOpen, setRangeOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -201,36 +199,22 @@ export default function AdminActivityPage() {
                 </VDropdown>
 
                 <div className="relative"
-                  onPointerEnter={(event) => { if (event.pointerType === "mouse") { setFromAnchor(event.currentTarget); if (!fromOpen) setFromOpen(true); } }}>
-                  <VFilterButton active={!!from} className="justify-between w-full sm:w-auto sm:min-w-[130px]"
-                    aria-haspopup="dialog" aria-expanded={fromOpen}
-                    onClick={(event) => { setFromAnchor(event.currentTarget); setFromOpen((open) => !open); }}>
+                  onPointerEnter={(event) => { if (event.pointerType === "mouse") { setRangeAnchor(event.currentTarget); if (!rangeOpen) setRangeOpen(true); } }}>
+                  <VFilterButton active={!!from || !!to} className="justify-between w-full sm:w-auto sm:min-w-[160px]"
+                    aria-haspopup="dialog" aria-expanded={rangeOpen}
+                    onClick={(event) => { setRangeAnchor(event.currentTarget); setRangeOpen((open) => !open); }}>
                     <span className="flex items-center gap-1.5 min-w-0">
-                      <Clock size={14} style={{ color: from ? c.primary : c.textMuted }} />
-                      <span className="vq-date truncate">{from ? formatDisplayDate(from) : "From date"}</span>
+                      <Clock size={14} style={{ color: from || to ? c.primary : c.textMuted }} />
+                      <span className="vq-date truncate">
+                        {from && to ? (from === to ? formatDisplayDate(from) : `${formatDisplayDate(from)} – ${formatDisplayDate(to)}`) : from ? `${formatDisplayDate(from)} – ?` : "Select date"}
+                      </span>
                     </span>
-                    <ChevronDown size={13} style={{ color: from ? c.primary : c.textMuted }} />
+                    <ChevronDown size={13} style={{ color: from || to ? c.primary : c.textMuted }} />
                   </VFilterButton>
-                  {fromOpen && (
-                    <CalendarPopover anchor={fromAnchor} compact closeOnPointerLeave value={from}
-                      onChange={(iso) => setFrom(iso)} onClose={() => setFromOpen(false)} />
-                  )}
-                </div>
-
-                <div className="relative"
-                  onPointerEnter={(event) => { if (event.pointerType === "mouse") { setToAnchor(event.currentTarget); if (!toOpen) setToOpen(true); } }}>
-                  <VFilterButton active={!!to} className="justify-between w-full sm:w-auto sm:min-w-[130px]"
-                    aria-haspopup="dialog" aria-expanded={toOpen}
-                    onClick={(event) => { setToAnchor(event.currentTarget); setToOpen((open) => !open); }}>
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <Clock size={14} style={{ color: to ? c.primary : c.textMuted }} />
-                      <span className="vq-date truncate">{to ? formatDisplayDate(to) : "To date"}</span>
-                    </span>
-                    <ChevronDown size={13} style={{ color: to ? c.primary : c.textMuted }} />
-                  </VFilterButton>
-                  {toOpen && (
-                    <CalendarPopover anchor={toAnchor} compact closeOnPointerLeave value={to}
-                      onChange={(iso) => setTo(iso)} onClose={() => setToOpen(false)} />
+                  {rangeOpen && (
+                    <DateRangePopover anchor={rangeAnchor} from={from} to={to}
+                      onApply={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }}
+                      onClose={() => setRangeOpen(false)} />
                   )}
                 </div>
               </>
